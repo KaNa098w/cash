@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:pos_desktop_clean/features/pos/presentation/widgets/show_pos_action_dialog.dart';
 
 class TopBar extends StatelessWidget {
@@ -52,17 +53,39 @@ class TopBar extends StatelessWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _IconBtn(
-                          icon: Icons.shopping_bag_outlined,
-                          onPressed: () {/* TODO */}),
-                      _IconBtn(
-                        icon: Icons.now_widgets_rounded,
-                        onPressed: () => showPosActionsDialog(context),
+                      IconButton(
+                        onPressed: () {},
+                        icon: SvgPicture.asset(
+                          'assets/svg/bag.svg',
+                          width: 20,
+                          height: 20,
+                          color: Colors.white70,
+                        ),
+                        tooltip: '',
                       ),
-                      _IconBtn(
-                          icon: Icons.person_outline,
-                          onPressed: () {/* TODO */}),
-                      const SizedBox(width: 12),
+                      Container(
+                        width: 1,
+                        height: 62,
+                        color: Colors.black45,
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      IconButton(
+                        onPressed: () => showPosActionsDialog(context),
+                        icon: SvgPicture.asset(
+                          'assets/svg/elements.svg',
+                          width: 20,
+                          height: 20,
+                          color: Colors.white70,
+                        ),
+                        tooltip: '',
+                      ),
+                      Container(
+                        width: 1,
+                        height: 62,
+                        color: Colors.black45,
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      const SizedBox(width: 5),
                       const _StatusDot(),
                       const SizedBox(width: 12),
                     ],
@@ -109,7 +132,7 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
       decoration: BoxDecoration(
         color: const Color(0xFF536074),
         borderRadius: const BorderRadius.only(
@@ -129,21 +152,6 @@ class _Chip extends StatelessWidget {
   }
 }
 
-class _IconBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onPressed;
-  const _IconBtn({required this.icon, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      onPressed: onPressed,
-      icon: Icon(icon, color: Colors.white70),
-      tooltip: '', // без тултипа
-    );
-  }
-}
-
 class _StatusDot extends StatelessWidget {
   const _StatusDot({super.key});
 
@@ -151,8 +159,24 @@ class _StatusDot extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Text('Қанат C', style: TextStyle(color: Colors.white70)),
-        const SizedBox(width: 8),
+        Column(
+          children: [
+            Text('Қанат C', style: TextStyle(color: Colors.white70)),
+            Text('Кассир',
+                style: TextStyle(color: Colors.white70, fontSize: 10)),
+          ],
+        ),
+        const SizedBox(width: 14),
+        SvgPicture.asset('assets/svg/lock.svg',
+            width: 19.5, height: 20.5, color: Colors.white70),
+        const SizedBox(width: 14),
+        Container(
+          width: 1,
+          height: 62,
+          color: Colors.black45,
+          margin: const EdgeInsets.symmetric(horizontal: 8),
+        ),
+        const SizedBox(width: 14),
         Container(
             width: 10,
             height: 10,

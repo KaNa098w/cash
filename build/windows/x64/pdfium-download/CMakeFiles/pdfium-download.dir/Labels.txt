@@ -1,0 +1,14 @@
+# Target labels
+ pdfium-download
+# Source files and their labels
+D:/Programs/cash/build/windows/x64/pdfium-download/CMakeFiles/pdfium-download
+D:/Programs/cash/build/windows/x64/pdfium-download/CMakeFiles/22d348f0a1f96c8da28767a332e769e4/pdfium-download.rule
+D:/Programs/cash/build/windows/x64/pdfium-download/CMakeFiles/3005a9dbb82bc33d31965c38d40c9f74/pdfium-download-complete.rule
+D:/Programs/cash/build/windows/x64/pdfium-download/CMakeFiles/f6e4148080cc8fc8eb26847f9de951a6/pdfium-download-build.rule
+D:/Programs/cash/build/windows/x64/pdfium-download/CMakeFiles/f6e4148080cc8fc8eb26847f9de951a6/pdfium-download-configure.rule
+D:/Programs/cash/build/windows/x64/pdfium-download/CMakeFiles/f6e4148080cc8fc8eb26847f9de951a6/pdfium-download-download.rule
+D:/Programs/cash/build/windows/x64/pdfium-download/CMakeFiles/f6e4148080cc8fc8eb26847f9de951a6/pdfium-download-install.rule
+D:/Programs/cash/build/windows/x64/pdfium-download/CMakeFiles/f6e4148080cc8fc8eb26847f9de951a6/pdfium-download-mkdir.rule
+D:/Programs/cash/build/windows/x64/pdfium-download/CMakeFiles/f6e4148080cc8fc8eb26847f9de951a6/pdfium-download-patch.rule
+D:/Programs/cash/build/windows/x64/pdfium-download/CMakeFiles/f6e4148080cc8fc8eb26847f9de951a6/pdfium-download-test.rule
+D:/Programs/cash/build/windows/x64/pdfium-download/CMakeFiles/f6e4148080cc8fc8eb26847f9de951a6/pdfium-download-update.rule

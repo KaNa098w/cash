@@ -1,16 +1,11 @@
 # This is a generated file; do not edit or check into version control.
-flutter_secure_storage=/Users/beyinfotech/.pub-cache/hosted/pub.dev/flutter_secure_storage-9.2.4/
-flutter_secure_storage_linux=/Users/beyinfotech/.pub-cache/hosted/pub.dev/flutter_secure_storage_linux-1.2.3/
-flutter_secure_storage_macos=/Users/beyinfotech/.pub-cache/hosted/pub.dev/flutter_secure_storage_macos-3.1.3/
-flutter_secure_storage_web=/Users/beyinfotech/.pub-cache/hosted/pub.dev/flutter_secure_storage_web-1.2.1/
-flutter_secure_storage_windows=/Users/beyinfotech/.pub-cache/hosted/pub.dev/flutter_secure_storage_windows-3.1.2/
-path_provider=/Users/beyinfotech/.pub-cache/hosted/pub.dev/path_provider-2.1.5/
-path_provider_android=/Users/beyinfotech/.pub-cache/hosted/pub.dev/path_provider_android-2.2.19/
-path_provider_foundation=/Users/beyinfotech/.pub-cache/hosted/pub.dev/path_provider_foundation-2.4.2/
-path_provider_linux=/Users/beyinfotech/.pub-cache/hosted/pub.dev/path_provider_linux-2.2.1/
-path_provider_windows=/Users/beyinfotech/.pub-cache/hosted/pub.dev/path_provider_windows-2.3.0/
-screen_retriever=/Users/beyinfotech/.pub-cache/hosted/pub.dev/screen_retriever-0.2.0/
-screen_retriever_linux=/Users/beyinfotech/.pub-cache/hosted/pub.dev/screen_retriever_linux-0.2.0/
-screen_retriever_macos=/Users/beyinfotech/.pub-cache/hosted/pub.dev/screen_retriever_macos-0.2.0/
-screen_retriever_windows=/Users/beyinfotech/.pub-cache/hosted/pub.dev/screen_retriever_windows-0.2.0/
-window_manager=/Users/beyinfotech/.pub-cache/hosted/pub.dev/window_manager-0.5.1/
+flutter_secure_storage=C:\\Users\\1\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\flutter_secure_storage-9.2.4\\
+flutter_secure_storage_linux=C:\\Users\\1\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\flutter_secure_storage_linux-1.2.3\\
+flutter_secure_storage_macos=C:\\Users\\1\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\flutter_secure_storage_macos-3.1.3\\
+flutter_secure_storage_web=C:\\Users\\1\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\flutter_secure_storage_web-1.2.1\\
+flutter_secure_storage_windows=C:\\Users\\1\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\flutter_secure_storage_windows-3.1.2\\
+path_provider=C:\\Users\\1\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\path_provider-2.1.5\\
+path_provider_android=C:\\Users\\1\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\path_provider_android-2.2.15\\
+path_provider_foundation=C:\\Users\\1\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\path_provider_foundation-2.4.1\\
+path_provider_linux=C:\\Users\\1\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\path_provider_linux-2.2.1\\
+path_provider_windows=C:\\Users\\1\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\path_provider_windows-2.3.0\\

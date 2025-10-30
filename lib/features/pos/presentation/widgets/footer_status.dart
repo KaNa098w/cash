@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:pos_desktop_clean/core/utils/app_theme.dart';
 
@@ -21,29 +23,34 @@ class FooterStatus extends StatelessWidget {
                 color: const Color(0xFF1F2937),
                 borderRadius: BorderRadius.circular(17),
               ),
-              child: const Column(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Icon(Icons.access_time_filled, color: Colors.white),
-                      Text(
-                        '19:45',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 34,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      const Icon(Icons.access_time_filled, color: Colors.white),
+                      StreamBuilder(
+                        stream: Stream.periodic(const Duration(seconds: 1)),
+                        builder: (context, snapshot) {
+                          return Text(
+                            TimeOfDay.now().format(context),
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 34,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
-                  SizedBox(height: 2),
-                  Text('7 Октябрь | Вторник',
+                  const SizedBox(height: 2),
+                  const Text('7 Октябрь | Вторник',
                       style: TextStyle(color: Colors.white70)),
-                  SizedBox(height: 2),
-                  Text(
+                  const SizedBox(height: 2),
+                  const Text(
                     'Касса-1  \nНаименование Магазина',
                     style: TextStyle(color: Colors.white54, fontSize: 11),
                   ),
@@ -57,7 +64,7 @@ class FooterStatus extends StatelessWidget {
               child: Container(
                 decoration: BoxDecoration(
                   border: Border.all(color: const Color(0xFFD9D9D9)),
-                  color: AppTheme.grey,
+                  color: ThemeColors.grey,
                   borderRadius: BorderRadius.circular(17),
                 ),
                 padding: const EdgeInsets.only(left: 8, top: 12, right: 8),
@@ -71,33 +78,60 @@ class FooterStatus extends StatelessWidget {
   }
 }
 
-class _ProductsStrip extends StatelessWidget {
-  _ProductsStrip({super.key});
+class _ProductsStrip extends StatefulWidget {
+  const _ProductsStrip({super.key});
+
+  @override
+  State<_ProductsStrip> createState() => _ProductsStripState();
+}
+
+class _ProductsStripState extends State<_ProductsStrip> {
+  final _ctrl = ScrollController();
 
   // мок-данные для примера
   final _items = List.generate(
-    8,
-    (i) => (
-      name: 'Наименование товара ... 2 строк',
-      price: 315.00,
-    ),
+    20,
+    (i) => (name: 'Наименование товара ... 2 строк', price: 315.00),
   );
 
   @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ListView.separated(
-      scrollDirection: Axis.horizontal,
-      padding: EdgeInsets.zero,
-      itemCount: _items.length,
-      reverse: true,
-      separatorBuilder: (_, __) => const SizedBox(width: 16),
-      itemBuilder: (ctx, i) {
-        final it = _items[i];
-        return _ProductCard(
-          title: it.name,
-          price: it.price,
-        );
-      },
+    return ScrollConfiguration(
+      // даём перетаскивать контент мышью/тачпадом/пером
+      behavior: const MaterialScrollBehavior().copyWith(
+        dragDevices: {
+          PointerDeviceKind.touch,
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.stylus,
+          PointerDeviceKind.unknown,
+        },
+      ),
+      child: Scrollbar(
+        controller: _ctrl,
+        // thumbVisibility: true, // всегда показывать ползунок
+        // trackVisibility: true, // и дорожку
+        thickness: 4,
+        radius: const Radius.circular(8),
+        notificationPredicate: (notif) => notif.metrics.axis == Axis.horizontal,
+        child: ListView.separated(
+          controller: _ctrl,
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.zero,
+          itemCount: _items.length,
+          reverse: true,
+          separatorBuilder: (_, __) => const SizedBox(width: 16),
+          itemBuilder: (ctx, i) {
+            final it = _items[i];
+            return _ProductCard(title: it.name, price: it.price);
+          },
+        ),
+      ),
     );
   }
 }

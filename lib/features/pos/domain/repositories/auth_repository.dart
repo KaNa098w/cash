@@ -7,7 +7,8 @@ class AuthRepositoryImpl implements AuthRepository {
   String? _token;
 
   @override
-  Future<String> signIn({required String login, required String password}) async {
+  Future<String> signIn(
+      {required String login, required String password}) async {
     await Future<void>.delayed(const Duration(milliseconds: 600));
     // демо-логика
     if (login.trim().isEmpty || password.trim().isEmpty) {

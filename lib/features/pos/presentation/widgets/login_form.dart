@@ -27,7 +27,9 @@ class _LoginFormState extends State<LoginForm> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    await context.read<AuthCubit>().signIn(_login.text, _password.text, rememberMe: _remember);
+    await context
+        .read<AuthCubit>()
+        .signIn(_login.text, _password.text, rememberMe: _remember);
     final st = context.read<AuthCubit>().state;
     if (st is AuthAuthenticated && mounted) context.go('/pos');
   }
@@ -52,10 +54,14 @@ class _LoginFormState extends State<LoginForm> {
             // Логин
             TextFormField(
               controller: _login,
-              autofillHints: const [AutofillHints.username, AutofillHints.email],
+              autofillHints: const [
+                AutofillHints.username,
+                AutofillHints.email
+              ],
               textInputAction: TextInputAction.next,
               decoration: deco('Логин или e-mail'),
-              validator: (v) => (v == null || v.trim().isEmpty) ? 'Введите логин' : null,
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Введите логин' : null,
             ),
             const SizedBox(height: 14),
 
@@ -68,11 +74,14 @@ class _LoginFormState extends State<LoginForm> {
               decoration: deco(
                 'Пароль',
                 suffix: IconButton(
-                  onPressed: () => setState(() => _showPassword = !_showPassword),
-                  icon: Icon(_showPassword ? Icons.visibility_off : Icons.visibility),
+                  onPressed: () =>
+                      setState(() => _showPassword = !_showPassword),
+                  icon: Icon(
+                      _showPassword ? Icons.visibility_off : Icons.visibility),
                 ),
               ),
-              validator: (v) => (v == null || v.length < 4) ? 'Минимум 4 символа' : null,
+              validator: (v) =>
+                  (v == null || v.length < 4) ? 'Минимум 4 символа' : null,
             ),
             const SizedBox(height: 10),
 
@@ -80,7 +89,9 @@ class _LoginFormState extends State<LoginForm> {
               children: [
                 Checkbox(
                   value: _remember,
-                  onChanged: widget.loading ? null : (v) => setState(() => _remember = v ?? true),
+                  onChanged: widget.loading
+                      ? null
+                      : (v) => setState(() => _remember = v ?? true),
                 ),
                 const Text('Запомнить меня'),
                 const Spacer(),
@@ -98,11 +109,14 @@ class _LoginFormState extends State<LoginForm> {
               child: FilledButton(
                 onPressed: widget.loading ? null : _submit,
                 style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
                 child: widget.loading
                     ? const SizedBox(
-                        width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.2),
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
                       )
                     : const Text('Войти'),
               ),
@@ -114,9 +128,11 @@ class _LoginFormState extends State<LoginForm> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.info_outline, size: 18, color: theme.colorScheme.primary),
+                Icon(Icons.info_outline,
+                    size: 18, color: theme.colorScheme.primary),
                 const SizedBox(width: 6),
-                Text('Демо: любой логин, пароль ≥ 4 символов', style: theme.textTheme.bodySmall),
+                Text('Демо: любой логин, пароль ≥ 4 символов',
+                    style: theme.textTheme.bodySmall),
               ],
             ),
           ],

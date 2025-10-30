@@ -43,7 +43,7 @@ class CartList extends StatelessWidget {
                               width: 30,
                               height: 30,
                               decoration: BoxDecoration(
-                                color: AppTheme.grey,
+                                color: ThemeColors.grey,
                                 border:
                                     Border.all(color: const Color(0xFFE5E7EB)),
                                 borderRadius: BorderRadius.circular(8),
@@ -86,9 +86,9 @@ class CartList extends StatelessWidget {
 
                             // Скидка
                             SizedBox(
-                              width: 70,
-                              child: _DiscountChip(it.discount.toStringAsFixed(0))
-                            ),
+                                width: 70,
+                                child: _DiscountChip(
+                                    it.discount.toStringAsFixed(0))),
                             const SizedBox(width: 16),
 
                             // Сумма
@@ -177,7 +177,7 @@ class _DiscountChip extends StatelessWidget {
             fontSize: 12,
             color: Color(0xFF16A34A),
             fontWeight: FontWeight.w600),
-            textAlign: TextAlign.center,
+        textAlign: TextAlign.center,
       ),
     );
   }

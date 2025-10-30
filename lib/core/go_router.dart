@@ -27,7 +27,8 @@ GoRouter createRouter(BuildContext context) {
     refreshListenable: _GoRouterAuthRefresh(auth.stream),
     redirect: (ctx, state) {
       final authed = auth.state is AuthAuthenticated;
-      final loggingIn = state.matchedLocation == '/login'; // ok для go_router ^14
+      final loggingIn =
+          state.matchedLocation == '/login'; // ok для go_router ^14
       if (!authed && !loggingIn) return '/login';
       if (authed && loggingIn) return '/pos';
       return null;

@@ -27,7 +27,8 @@ class LoginPage extends StatelessWidget {
             child: Card(
               elevation: 0,
               color: Colors.white.withOpacity(0.9),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24)),
               child: Row(
                 children: [
                   // Иллюстрация / брендовая панель
@@ -38,7 +39,8 @@ class LoginPage extends StatelessWidget {
                   // Форма
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 40, vertical: 32),
                       child: BlocConsumer<AuthCubit, AuthState>(
                         listener: (context, state) {
                           if (state is AuthFailure) {
@@ -58,7 +60,8 @@ class LoginPage extends StatelessWidget {
                               const Spacer(),
                               Text(
                                 '© ${DateTime.now().year} POS Desktop',
-                                style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54),
+                                style: theme.textTheme.bodySmall!
+                                    .copyWith(color: Colors.black54),
                               ),
                             ],
                           );
@@ -101,7 +104,9 @@ class _LeftBrandPane extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
             ),
             alignment: Alignment.center,
-            child: Text('POS', style: theme.textTheme.titleMedium!.copyWith(fontWeight: FontWeight.w800)),
+            child: Text('POS',
+                style: theme.textTheme.titleMedium!
+                    .copyWith(fontWeight: FontWeight.w800)),
           ),
           const Spacer(),
           Text(
@@ -110,7 +115,10 @@ class _LeftBrandPane extends StatelessWidget {
               color: Colors.white,
               height: 1.05,
               fontWeight: FontWeight.w800,
-              shadows: const [Shadow(blurRadius: 10, color: Colors.black26, offset: Offset(0, 2))],
+              shadows: const [
+                Shadow(
+                    blurRadius: 10, color: Colors.black26, offset: Offset(0, 2))
+              ],
             ),
           ),
           const SizedBox(height: 12),
@@ -131,7 +139,10 @@ class _MiniFeatures extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = Theme.of(context).textTheme.bodyMedium!.copyWith(color: Colors.white.withOpacity(.9));
+    final style = Theme.of(context)
+        .textTheme
+        .bodyMedium!
+        .copyWith(color: Colors.white.withOpacity(.9));
     Widget pill(String t) => Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           margin: const EdgeInsets.only(right: 8, bottom: 8),

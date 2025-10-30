@@ -10,7 +10,6 @@ import '../../features/pos/data/repositories/pos_repository_impl.dart';
 import '../../features/pos/domain/repositories/pos_repository.dart';
 import '../../features/pos/presentation/state/pos_cubit.dart';
 
-
 final sl = ServiceLocator.instance.getIt;
 
 class ServiceLocator {
@@ -23,13 +22,15 @@ class ServiceLocator {
     getIt.registerLazySingleton<LocalPosDataSource>(() => LocalPosDataSource());
 
     // Repositories
-    getIt.registerLazySingleton<PosRepository>(() => PosRepositoryImpl(getIt()));
+    getIt
+        .registerLazySingleton<PosRepository>(() => PosRepositoryImpl(getIt()));
 
     // --- AUTH ---
     getIt.registerLazySingleton<AuthRepository>(() => AuthRepositoryImpl());
 
     // Cubits
     getIt.registerFactory(() => PosCubit(getIt()));
-    getIt.registerLazySingleton<AuthCubit>(() => AuthCubit(getIt<AuthRepository>()));
+    getIt.registerLazySingleton<AuthCubit>(
+        () => AuthCubit(getIt<AuthRepository>()));
   }
 }

@@ -24,13 +24,21 @@ Future<void> showPosActionsDialog(BuildContext context) {
     _PosAction('РАСПЕЧАТАТЬ ЧЕК\nПОСЛЕДНЕЙ ПРОДАЖИ', () {/* TODO */}),
     _PosAction('СИНХРОНИЗАЦИЯ', () {/* TODO */}),
     _PosAction('СВЕРНУТЬ', () async {
-      // закрываем диалог, чтобы не держать route поверх
       Navigator.of(context, rootNavigator: true).pop();
 
-      // только desktop
       if (!kIsWeb &&
           (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+        // 1) выйти из полноэкранного перед сворачиванием
+        if (await windowManager.isFullScreen()) {
+          await windowManager.setFullScreen(false);
+        }
+        // 2) временно разрешить сворачивание
+        await windowManager.setMinimizable(true);
+        // 3) свернуть
         await windowManager.minimize();
+        // 4) (не обязательно) сразу вернуть запрет — на некоторых платформах это
+        //    сработает уже после события minimize; если нет — вернётся в onWindowRestore()
+        await windowManager.setMinimizable(false);
       }
     }),
     _PosAction('ПРОВЕРИТЬ ОБНОВЛЕНИЕ', () {/* TODO */}),
@@ -45,7 +53,7 @@ Future<void> showPosActionsDialog(BuildContext context) {
     barrierDismissible: true,
     builder: (ctx) {
       return Dialog(
-        backgroundColor: AppTheme.greyB,
+        backgroundColor: ThemeColors.greyB,
         insetPadding: const EdgeInsets.all(20),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: ConstrainedBox(

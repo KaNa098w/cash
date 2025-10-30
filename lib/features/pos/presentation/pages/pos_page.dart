@@ -12,9 +12,7 @@ class PosPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
-      appBar:  PreferredSize(
-        
-        
+      appBar: PreferredSize(
         preferredSize: Size.fromHeight(70),
         child: TopBar(),
       ),

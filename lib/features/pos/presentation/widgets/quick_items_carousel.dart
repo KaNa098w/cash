@@ -15,17 +15,19 @@ class QuickItemsCarousel extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
-          children: List.generate(7, (i) => Expanded(
-            child: Container(
-              margin: EdgeInsets.only(right: i==6?0:12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-              ),
-              child: const Center(child: Icon(Icons.add)),
-            ),
-          )),
+          children: List.generate(
+              7,
+              (i) => Expanded(
+                    child: Container(
+                      margin: EdgeInsets.only(right: i == 6 ? 0 : 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: const Center(child: Icon(Icons.add)),
+                    ),
+                  )),
         ),
       ),
     );

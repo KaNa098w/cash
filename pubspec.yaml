@@ -18,13 +18,25 @@ dependencies:
   go_router: ^14.2.0
   flutter_secure_storage: ^9.2.2
   window_manager: ^0.5.1
+  flutter_onscreen_keyboard: ^0.4.1
+  printing: ^5.14.2
+  pdf: ^3.11.3
+  drift: ^2.18.0
+  drift_sqflite: ^2.0.0 # опционально для mobile; для desktop достаточно drift + native
+  path_provider: ^2.1.4
+  path: ^1.9.0
+  uuid: ^4.4.0
+  flutter_svg: ^2.0.9
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  drift_dev: ^2.18.0
+  build_runner: ^2.4.12
 
 flutter:
   uses-material-design: true
   assets:
-    - assets/
+    - assets/icon/
+    - assets/svg/
