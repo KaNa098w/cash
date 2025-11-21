@@ -23,14 +23,14 @@ class CartList extends StatelessWidget {
                   itemBuilder: (context, i) {
                     final it = state.items[i];
                     return Card(
-                      margin: const EdgeInsets.only(bottom: 2),
+                      margin: const EdgeInsets.only(bottom: 8),
                       color: Colors.white,
                       elevation: 0,
                       clipBehavior: Clip.antiAlias,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(
                             14), // «чуть овальные концовки»
-                        side: const BorderSide(color: Color(0xFFE5E7EB)),
+                       
                       ),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(

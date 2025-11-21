@@ -1,0 +1,5 @@
+
+module printing.Swift {
+  header "printing-Swift.h"
+  requires objc
+}

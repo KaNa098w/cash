@@ -254,7 +254,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                       child: _ChoiceButton(
                         text: 'Безналичный',
                         color: red,
-                        svgAsset: 'assets/svg/card_icon.svg',
+                        svgAsset: 'assets/svg/card.svg',
                         selected: state.paymentKind == PaymentKind.card,
                         onTap: () => cubit.setPaymentKind(PaymentKind.card),
                       ),

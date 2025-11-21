@@ -1,0 +1,10 @@
+framework module printing {
+  umbrella header "printing-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module printing.__Swift {
+  exclude header "printing-Swift.h"
+}

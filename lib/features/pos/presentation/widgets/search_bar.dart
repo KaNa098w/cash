@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_onscreen_keyboard/flutter_onscreen_keyboard.dart';
+// import 'package:flutter_onscreen_keyboard/flutter_onscreen_keyboard.dart';
 
 import 'package:pos_desktop_clean/core/utils/app_theme.dart';
 import '../state/pos_cubit.dart';
@@ -43,7 +43,7 @@ class _SearchBarState extends State<SearchBar> {
 
   void _openKeyboard() {
     // поле уже в фокусе — просто открыть экранную
-    OnscreenKeyboard.of(context).open(); // ручной вызов
+    // OnscreenKeyboard.of(context).open(); // ручной вызов
   }
 
   void _ensureValidSelection() {
@@ -72,9 +72,9 @@ class _SearchBarState extends State<SearchBar> {
                 border: Border.all(color: ThemeColors.grey, width: 15),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: OnscreenKeyboardTextField(
+              child: TextField(
                 // ВАЖНО: клавиатура не открывается на фокусе
-                enableOnscreenKeyboard: false, // <- ключевая строка
+                // enableOnscreenKeyboard: false, // <- ключевая строка
                 controller: _controller,
                 focusNode: _focusNode,
                 autofocus: true, // поле активно сразу (для сканера)

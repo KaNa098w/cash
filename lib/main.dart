@@ -4,10 +4,11 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter_onscreen_keyboard/flutter_onscreen_keyboard.dart'; // ⬅️ добавь
+// import 'package:flutter_onscreen_keyboard/flutter_onscreen_keyboard.dart'; // ⬅️ добавь
 
 import 'core/theme.dart';
 import 'core/di/service_locator.dart';
@@ -33,13 +34,13 @@ Future<void> main() async {
           windowButtonVisibility: false,
         );
       }
-      await windowManager.setResizable(false);
-      await windowManager.setMinimizable(false);
-      await windowManager.setMaximizable(false);
-      await windowManager.setPreventClose(true);
-      await windowManager.setFullScreen(true);
-      await windowManager.show();
-      await windowManager.focus();
+      // await windowManager.setResizable(false);
+      // await windowManager.setMinimizable(false);
+      // await windowManager.setMaximizable(false);
+      // await windowManager.setPreventClose(true);
+      // await windowManager.setFullScreen(true);
+      // await windowManager.show();
+      // await windowManager.focus();
     });
 
     windowManager.addListener(_KioskWindowListener());
@@ -52,9 +53,9 @@ Future<void> main() async {
 class _KioskWindowListener with WindowListener {
   @override
   void onWindowRestore() async {
-    await windowManager.setMinimizable(false);
-    await windowManager.setFullScreen(true);
-    await windowManager.focus();
+    // await windowManager.setMinimizable(false);
+    // await windowManager.setFullScreen(true);
+    // await windowManager.focus();
   }
 }
 
@@ -78,14 +79,14 @@ class PosApp extends StatelessWidget {
             routerConfig: router,
 
             // ⬇️ ВКЛЮЧАЕМ экранную клавиатуру для всего приложения
-            builder: OnscreenKeyboard.builder(
-              // ширина панели клавиатуры (например, половина экрана)
-              width: (ctx) => MediaQuery.sizeOf(ctx).width * 0.5,
-              // при желании можно задать высоту:
-              // height: (ctx) => MediaQuery.sizeOf(ctx).height * 0.4,
-              // смещение от низа (в пикселях), если нужно:
-              // bottom: (ctx) => 0,
-            ),
+            // builder: OnscreenKeyboard.builder(
+            //   // ширина панели клавиатуры (например, половина экрана)
+            //   width: (ctx) => MediaQuery.sizeOf(ctx).width * 0.5,
+            //   // при желании можно задать высоту:
+            //   // height: (ctx) => MediaQuery.sizeOf(ctx).height * 0.4,
+            //   // смещение от низа (в пикселях), если нужно:
+            //   // bottom: (ctx) => 0,
+            // ),
           );
         },
       ),

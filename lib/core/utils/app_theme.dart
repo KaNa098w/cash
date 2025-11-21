@@ -9,24 +9,5 @@ class ThemeColors {
   static const grey = Color(0x80D9D9D9);
   static const greyPanel = Color(0xFFD9D9D9);
   static const green1 = Color(0xFF33CC99);
-
-  static ThemeData get light {
-    final base = ThemeData.light(useMaterial3: false);
-    return base.copyWith(
-      scaffoldBackgroundColor: Colors.white,
-      textTheme: base.textTheme.apply(fontFamily: 'Roboto'),
-      dividerColor: const Color(0xFFE6EEF3),
-      inputDecorationTheme: const InputDecorationTheme(
-        isDense: true,
-        border: OutlineInputBorder(),
-        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          minimumSize: const Size(64, 44),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      ),
-    );
-  }
+  static final Color greyBack = Colors.grey.shade100;
 }

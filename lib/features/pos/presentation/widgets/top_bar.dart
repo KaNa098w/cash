@@ -1,98 +1,180 @@
+// top_bar.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
-import 'package:pos_desktop_clean/features/pos/presentation/widgets/show_pos_action_dialog.dart';
+
+import '../state/pos_cubit.dart';
+import 'show_pos_action_dialog.dart';
 
 class TopBar extends StatelessWidget {
   const TopBar({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return AppBar(
-      automaticallyImplyLeading:
-          false, // Optional: removes the default back button
-      titleSpacing: 0, // Removes default padding for the title
-      flexibleSpace: SafeArea(
-        child: Column(
-          mainAxisAlignment:
-              MainAxisAlignment.end, // This pushes the Row to the bottom
-          children: [
-            // Add padding to control spacing from the edges of the AppBar
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
-              child: Row(
-                children: [
-                  // The scrollable list of tabs, expanded to take available space
-                  Expanded(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          _Chip(text: 'История продаж', icon: Icons.history),
-                          SizedBox(width: 5),
+    return Container(
+      color: const Color(0xFF262B35),
+      height: 57,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
+        child: BlocBuilder<PosCubit, PosState>(
+          buildWhen: (p, n) =>
+              p.tickets != n.tickets ||
+              p.activeTicketId != n.activeTicketId ||
+              p.isHistoryMode != n.isHistoryMode,
+          builder: (context, state) {
+            final cubit = context.read<PosCubit>();
+            final canCloseTickets = state.tickets.length > 1;
+
+            return Row(
+              children: [
+                // вкладки слева
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _Chip(
+                          text: 'История продаж',
+                          icon: Icons.history,
+                          active: state.isHistoryMode,
+                          onTap: cubit.showHistory,
+                        ),
+                        const SizedBox(width: 5),
+
+                        for (final t in state.tickets) ...[
                           _TicketTab(
-                              text: 'Чек № 234567 | 10 товаров', active: true),
-                          SizedBox(width: 5),
-                          _TicketTab(text: 'Чек № 234567 | 10 товаров'),
-                          SizedBox(width: 5),
-                          TextButton(
-                              onPressed: () {},
-                              child: Text(
-                                '+ Отложка',
-                                style: TextStyle(
-                                    color: Color(0xFFFFFFFF),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w400),
-                              ))
+                            text: 'Чек № ${t.id} | ${t.items.length} товаров',
+                            active: !state.isHistoryMode &&
+                                t.id == state.activeTicketId,
+                            onTap: () => cubit.switchTicket(t.id),
+                            showClose: canCloseTickets,
+                            onClose: canCloseTickets
+                                ? () => cubit.closeTicket(t.id)
+                                : null,
+                          ),
+                          const SizedBox(width: 5),
                         ],
-                      ),
+
+                        TextButton(
+                          onPressed: cubit.createHoldTicket,
+                          child: const Text(
+                            '+ Отложка',
+                            style: TextStyle(
+                              color: Color(0xFFFFFFFF),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  // Spacer between the scrollable list and the action buttons
-                  const SizedBox(width: 12),
-                  // The action buttons on the right
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        onPressed: () {},
-                        icon: SvgPicture.asset(
-                          'assets/svg/bag.svg',
-                          width: 20,
-                          height: 20,
-                          color: Colors.white70,
-                        ),
-                        tooltip: '',
+                ),
+
+                const SizedBox(width: 12),
+
+                // иконки справа
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      onPressed: () {},
+                      icon: SvgPicture.asset(
+                        'assets/svg/bag.svg',
+                        width: 20,
+                        height: 20,
+                        color: Colors.white70,
                       ),
-                      Container(
-                        width: 1,
-                        height: 62,
-                        color: Colors.black45,
-                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                      tooltip: '',
+                    ),
+                    _divider(),
+                    IconButton(
+                      onPressed: () => showPosActionsDialog(context),
+                      icon: SvgPicture.asset(
+                        'assets/svg/elements.svg',
+                        width: 20,
+                        height: 20,
+                        color: Colors.white70,
                       ),
-                      IconButton(
-                        onPressed: () => showPosActionsDialog(context),
-                        icon: SvgPicture.asset(
-                          'assets/svg/elements.svg',
-                          width: 20,
-                          height: 20,
-                          color: Colors.white70,
-                        ),
-                        tooltip: '',
-                      ),
-                      Container(
-                        width: 1,
-                        height: 62,
-                        color: Colors.black45,
-                        margin: const EdgeInsets.symmetric(horizontal: 8),
-                      ),
-                      const SizedBox(width: 5),
-                      const _StatusDot(),
-                      const SizedBox(width: 12),
-                    ],
-                  ),
-                ],
-              ),
+                      tooltip: '',
+                    ),
+                    _divider(),
+                    const SizedBox(width: 5),
+                    const _StatusDot(),
+                    const SizedBox(width: 12),
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _divider() => Container(
+        width: 1,
+        height: 62,
+        color: Colors.black45,
+        margin: const EdgeInsets.symmetric(horizontal: 8),
+      );
+}
+
+class _TicketTab extends StatelessWidget {
+  final String text;
+  final bool active;
+  final VoidCallback? onTap;
+
+  final bool showClose;
+  final VoidCallback? onClose;
+
+  const _TicketTab({
+    required this.text,
+    this.active = false,
+    this.onTap,
+    this.showClose = false,
+    this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = active ? const Color(0xFFF3F4F6) : const Color(0xFF536074);
+    final textColor = active ? Colors.black : Colors.white70;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(14),
+            topRight: Radius.circular(14),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              text,
+              style: TextStyle(color: textColor, fontSize: 12),
+              overflow: TextOverflow.ellipsis,
             ),
+            if (showClose && onClose != null) ...[
+              const SizedBox(width: 8),
+              GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () {
+                  // чтобы клик по X не триггерил onTap вкладки
+                  onClose?.call();
+                },
+                child: Icon(
+                  Icons.close,
+                  size: 14,
+                  color: active ? Colors.black54 : Colors.white70,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -100,53 +182,43 @@ class TopBar extends StatelessWidget {
   }
 }
 
-class _TicketTab extends StatelessWidget {
-  final String text;
-  final bool active;
-  const _TicketTab({required this.text, this.active = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final bg = active ? Color(0xFFF3F4F6) : const Color(0xFF536074);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(14),
-          topRight: Radius.circular(14),
-        ),
-      ),
-      child: Text(text,
-          style: TextStyle(
-              color: active ? Colors.black : Colors.white70, fontSize: 12)),
-    );
-  }
-}
-
 class _Chip extends StatelessWidget {
   final String text;
   final IconData icon;
-  const _Chip({required this.text, required this.icon});
+  final bool active;
+  final VoidCallback onTap;
+
+  const _Chip({
+    required this.text,
+    required this.icon,
+    required this.active,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF536074),
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(14),
-          topRight: Radius.circular(14),
+    final bg = active ? const Color(0xFFF3F4F6) : const Color(0xFF536074);
+    final iconColor = active ? Colors.black : Colors.white70;
+    final textColor = iconColor;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(14),
+            topRight: Radius.circular(14),
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: Colors.white70),
-          const SizedBox(width: 6),
-          Text(text,
-              style: const TextStyle(color: Colors.white70, fontSize: 12)),
-        ],
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: iconColor),
+            const SizedBox(width: 6),
+            Text(text, style: TextStyle(color: textColor, fontSize: 12)),
+          ],
+        ),
       ),
     );
   }
@@ -160,15 +232,18 @@ class _StatusDot extends StatelessWidget {
     return Row(
       children: [
         Column(
-          children: [
+          children: const [
             Text('Қанат C', style: TextStyle(color: Colors.white70)),
-            Text('Кассир',
-                style: TextStyle(color: Colors.white70, fontSize: 10)),
+            Text('Кассир', style: TextStyle(color: Colors.white70, fontSize: 10)),
           ],
         ),
         const SizedBox(width: 14),
-        SvgPicture.asset('assets/svg/lock.svg',
-            width: 19.5, height: 20.5, color: Colors.white70),
+        SvgPicture.asset(
+          'assets/svg/lock.svg',
+          width: 19.5,
+          height: 20.5,
+          color: Colors.white70,
+        ),
         const SizedBox(width: 14),
         Container(
           width: 1,
@@ -178,10 +253,13 @@ class _StatusDot extends StatelessWidget {
         ),
         const SizedBox(width: 14),
         Container(
-            width: 10,
-            height: 10,
-            decoration: const BoxDecoration(
-                color: Colors.green, shape: BoxShape.circle)),
+          width: 10,
+          height: 10,
+          decoration: const BoxDecoration(
+            color: Colors.green,
+            shape: BoxShape.circle,
+          ),
+        ),
       ],
     );
   }
