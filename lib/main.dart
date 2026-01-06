@@ -4,26 +4,34 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pos_desktop_clean/core/di/api/device_id_store.dart';
+import 'package:pos_desktop_clean/features/pos/domain/repositories/auth_repository.dart';
+import 'package:pos_desktop_clean/features/pos/domain/repositories/product_repository.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/pages/products/product_bloc/product_cubit.dart';
+import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:go_router/go_router.dart';
-// import 'package:flutter_onscreen_keyboard/flutter_onscreen_keyboard.dart'; // ⬅️ добавь
 
-import 'core/theme.dart';
-import 'core/di/service_locator.dart';
-import 'core/go_router.dart';
+import 'core/di/api/app_config.dart';
+import 'core/di/api/service_locator.dart';
+import 'core/route/go_router.dart';
 
+import 'core/provider/auth_provider.dart';
+import 'features/pos/domain/repositories/pos_repository.dart';
 import 'features/pos/presentation/state/pos_cubit.dart';
-import 'features/pos/presentation/state/auth_cubit.dart';
+import 'features/pos/presentation/pages/auth/auth_bloc/auth_cubit.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
 
   final isDesktop =
       !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+
   if (isDesktop) {
     await windowManager.ensureInitialized();
+    AppConfig.init(env: AppEnvironment.dev);
 
     const options = WindowOptions(backgroundColor: Colors.transparent);
 
@@ -34,29 +42,45 @@ Future<void> main() async {
           windowButtonVisibility: false,
         );
       }
-      // await windowManager.setResizable(false);
-      // await windowManager.setMinimizable(false);
-      // await windowManager.setMaximizable(false);
-      // await windowManager.setPreventClose(true);
-      // await windowManager.setFullScreen(true);
-      // await windowManager.show();
-      // await windowManager.focus();
     });
 
+    await initDependencies();
     windowManager.addListener(_KioskWindowListener());
+  } else {
+    AppConfig.init(env: AppEnvironment.dev);
+    await initDependencies();
   }
 
-  await ServiceLocator.instance.init();
-  runApp(const PosApp());
+  // ✅ ВАЖНО: создаём и инициализируем до runApp
+  final authProvider = AuthTokenProvider();
+  await authProvider.init();
+  sl<DeviceIdStore>().deviceId = authProvider.deviceId;
+
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthTokenProvider>.value(value: authProvider),
+        BlocProvider<PosCubit>(
+          create: (_) => PosCubit(sl<PosRepository>()),
+        ),
+        BlocProvider<AuthCubit>(
+          create: (ctx) => AuthCubit(
+            authRepository: sl<AuthRepository>(),
+            tokenProvider: ctx.read<AuthTokenProvider>(),
+          ),
+        ),
+        BlocProvider<ProductsCubit>(
+          create: (_) => ProductsCubit(sl<ProductRepository>()),
+        ),
+      ],
+      child: const PosApp(),
+    ),
+  );
 }
 
 class _KioskWindowListener with WindowListener {
   @override
-  void onWindowRestore() async {
-    // await windowManager.setMinimizable(false);
-    // await windowManager.setFullScreen(true);
-    // await windowManager.focus();
-  }
+  void onWindowRestore() async {}
 }
 
 class PosApp extends StatelessWidget {
@@ -64,32 +88,12 @@ class PosApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MultiBlocProvider(
-      providers: [
-        BlocProvider(create: (_) => sl<PosCubit>()..seedDemo()),
-        BlocProvider(create: (_) => sl<AuthCubit>()),
-      ],
-      child: Builder(
-        builder: (context) {
-          final GoRouter router = createRouter(context);
-          return MaterialApp.router(
-            debugShowCheckedModeBanner: false,
-            title: 'POS',
-            theme: PosTheme.light(),
-            routerConfig: router,
+    final router = createRouter(context);
 
-            // ⬇️ ВКЛЮЧАЕМ экранную клавиатуру для всего приложения
-            // builder: OnscreenKeyboard.builder(
-            //   // ширина панели клавиатуры (например, половина экрана)
-            //   width: (ctx) => MediaQuery.sizeOf(ctx).width * 0.5,
-            //   // при желании можно задать высоту:
-            //   // height: (ctx) => MediaQuery.sizeOf(ctx).height * 0.4,
-            //   // смещение от низа (в пикселях), если нужно:
-            //   // bottom: (ctx) => 0,
-            // ),
-          );
-        },
-      ),
+    return MaterialApp.router(
+      debugShowCheckedModeBanner: false,
+      title: 'POS',
+      routerConfig: router,
     );
   }
 }

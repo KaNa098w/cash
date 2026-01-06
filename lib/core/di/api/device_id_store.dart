@@ -1,0 +1,3 @@
+class DeviceIdStore {
+  String? deviceId;
+}

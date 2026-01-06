@@ -1,14 +1,12 @@
-// pos_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:pos_desktop_clean/features/pos/presentation/pages/sales_history_page.dart';
-
-import '../widgets/top_bar.dart';
-import '../widgets/search_bar.dart' as sb;
-import '../widgets/cart_list.dart';
-import '../widgets/payment_panel.dart';
-import '../widgets/footer_status.dart';
-import '../state/pos_cubit.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/pages/sales_history/sales_history_page.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/pages/products/cart_list/cart_list.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/widgets/footer_status.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/widgets/payment_panel.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/widgets/search_bar.dart' as sb;
+import 'package:pos_desktop_clean/features/pos/presentation/widgets/top_bar.dart';
+import '../state/pos_cubit.dart'; // ⬅️ важно не забыть импорт
 
 class PosPage extends StatelessWidget {
   const PosPage({super.key});
@@ -19,18 +17,17 @@ class PosPage extends StatelessWidget {
       backgroundColor: Colors.grey.shade100,
       body: Column(
         children: [
-          const TopBar(), // всё берёт из PosCubit
+          const TopBar(),
 
           Expanded(
             child: BlocBuilder<PosCubit, PosState>(
-              buildWhen: (p, n) => p.isHistoryMode != n.isHistoryMode,
               builder: (context, state) {
+                // если нужен переключатель режимов — можно раскомментить
                 if (state.isHistoryMode) {
                   return const SalesHistoryPage();
                 }
 
-                // обычный POS
-                return  const Row(
+                return Row(
                   children: [
                     Expanded(
                       child: Column(

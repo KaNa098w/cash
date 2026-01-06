@@ -1,6 +1,8 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 
+import 'package:pos_desktop_clean/core/models/product_response.dart'; // ProductModel
+
 import '../../domain/entities/cart_item.dart';
 import '../../domain/entities/payment.dart';
 import '../../domain/entities/product.dart';
@@ -22,7 +24,7 @@ class PosCubit extends Cubit<PosState> {
     final idx = tickets.indexWhere((t) => t.id == state.activeTicketId);
 
     if (idx == -1) {
-      // на всякий случай, если тикета нет — создаём
+      // если активного чека ещё нет — создаём
       final newItems = updater(const []);
       tickets.add(PosTicket(id: state.activeTicketId, items: newItems));
     } else {
@@ -34,70 +36,56 @@ class PosCubit extends Cubit<PosState> {
     return tickets;
   }
 
-  // ====== ДЕМО-ДАННЫЕ В АКТИВНЫЙ ЧЕК ======
+  // ====== МАППИНГ ИЗ ProductModel В ДОМЕННЫЙ Product ======
 
-  void closeTicket(int id) {
+  Product _mapProductModelToProduct(ProductModel m) {
+    // выбираем какой-то стабильный id:
+    // 1) barcode
+    // 2) localCode
+    // 3) name (fallback)
+    final id = (m.id?.toString().isNotEmpty ?? false)
+        ? m.id!.toString()
+        : (m.id?.toString().isNotEmpty ?? false)
+            ? m.id!.toString()
+            : m.name;
+
+    return Product(
+      id: id,
+      name: m.name,
+      price: m.sellingPrice,
+      vat: 0, // TODO: когда появится НДС на бэке — проставишь сюда
+    );
+  }
+
+  void clearAfterPayment() {
     final tickets = [...state.tickets];
-
-    if (tickets.length <= 1) {
-      // последний чек не трогаем
-      return;
-    }
-
-    final idx = tickets.indexWhere((t) => t.id == id);
+    final idx = tickets.indexWhere((t) => t.id == state.activeTicketId);
     if (idx == -1) return;
 
-    tickets.removeAt(idx);
+    tickets[idx] = tickets[idx].copyWith(items: const []);
 
-    var newActiveId = state.activeTicketId;
-
-    // если удалили активный чек — выбрать соседний
-    if (state.activeTicketId == id) {
-      if (idx - 1 >= 0) {
-        newActiveId = tickets[idx - 1].id;
-      } else {
-        newActiveId = tickets.first.id;
-      }
-    }
-
-    emit(
-      state.copyWith(
-        tickets: tickets,
-        activeTicketId: newActiveId,
-      ),
-    );
+    emit(state.copyWith(
+      tickets: tickets,
+      received: 0,
+      paymentKind: PaymentKind.cash,
+      selectedItemIndex: null,
+      clearSelection: true,
+    ));
   }
 
-  void seedDemo() {
-    final demo = List.generate(
-      6,
-      (i) => CartItem(
-        product: Product(
-          id: '$i',
-          name: 'Типа товаргой',
-          price: 2000,
-          vat: 20,
-        ),
-        qty: 4,
-        discount: 20,
-      ),
-    );
+  // ====== ВЫБОР ПОЗИЦИИ В АКТИВНОМ ЧЕКЕ ======
 
-    final tickets = _updateActiveTicketItems((_) => demo);
-    emit(state.copyWith(tickets: tickets));
+  void selectItem(int index) {
+    if (index < 0 || index >= state.items.length) return;
+    emit(state.copyWith(selectedItemIndex: index));
   }
 
-  // ====== ПОИСК ТОВАРОВ ======
+  // ====== ДОБАВЛЕНИЕ ТОВАРА В АКТИВНЫЙ ЧЕК ======
 
-  Future<void> search(String q) async {
-    emit(state.copyWith(searching: true));
-    final results = await repo.searchProducts(q);
-    emit(state.copyWith(searching: false, searchResults: results));
-  }
-
-  // ====== РАБОТА С ТОВАРАМИ В АКТИВНОМ ЧЕКЕ ======
-
+  /// Старый метод — работает с доменной моделью Product
   void add(Product p) {
+    int? selectedIndex; // какой индекс выбрать после добавления/увеличения
+
     final tickets = _updateActiveTicketItems((items) {
       final list = List<CartItem>.from(items);
       final idx = list.indexWhere((e) => e.product.id == p.id);
@@ -105,17 +93,34 @@ class PosCubit extends Cubit<PosState> {
       if (idx >= 0) {
         final it = list[idx];
         list[idx] = it.copyWith(qty: it.qty + 1);
+        selectedIndex = idx;
       } else {
         list.add(CartItem(product: p, qty: 1));
+        selectedIndex = list.length - 1;
       }
 
       return list;
     });
 
-    emit(state.copyWith(tickets: tickets));
+    emit(state.copyWith(
+      tickets: tickets,
+      selectedItemIndex: selectedIndex,
+    ));
+  }
+
+  /// Новый метод — напрямую из ProductModel (из /products)
+  void addFromProductModel(ProductModel m) {
+    final product = _mapProductModelToProduct(m);
+    add(product);
   }
 
   void removeAt(int index) {
+    final itemsBefore = state.items;
+    if (index < 0 || index >= itemsBefore.length) return;
+
+    final prevSelected = state.selectedItemIndex;
+    int? newSelected = prevSelected;
+
     final tickets = _updateActiveTicketItems((items) {
       final list = List<CartItem>.from(items);
       if (index >= 0 && index < list.length) {
@@ -124,10 +129,34 @@ class PosCubit extends Cubit<PosState> {
       return list;
     });
 
-    emit(state.copyWith(tickets: tickets));
+    if (prevSelected != null) {
+      if (prevSelected == index) {
+        final newLength = itemsBefore.length - 1;
+        if (newLength == 0) {
+          newSelected = null;
+        } else {
+          newSelected = index > 0 ? index - 1 : 0;
+        }
+      } else if (prevSelected > index) {
+        newSelected = prevSelected - 1;
+      }
+    }
+
+    emit(state.copyWith(
+      tickets: tickets,
+      selectedItemIndex: newSelected,
+    ));
   }
 
   void setQty(int index, double qty) {
+    if (index < 0 || index >= state.items.length) return;
+
+    // если qty <= 0 — удаляем позицию
+    if (qty <= 0) {
+      removeAt(index);
+      return;
+    }
+
     final tickets = _updateActiveTicketItems((items) {
       final list = List<CartItem>.from(items);
       if (index >= 0 && index < list.length) {
@@ -138,6 +167,31 @@ class PosCubit extends Cubit<PosState> {
 
     emit(state.copyWith(tickets: tickets));
   }
+
+  // Увеличить количество у выбранной позиции
+  void incrementSelectedQty() {
+    final idx = state.selectedItemIndex;
+    if (idx == null) return;
+    final items = state.items;
+    if (idx < 0 || idx >= items.length) return;
+
+    final current = items[idx];
+    setQty(idx, current.qty + 1);
+  }
+
+  // Уменьшить количество у выбранной позиции
+  void decrementSelectedQty() {
+    final idx = state.selectedItemIndex;
+    if (idx == null) return;
+    final items = state.items;
+    if (idx < 0 || idx >= items.length) return;
+
+    final current = items[idx];
+    final newQty = current.qty - 1;
+    setQty(idx, newQty);
+  }
+
+  // ====== АГРЕГАТЫ ======
 
   double get total => state.items.fold<double>(0, (p, e) => p + e.sum);
 
@@ -168,19 +222,53 @@ class PosCubit extends Cubit<PosState> {
 
   // ====== МУЛЬТИЧЕКИ: ОТЛОЖКА И ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК ======
 
+  void closeTicket(int id) {
+    final tickets = [...state.tickets];
+
+    if (tickets.length <= 1) {
+      // последний чек не трогаем
+      return;
+    }
+
+    final idx = tickets.indexWhere((t) => t.id == id);
+    if (idx == -1) return;
+
+    tickets.removeAt(idx);
+
+    var newActiveId = state.activeTicketId;
+
+    // если удалили активный чек — выбрать соседний
+    if (state.activeTicketId == id) {
+      if (idx - 1 >= 0) {
+        newActiveId = tickets[idx - 1].id;
+      } else {
+        newActiveId = tickets.first.id;
+      }
+    }
+
+    emit(
+      state.copyWith(
+        tickets: tickets,
+        activeTicketId: newActiveId,
+        clearSelection: true,
+      ),
+    );
+  }
+
   /// "+ Отложка" — создаём новый чек с 0 товарами и переключаемся на него
   void createHoldTicket() {
     final ids = state.tickets.map((t) => t.id);
     final lastId = ids.isEmpty ? 0 : ids.reduce((a, b) => a > b ? a : b);
     final newId = lastId + 1;
 
-    final newTicket = PosTicket(id: newId, items: const []);
+    final newTicket = PosTicket(id: newId, items: []);
 
     emit(
       state.copyWith(
         tickets: [...state.tickets, newTicket],
         activeTicketId: newId,
         isHistoryMode: false,
+        clearSelection: true,
       ),
     );
   }
@@ -192,6 +280,7 @@ class PosCubit extends Cubit<PosState> {
       state.copyWith(
         activeTicketId: id,
         isHistoryMode: false,
+        clearSelection: true,
       ),
     );
   }

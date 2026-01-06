@@ -3,10 +3,10 @@
 <plist version="1.0">
 <dict>
 	<key>logFormatVersion</key>
-	<integer>11</integer>
+	<integer>12</integer>
 	<key>logs</key>
 	<dict>
-		<key>8EFFA39C-A243-4530-93B6-5D063FA4EC13</key>
+		<key>0F1F4B30-4E88-40E5-8C5B-D03B19F86754</key>
 		<dict>
 			<key>className</key>
 			<string>IDECommandLineBuildLog</string>
@@ -15,7 +15,7 @@
 			<key>domainType</key>
 			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
 			<key>fileName</key>
-			<string>8EFFA39C-A243-4530-93B6-5D063FA4EC13.xcactivitylog</string>
+			<string>0F1F4B30-4E88-40E5-8C5B-D03B19F86754.xcactivitylog</string>
 			<key>hasPrimaryLog</key>
 			<true/>
 			<key>primaryObservable</key>
@@ -40,15 +40,15 @@
 			<key>signature</key>
 			<string>Building workspace Runner with scheme Runner and configuration Debug</string>
 			<key>timeStartedRecording</key>
-			<real>785342181.96609294</real>
+			<real>788779854.44101</real>
 			<key>timeStoppedRecording</key>
-			<real>785342194.81950498</real>
+			<real>788779868.33283198</real>
 			<key>title</key>
 			<string>Building workspace Runner with scheme Runner and configuration Debug</string>
 			<key>uniqueIdentifier</key>
-			<string>8EFFA39C-A243-4530-93B6-5D063FA4EC13</string>
+			<string>0F1F4B30-4E88-40E5-8C5B-D03B19F86754</string>
 		</dict>
-		<key>9DC89927-7066-47C3-904A-A500F9DC6769</key>
+		<key>A97B017A-77D6-4F89-AD62-1BF755698E6E</key>
 		<dict>
 			<key>className</key>
 			<string>IDECommandLineBuildLog</string>
@@ -57,7 +57,7 @@
 			<key>domainType</key>
 			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
 			<key>fileName</key>
-			<string>9DC89927-7066-47C3-904A-A500F9DC6769.xcactivitylog</string>
+			<string>A97B017A-77D6-4F89-AD62-1BF755698E6E.xcactivitylog</string>
 			<key>hasPrimaryLog</key>
 			<true/>
 			<key>primaryObservable</key>
@@ -82,13 +82,13 @@
 			<key>signature</key>
 			<string>Building workspace Runner with scheme Runner and configuration Debug</string>
 			<key>timeStartedRecording</key>
-			<real>785403710.24535704</real>
+			<real>789314221.27867103</real>
 			<key>timeStoppedRecording</key>
-			<real>785403725.45072603</real>
+			<real>789314236.00400901</real>
 			<key>title</key>
 			<string>Building workspace Runner with scheme Runner and configuration Debug</string>
 			<key>uniqueIdentifier</key>
-			<string>9DC89927-7066-47C3-904A-A500F9DC6769</string>
+			<string>A97B017A-77D6-4F89-AD62-1BF755698E6E</string>
 		</dict>
 	</dict>
 </dict>

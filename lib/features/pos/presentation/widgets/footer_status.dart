@@ -1,7 +1,8 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:pos_desktop_clean/core/utils/app_theme.dart';
+import 'package:pos_desktop_clean/features/pos/data/utils/app_theme.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/pages/sales_history/sales_history_page.dart';
 
 class FooterStatus extends StatelessWidget {
   const FooterStatus({super.key});
@@ -100,40 +101,31 @@ class _ProductsStripState extends State<_ProductsStrip> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return ScrollConfiguration(
-      // даём перетаскивать контент мышью/тачпадом/пером
-      behavior: const MaterialScrollBehavior().copyWith(
-        dragDevices: {
-          PointerDeviceKind.touch,
-          PointerDeviceKind.mouse,
-          PointerDeviceKind.stylus,
-          PointerDeviceKind.unknown,
+@override
+Widget build(BuildContext context) {
+  return ScrollConfiguration(
+    behavior: AppScrollBehavior(),
+    child: Scrollbar(
+      controller: _ctrl,
+      thickness: 4,
+      radius: const Radius.circular(8),
+      notificationPredicate: (n) => n.metrics.axis == Axis.horizontal,
+      child: ListView.separated(
+        controller: _ctrl,
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.zero,
+        itemCount: _items.length,
+        reverse: true,
+        separatorBuilder: (_, __) => const SizedBox(width: 16),
+        itemBuilder: (ctx, i) {
+          final it = _items[i];
+          return _ProductCard(title: it.name, price: it.price);
         },
       ),
-      child: Scrollbar(
-        controller: _ctrl,
-        // thumbVisibility: true, // всегда показывать ползунок
-        // trackVisibility: true, // и дорожку
-        thickness: 4,
-        radius: const Radius.circular(8),
-        notificationPredicate: (notif) => notif.metrics.axis == Axis.horizontal,
-        child: ListView.separated(
-          controller: _ctrl,
-          scrollDirection: Axis.horizontal,
-          padding: EdgeInsets.zero,
-          itemCount: _items.length,
-          reverse: true,
-          separatorBuilder: (_, __) => const SizedBox(width: 16),
-          itemBuilder: (ctx, i) {
-            final it = _items[i];
-            return _ProductCard(title: it.name, price: it.price);
-          },
-        ),
-      ),
-    );
-  }
+    ),
+  );
+}
+
 }
 
 class _ProductCard extends StatelessWidget {

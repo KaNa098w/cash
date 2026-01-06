@@ -1,18 +1,23 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:pos_desktop_clean/core/utils/app_theme.dart';
-import 'package:pos_desktop_clean/features/pos/presentation/state/auth_cubit.dart';
+import 'package:pos_desktop_clean/core/di/api/service_locator.dart';
+import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
+import 'package:pos_desktop_clean/features/pos/data/datasources/product_local_datasource.dart';
+import 'package:pos_desktop_clean/features/pos/data/utils/app_theme.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/pages/auth/auth_bloc/auth_cubit.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:window_manager/window_manager.dart';
 
 Future<void> showPosActionsDialog(BuildContext context) {
   final actions = <_PosAction>[
     _PosAction('ВЫХОД ИЗ ПРОГРАММЫ', () {
       final router = GoRouter.of(context); // возьми router ДО pop()
-      context.read<AuthCubit>().signOut(); // 1) снять авторизацию
+      // context.read<AuthCubit>().logout(); // 1) снять авторизацию
 
       Navigator.of(context, rootNavigator: true).pop(); // 2) закрыть диалог
 
@@ -22,7 +27,26 @@ Future<void> showPosActionsDialog(BuildContext context) {
     }),
     _PosAction('ЗАБЛОКИРОВАТЬ КАССУ', () {/* TODO */}),
     _PosAction('РАСПЕЧАТАТЬ ЧЕК\nПОСЛЕДНЕЙ ПРОДАЖИ', () {/* TODO */}),
-    _PosAction('СИНХРОНИЗАЦИЯ', () {/* TODO */}),
+    _PosAction(
+      'СИНХРОНИЗАЦИЯ',
+      () async {
+        Navigator.of(context, rootNavigator: true).pop(); // закрыть диалог
+
+        // 1) берём key (обязательно)
+        final auth = context.read<AuthTokenProvider>();
+
+        // TODO: замени на своё поле (примерно так)
+        // final String key = auth.posKey; // <-- вот тут твой key
+
+        final local = sl<ProductLocalDataSource>();
+        await local.clear(); // очистили Hive
+
+        await context.read<ProductsCubit>().loadFirstPage(
+              key: 'КЛЮЧ', // <-- замени на своё поле
+              forceRefresh: true,
+            );
+      },
+    ),
     _PosAction('СВЕРНУТЬ', () async {
       Navigator.of(context, rootNavigator: true).pop();
 
@@ -44,7 +68,9 @@ Future<void> showPosActionsDialog(BuildContext context) {
     _PosAction('ПРОВЕРИТЬ ОБНОВЛЕНИЕ', () {/* TODO */}),
     _PosAction('ВЗНОС В КАССУ', () {/* TODO */}),
     _PosAction('РАСХОД', () {/* TODO */}),
-    _PosAction('СДАТЬ СМЕНУ', () {/* TODO */}),
+    _PosAction('СДАТЬ СМЕНУ', () {
+      AuthTokenProvider tokenProvider = context.read<AuthTokenProvider>();
+    }),
     _PosAction('ПРИНТЕР', () {/* TODO */}),
   ];
 
@@ -117,7 +143,7 @@ Future<void> showPosActionsDialog(BuildContext context) {
 
 class _PosAction {
   final String title;
-  final VoidCallback onTap;
+  final FutureOr<void> Function() onTap;
   const _PosAction(this.title, this.onTap);
 }
 
@@ -132,7 +158,7 @@ class _ActionTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: action.onTap,
+        onTap: () async => action.onTap(),
         child: Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),

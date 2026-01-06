@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import '../state/auth_cubit.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/pages/auth/auth_bloc/auth_cubit.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/pages/auth/auth_bloc/auth_state.dart';
 
 class LoginForm extends StatefulWidget {
   const LoginForm({super.key, required this.loading});
@@ -27,11 +28,15 @@ class _LoginFormState extends State<LoginForm> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    await context
-        .read<AuthCubit>()
-        .signIn(_login.text, _password.text, rememberMe: _remember);
+
+
+
     final st = context.read<AuthCubit>().state;
-    if (st is AuthAuthenticated && mounted) context.go('/pos');
+
+    // пока можно уже раскомментить
+    if (st is AuthSuccess && mounted) {
+      context.go('/preloader');
+    }
   }
 
   @override

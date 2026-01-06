@@ -1,0 +1,160 @@
+class PosProvisionResponse {
+  final String id;
+  final String name;
+  final String key;
+  final String accountId;
+  final String storeId;
+  final String organizationId;
+
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  final List<PosUser> users;
+
+  PosProvisionResponse({
+    required this.id,
+    required this.name,
+    required this.key,
+    required this.accountId,
+    required this.storeId,
+    required this.organizationId,
+    required this.users,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory PosProvisionResponse.fromJson(Map<String, dynamic> json) {
+    final data = json['data'];
+    if (data is! Map<String, dynamic>) {
+      throw Exception('Invalid response: missing "data". json=$json');
+    }
+    final id = (data['id'] ?? '').toString();
+
+    final name = (data['name'] ?? '').toString();
+    final key = (data['key'] ?? '').toString();
+    final accountId = (data['account_id'] ?? '').toString();
+    final storeId = (data['store_id'] ?? '').toString();
+    final organizationId = (data['organization_id'] ?? '').toString();
+
+    if (name.isEmpty ||
+        key.isEmpty ||
+        accountId.isEmpty ||
+        storeId.isEmpty ||
+        organizationId.isEmpty) {
+      throw Exception('Missing required fields in response.data: $data');
+    }
+
+    DateTime? parseDt(dynamic v) {
+      // created: { human: "...", string: "2025-..." }
+      if (v is Map<String, dynamic>) {
+        final s = v['string'];
+        if (s is String && s.isNotEmpty) return DateTime.tryParse(s);
+      }
+      return null;
+    }
+
+    final rawUsers = data['users'];
+    final users = (rawUsers is List ? rawUsers : const [])
+        .whereType<Map<String, dynamic>>()
+        .map(PosUser.fromJson)
+        .toList();
+
+    return PosProvisionResponse(
+      id: id,
+      name: name,
+      key: key,
+      accountId: accountId,
+      storeId: storeId,
+      organizationId: organizationId,
+      createdAt: parseDt(data['created']),
+      updatedAt: parseDt(data['updated']),
+      users: users,
+    );
+  }
+}
+
+class PosUser {
+  final String id;
+  final String name;
+  final String emailAddress;
+  final bool emailVerified;
+
+  final String pinCode;
+  final String? avatar;
+
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  PosUser({
+    required this.id,
+    required this.name,
+    required this.emailAddress,
+    required this.emailVerified,
+    required this.pinCode,
+    this.avatar,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory PosUser.fromJson(Map<String, dynamic> json) {
+    final id = (json['id'] ?? '').toString();
+    final name = (json['name'] ?? '').toString();
+
+    // email может быть объектом {address, verified} или строкой (на всякий)
+    String emailAddress = '';
+    bool emailVerified = false;
+
+    final email = json['email'];
+    if (email is Map<String, dynamic>) {
+      emailAddress = (email['address'] ?? '').toString();
+      emailVerified = email['verified'] == true;
+    } else if (email is String) {
+      emailAddress = email;
+    }
+
+    final pinCode = (json['pin_code'] ?? json['pinCode'] ?? '').toString();
+    final avatar = (json['avatar'] ?? '')?.toString();
+
+    DateTime? parseDt(dynamic v) {
+      // API: { human: "...", string: "2025-..." }
+      if (v is Map<String, dynamic>) {
+        final s = v['string'];
+        if (s is String && s.isNotEmpty) return DateTime.tryParse(s);
+      }
+      // cache: iso string
+      if (v is String && v.isNotEmpty) return DateTime.tryParse(v);
+      return null;
+    }
+
+    if (id.isEmpty) throw Exception('PosUser.id is empty. json=$json');
+    if (name.isEmpty) throw Exception('PosUser.name is empty. json=$json');
+    if (pinCode.isEmpty)
+      throw Exception('PosUser.pin_code is empty. json=$json');
+
+    return PosUser(
+      id: id,
+      name: name,
+      emailAddress: emailAddress,
+      emailVerified: emailVerified,
+      pinCode: pinCode,
+      avatar: (avatar != null && avatar.isNotEmpty) ? avatar : null,
+      createdAt: parseDt(json['created']),
+      updatedAt: parseDt(json['updated']),
+    );
+  }
+
+  /// ✅ для SharedPreferences
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'email': {
+          'address': emailAddress,
+          'verified': emailVerified,
+        },
+        'pin_code': pinCode,
+        'avatar': avatar,
+        // для кэша проще хранить ISO
+        'created': createdAt?.toIso8601String(),
+        'updated': updatedAt?.toIso8601String(),
+      };
+}

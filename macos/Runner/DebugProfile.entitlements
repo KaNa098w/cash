@@ -2,11 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>com.apple.security.app-sandbox</key>
-	<true/>
-	<key>com.apple.security.cs.allow-jit</key>
-	<true/>
-	<key>com.apple.security.network.server</key>
-	<true/>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- Разрешаем исходящие подключения (клиент) -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- Это у тебя уже было -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!-- Серверные подключения вообще не нужны, но можно оставить -->
+    <key>com.apple.security.network.server</key>
+    <true/>
 </dict>
 </plist>

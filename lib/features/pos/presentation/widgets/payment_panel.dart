@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:get_it/get_it.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:pos_desktop_clean/core/models/sale_model.dart';
 import 'package:pos_desktop_clean/core/print/print_service.dart';
-import 'package:pos_desktop_clean/core/utils/app_theme.dart';
+import 'package:pos_desktop_clean/core/provider/auth_provider.dart'
+    show AuthTokenProvider;
+import 'package:pos_desktop_clean/features/pos/data/utils/app_theme.dart';
+import 'package:pos_desktop_clean/features/pos/domain/repositories/sale_repository.dart';
 import 'package:printing/printing.dart';
-import '../../../../core/utils/money.dart';
+import 'package:uuid/uuid.dart';
+import '../../data/utils/money.dart';
 import '../state/pos_cubit.dart';
 import '../../domain/entities/payment.dart';
 
@@ -19,6 +25,7 @@ class PaymentPanel extends StatefulWidget {
 
 class _PaymentPanelState extends State<PaymentPanel> {
   final _cashCtrl = TextEditingController();
+  bool _paying = false;
 
   @override
   void dispose() {
@@ -37,6 +44,64 @@ class _PaymentPanelState extends State<PaymentPanel> {
     _cashCtrl.text = text;
     _cashCtrl.selection = TextSelection.collapsed(offset: text.length);
     _applyTextToState(context, text);
+  }
+
+  Future<void> _editSelectedQty(BuildContext context) async {
+    final cubit = context.read<PosCubit>();
+    final state = cubit.state;
+    final idx = state.selectedItemIndex;
+
+    if (idx == null || idx < 0 || idx >= state.items.length) {
+      // Ничего не выбрано — можно показать Snackbar, пока просто выходим
+      return;
+    }
+
+    final item = state.items[idx];
+    final controller = TextEditingController(
+      text: item.qty.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), ''),
+    );
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          title: const Text('Изменить количество'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              hintText: 'Введите количество',
+            ),
+            onSubmitted: (_) {
+              final text = controller.text.replaceAll(',', '.');
+              final value = double.tryParse(text);
+              if (value != null && value >= 0) {
+                cubit.setQty(idx, value);
+                Navigator.of(dialogCtx).pop();
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Отмена'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final text = controller.text.replaceAll(',', '.');
+                final value = double.tryParse(text);
+                if (value != null && value >= 0) {
+                  cubit.setQty(idx, value);
+                  Navigator.of(dialogCtx).pop();
+                }
+              },
+              child: const Text('Сохранить'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   String _fmt(double v) {
@@ -310,7 +375,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 const SizedBox(height: 12),
 
                 // Клавиатура: работает по ТЕКСТУ поля
-                _Keypad(
+                Keypad(
                   onTap: (token) {
                     var t = _cashCtrl.text;
                     if (token == '⌫') {
@@ -352,16 +417,27 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
                 const SizedBox(height: 8),
                 const Spacer(),
-
-                // Нижний ряд: Количества, -, +
+// Нижний ряд: Количества, -, +
                 Row(
                   children: [
                     Expanded(
-                        child: _FlatGrey(text: 'Количество', onTap: () {})),
+                      child: FlatGrey(
+                        text: 'Количество',
+                        onTap: () => _editSelectedQty(context),
+                      ),
+                    ),
                     const SizedBox(width: 8),
-                    _SquareGrey(text: '–', onTap: () {}),
+                    _SquareGrey(
+                      text: '–',
+                      onTap: () =>
+                          context.read<PosCubit>().decrementSelectedQty(),
+                    ),
                     const SizedBox(width: 8),
-                    _SquareGrey(text: '+', onTap: () {}),
+                    _SquareGrey(
+                      text: '+',
+                      onTap: () =>
+                          context.read<PosCubit>().incrementSelectedQty(),
+                    ),
                   ],
                 ),
 
@@ -371,7 +447,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 Row(
                   children: [
                     Expanded(
-                      child: _FlatGrey(
+                      child: FlatGrey(
                         text: 'Отмена',
                         onTap: () => Navigator.of(context).maybePop(),
                       ),
@@ -379,7 +455,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: SizedBox(
-                        height: 49,
+                        height: 44,
                         width: 200,
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
@@ -389,19 +465,182 @@ class _PaymentPanelState extends State<PaymentPanel> {
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-                          onPressed: () async {
-                            final cubit = context.read<PosCubit>();
-                            await _printService.print80mmSilently(
-                                () => _buildReceipt80mm(cubit));
-                          },
-                          child: const Text(
-                            'ОПЛАТА',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: .5,
-                              fontSize: 11,
-                            ),
-                          ),
+                          onPressed: _paying
+                              ? null
+                              : () async {
+                                  final posCubit = context.read<PosCubit>();
+                                  final auth =
+                                      context.read<AuthTokenProvider>();
+
+                                  final key = auth.posKey?.trim() ?? '';
+                                  final deviceId = auth.deviceId?.trim() ?? '';
+                                  final storeId = auth.storeId?.trim() ?? '';
+
+                                  // pos_id — у тебя нет явного поля. Чаще всего это accountId/касса id.
+                                  // Беру accountId как pos_id (если это не то — скажешь, поменяем).
+                                  final posId = auth.posId?.trim() ?? '';
+                                  final userId = auth.users.first.id ?? '';
+
+                                  if (key.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content:
+                                              Text('Нет ключа POS (posKey)')),
+                                    );
+                                    return;
+                                  }
+                                  if (deviceId.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text('Нет deviceId')),
+                                    );
+                                    return;
+                                  }
+                                  if (storeId.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text('Нет storeId')),
+                                    );
+                                    return;
+                                  }
+                                  if (posId.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content:
+                                              Text('Нет posId (accountId)')),
+                                    );
+                                    return;
+                                  }
+                                  if (posCubit.state.items.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text('Корзина пустая')),
+                                    );
+                                    return;
+                                  }
+
+                                  // если наличка — проверим что получено >= итого
+                                  if (posCubit.state.paymentKind ==
+                                          PaymentKind.cash &&
+                                      posCubit.state.received <
+                                          posCubit.total) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text(
+                                              'Недостаточно внесено наличных')),
+                                    );
+                                    return;
+                                  }
+
+                                  // Собираем sale items
+                                  final saleItems = <SaleItemModel>[];
+                                  for (final it in posCubit.state.items) {
+                                    // API у тебя quantity int, а qty у тебя double.
+                                    // Если у тебя бывают дробные — надо менять модель SaleItemModel.quantity на double.
+                                    if (it.qty % 1 != 0) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                            content: Text(
+                                                'Дробное количество не поддерживается: ${it.product.name}')),
+                                      );
+                                      return;
+                                    }
+
+                                    final qty = it.qty.toInt();
+                                    final price =
+                                        it.product.price.round(); // тенге
+                                    final totalPrice =
+                                        (it.product.price * it.qty).round();
+
+                                    saleItems.add(
+                                      SaleItemModel(
+                                        productId: it.product.id,
+                                        quantity: qty,
+                                        price: price,
+                                        totalPrice: totalPrice,
+                                      ),
+                                    );
+                                  }
+
+                                  final paymentMethod =
+                                      switch (posCubit.state.paymentKind) {
+                                    PaymentKind.cash => 'cash',
+                                    PaymentKind.card => 'card',
+                                    PaymentKind.credit => 'credit',
+                                  };
+
+                                  final sale = SaleModel(
+                                    localId: const Uuid().v4(),
+                                    date: DateTime.now(),
+                                    totalAmount: posCubit.total.round(),
+                                    paymentMethod: paymentMethod,
+                                    posId: posId,
+                                    storeId: storeId,
+                                    userId: userId,
+                                    customerId:
+                                        null, // потом подставишь выбранного покупателя
+                                    items: saleItems,
+                                  );
+
+                                  final repo = GetIt.I<SaleRepository>();
+
+                                  setState(() => _paying = true);
+                                  try {
+                                    final result = await repo.createSale(
+                                      key: key,
+                                      deviceId: deviceId,
+                                      sale: sale,
+                                    );
+
+                                    // Печать делаем и при queued (оффлайн), и при sent
+                                    await _printService.print80mmSilently(
+                                        () => _buildReceipt80mm(posCubit));
+
+                                    if (!mounted) return;
+
+                                    final msg = switch (result) {
+                                      CreateSaleResult.sent =>
+                                        'Продажа отправлена',
+                                      CreateSaleResult.queued =>
+                                        'Нет сети: продажа добавлена в очередь',
+                                      CreateSaleResult.rejected =>
+                                        'Продажа отклонена сервером',
+                                    };
+
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text(msg)));
+
+                                    if (result != CreateSaleResult.rejected) {
+                                      posCubit
+                                          .clearAfterPayment(); // ✅ очищаем чек
+                                    }
+                                  } catch (e) {
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content: Text('Ошибка оплаты: $e')),
+                                    );
+                                  } finally {
+                                    if (mounted)
+                                      setState(() => _paying = false);
+                                  }
+                                },
+                          child: _paying
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Text(
+                                  'ОПЛАТА',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: .5,
+                                    fontSize: 11,
+                                  ),
+                                ),
                         ),
                       ),
                     ),
@@ -556,8 +795,8 @@ class _LabeledField extends StatelessWidget {
   }
 }
 
-class _Keypad extends StatelessWidget {
-  const _Keypad({required this.onTap});
+class Keypad extends StatelessWidget {
+  const Keypad({required this.onTap});
   final void Function(String) onTap;
 
   @override
@@ -655,8 +894,8 @@ class _QuickRows extends StatelessWidget {
   }
 }
 
-class _FlatGrey extends StatelessWidget {
-  const _FlatGrey(
+class FlatGrey extends StatelessWidget {
+  const FlatGrey(
       {required this.text,
       required this.onTap,
       this.width = 100,

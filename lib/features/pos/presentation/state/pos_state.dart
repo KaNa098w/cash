@@ -33,29 +33,28 @@ class PosState extends Equatable {
   /// true → экран "История продаж", false → обычный POS
   final bool isHistoryMode;
 
-  /// поиск
-  final bool searching;
-  final List<Product> searchResults;
-
   /// оплата
   final PaymentKind paymentKind;
   final double received;
+
+  /// выбранная позиция в активном чеке (index в items) или null
+  final int? selectedItemIndex;
 
   const PosState({
     this.tickets = const [],
     this.activeTicketId = 1,
     this.isHistoryMode = false,
-    this.searching = false,
-    this.searchResults = const [],
     this.paymentKind = PaymentKind.cash,
     this.received = 0,
+    this.selectedItemIndex,
   });
 
   /// Стартовое состояние: один пустой чек №1
   factory PosState.initial() {
-    return PosState(
-      tickets: [const PosTicket(id: 1)],
+    return const PosState(
+      tickets: [PosTicket(id: 1)],
       activeTicketId: 1,
+      selectedItemIndex: null,
     );
   }
 
@@ -70,26 +69,26 @@ class PosState extends Equatable {
     );
   }
 
-  /// Позиции активного чека — CartList уже использует state.items
+  /// Позиции активного чека — CartList использует state.items
   List<CartItem> get items => activeTicket.items;
 
   PosState copyWith({
     List<PosTicket>? tickets,
     int? activeTicketId,
     bool? isHistoryMode,
-    bool? searching,
-    List<Product>? searchResults,
     PaymentKind? paymentKind,
     double? received,
+    int? selectedItemIndex,
+    bool clearSelection = false, // для явного сброса
   }) {
     return PosState(
       tickets: tickets ?? this.tickets,
       activeTicketId: activeTicketId ?? this.activeTicketId,
       isHistoryMode: isHistoryMode ?? this.isHistoryMode,
-      searching: searching ?? this.searching,
-      searchResults: searchResults ?? this.searchResults,
       paymentKind: paymentKind ?? this.paymentKind,
       received: received ?? this.received,
+      selectedItemIndex:
+          clearSelection ? null : (selectedItemIndex ?? this.selectedItemIndex),
     );
   }
 
@@ -98,9 +97,8 @@ class PosState extends Equatable {
         tickets,
         activeTicketId,
         isHistoryMode,
-        searching,
-        searchResults,
         paymentKind,
         received,
+        selectedItemIndex,
       ];
 }
