@@ -1,0 +1,4 @@
+
+module printing.__Swift {
+  exclude header "printing-Swift.h"
+}

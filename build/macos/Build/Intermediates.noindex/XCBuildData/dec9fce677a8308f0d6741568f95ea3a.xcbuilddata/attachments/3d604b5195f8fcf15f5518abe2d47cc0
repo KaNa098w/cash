@@ -1,0 +1,29 @@
+{
+  "" : {
+    "diagnostics" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/printing-primary.dia",
+    "emit-module-dependencies" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/printing-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/printing-primary-emit-module.dia",
+    "pch" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/printing-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/printing-primary.swiftdeps"
+  },
+  "/Users/beyinfotech/.pub-cache/hosted/pub.dev/printing-5.14.2/macos/Classes/PrintJob.swift" : {
+    "const-values" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintJob.swiftconstvalues",
+    "dependencies" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintJob.d",
+    "diagnostics" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintJob.dia",
+    "index-unit-output-path" : "/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintJob.o",
+    "llvm-bc" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintJob.bc",
+    "object" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintJob.o",
+    "swift-dependencies" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintJob.swiftdeps",
+    "swiftmodule" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintJob~partial.swiftmodule"
+  },
+  "/Users/beyinfotech/.pub-cache/hosted/pub.dev/printing-5.14.2/macos/Classes/PrintingPlugin.swift" : {
+    "const-values" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintingPlugin-dd5aafc3fbf59414c7bcd094010db448.swiftconstvalues",
+    "dependencies" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintingPlugin-dd5aafc3fbf59414c7bcd094010db448.d",
+    "diagnostics" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintingPlugin-dd5aafc3fbf59414c7bcd094010db448.dia",
+    "index-unit-output-path" : "/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintingPlugin-dd5aafc3fbf59414c7bcd094010db448.o",
+    "llvm-bc" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintingPlugin-dd5aafc3fbf59414c7bcd094010db448.bc",
+    "object" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintingPlugin-dd5aafc3fbf59414c7bcd094010db448.o",
+    "swift-dependencies" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintingPlugin-dd5aafc3fbf59414c7bcd094010db448.swiftdeps",
+    "swiftmodule" : "/Users/beyinfotech/Documents/cash/pos_desktop_clean/build/macos/Build/Intermediates.noindex/Pods.build/Debug/printing.build/Objects-normal/arm64/PrintingPlugin-dd5aafc3fbf59414c7bcd094010db448~partial.swiftmodule"
+  }
+}

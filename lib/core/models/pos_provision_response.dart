@@ -79,9 +79,13 @@ class PosUser {
   final String emailAddress;
   final bool emailVerified;
 
+  // Приходит с API (может быть пустым, если из кэша)
   final String pinCode;
-  final String? avatar;
 
+  // Храним в кэше
+  final String? pinHash;
+
+  final String? avatar;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -91,6 +95,7 @@ class PosUser {
     required this.emailAddress,
     required this.emailVerified,
     required this.pinCode,
+    this.pinHash,
     this.avatar,
     this.createdAt,
     this.updatedAt,
@@ -100,10 +105,8 @@ class PosUser {
     final id = (json['id'] ?? '').toString();
     final name = (json['name'] ?? '').toString();
 
-    // email может быть объектом {address, verified} или строкой (на всякий)
     String emailAddress = '';
     bool emailVerified = false;
-
     final email = json['email'];
     if (email is Map<String, dynamic>) {
       emailAddress = (email['address'] ?? '').toString();
@@ -113,23 +116,25 @@ class PosUser {
     }
 
     final pinCode = (json['pin_code'] ?? json['pinCode'] ?? '').toString();
+    final pinHash = (json['pin_hash'] ?? '').toString();
     final avatar = (json['avatar'] ?? '')?.toString();
 
     DateTime? parseDt(dynamic v) {
-      // API: { human: "...", string: "2025-..." }
       if (v is Map<String, dynamic>) {
         final s = v['string'];
         if (s is String && s.isNotEmpty) return DateTime.tryParse(s);
       }
-      // cache: iso string
       if (v is String && v.isNotEmpty) return DateTime.tryParse(v);
       return null;
     }
 
     if (id.isEmpty) throw Exception('PosUser.id is empty. json=$json');
     if (name.isEmpty) throw Exception('PosUser.name is empty. json=$json');
-    if (pinCode.isEmpty)
-      throw Exception('PosUser.pin_code is empty. json=$json');
+
+    // В кэше pin_code может не быть — это ок, если есть pin_hash
+    if (pinCode.isEmpty && pinHash.isEmpty) {
+      throw Exception('PosUser pin missing (pin_code/pin_hash). json=$json');
+    }
 
     return PosUser(
       id: id,
@@ -137,13 +142,25 @@ class PosUser {
       emailAddress: emailAddress,
       emailVerified: emailVerified,
       pinCode: pinCode,
+      pinHash: pinHash.isEmpty ? null : pinHash,
       avatar: (avatar != null && avatar.isNotEmpty) ? avatar : null,
       createdAt: parseDt(json['created']),
       updatedAt: parseDt(json['updated']),
     );
   }
 
-  /// ✅ для SharedPreferences
+  PosUser copyWith({String? pinHash, String? pinCode}) => PosUser(
+        id: id,
+        name: name,
+        emailAddress: emailAddress,
+        emailVerified: emailVerified,
+        pinCode: pinCode ?? this.pinCode,
+        pinHash: pinHash ?? this.pinHash,
+        avatar: avatar,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      );
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
@@ -151,9 +168,9 @@ class PosUser {
           'address': emailAddress,
           'verified': emailVerified,
         },
-        'pin_code': pinCode,
+        // ВАЖНО: pin_code не кладём в кэш
+        'pin_hash': pinHash,
         'avatar': avatar,
-        // для кэша проще хранить ISO
         'created': createdAt?.toIso8601String(),
         'updated': updatedAt?.toIso8601String(),
       };

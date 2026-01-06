@@ -159,7 +159,7 @@
     },
     {
       "name": "crypto",
-      "rootUri": "file:///Users/beyinfotech/.pub-cache/hosted/pub.dev/crypto-3.0.6",
+      "rootUri": "file:///Users/beyinfotech/.pub-cache/hosted/pub.dev/crypto-3.0.7",
       "packageUri": "lib/",
       "languageVersion": "3.4"
     },
@@ -914,7 +914,7 @@
       "languageVersion": "3.4"
     }
   ],
-  "generated": "2025-12-30T07:51:19.916920Z",
+  "generated": "2026-01-06T07:53:43.752477Z",
   "generator": "pub",
   "generatorVersion": "3.7.2",
   "flutterRoot": "file:///Users/beyinfotech/development/flutter",

@@ -1,5 +1,5 @@
+// lib/features/pos/presentation/pages/auth/auth_bloc/auth_cubit.dart
 import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
@@ -19,7 +19,14 @@ class AuthCubit extends Cubit<AuthState> {
   final AuthRepository _authRepository;
   final AuthTokenProvider _tokenProvider;
 
-  // STEP 1: key -> provision
+  /// Авто-старт из кэша (чтобы не спрашивать ключ и позволить оффлайн-логин)
+  void bootstrapFromCache() {
+    final cached = _tokenProvider.cachedProvision;
+    if (cached == null) return;
+    emit(AuthProvisioned(cached));
+  }
+
+  // STEP 1: key -> provision (онлайн)
   Future<void> provisionByKey(String key) async {
     emit(const AuthLoading());
     try {
@@ -44,10 +51,9 @@ class AuthCubit extends Cubit<AuthState> {
         deviceId: deviceId,
       );
 
-      // сохраняем в кэш (posName/accountId/storeId/orgId/users)
+      // сохраняем provisioning + users(pin_hash)
       await _tokenProvider.setProvisioned(resp);
 
-      // показываем список пользователей
       emit(AuthProvisioned(resp));
     } on DioException catch (e) {
       final status = e.response?.statusCode;
@@ -65,7 +71,7 @@ class AuthCubit extends Cubit<AuthState> {
     emit(AuthPinStep(provision: provision, user: user));
   }
 
-  // STEP 3: verify pin
+  // STEP 3: verify pin (оффлайн, по pin_hash из кэша)
   void verifyPin({
     required PosProvisionResponse provision,
     required PosUser user,
@@ -77,7 +83,26 @@ class AuthCubit extends Cubit<AuthState> {
       return;
     }
 
-    if (pin == user.pinCode) {
+    final expectedHash = user.pinHash;
+
+    // новый путь: сравнение хеша
+    if (expectedHash != null && expectedHash.isNotEmpty) {
+      final actualHash = _tokenProvider.hashPin(pin);
+      if (actualHash == expectedHash) {
+        emit(const AuthSuccess());
+        return;
+      }
+
+      emit(AuthPinStep(
+        provision: provision,
+        user: user,
+        errorText: 'Неверный PIN',
+      ));
+      return;
+    }
+
+    // fallback: если старый кэш или API-шный user с pinCode (не рекомендую хранить)
+    if (user.pinCode.isNotEmpty && pin == user.pinCode) {
       emit(const AuthSuccess());
       return;
     }
@@ -89,12 +114,10 @@ class AuthCubit extends Cubit<AuthState> {
     ));
   }
 
-  // Back from pin to users list
   void backToUsers(PosProvisionResponse provision) {
     emit(AuthProvisioned(provision));
   }
 
-  // Change key / reset
   Future<void> resetAll() async {
     await _tokenProvider.clearPosKey();
     emit(const AuthInitial());
