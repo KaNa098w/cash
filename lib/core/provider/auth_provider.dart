@@ -1,11 +1,10 @@
-// lib/core/provider/auth_provider.dart
-import 'dart:convert';
+import 'dart:convert' as dc show jsonDecode, jsonEncode, utf8;
+import 'dart:convert' show utf8;
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
-import 'package:crypto/crypto.dart';
-import 'dart:convert' show utf8;
 
 import 'package:pos_desktop_clean/core/models/pos_provision_response.dart';
 
@@ -21,8 +20,12 @@ class AuthTokenProvider extends ChangeNotifier {
 
   static const _kUsers = 'posUsers';
 
-  // для безопасной локальной проверки PIN (хеш, не PIN)
   static const _kPinSalt = 'pinSalt';
+
+  static const _kShiftId = 'shiftId';
+
+  // ✅ активный кассир
+  static const _kActiveUserId = 'activeUserId';
 
   String? _posKey;
   String? get posKey => _posKey;
@@ -49,6 +52,14 @@ class AuthTokenProvider extends ChangeNotifier {
   String? _pinSalt;
   String get pinSalt => _pinSalt ?? '';
 
+  String? _shiftId;
+  String? get shiftId => _shiftId;
+  bool get hasShiftId => _shiftId != null && _shiftId!.trim().isNotEmpty;
+
+  String? _activeUserId;
+  String? get activeUserId => _activeUserId;
+  bool get hasActiveUserId => _activeUserId != null && _activeUserId!.trim().isNotEmpty;
+
   List<PosUser> _users = [];
   List<PosUser> get users => List.unmodifiable(_users);
 
@@ -61,7 +72,6 @@ class AuthTokenProvider extends ChangeNotifier {
       (_accountId != null && _accountId!.isNotEmpty) &&
       _users.isNotEmpty;
 
-  /// Восстанавливаем объект provision из кэша (для оффлайн-входа).
   PosProvisionResponse? get cachedProvision {
     if (!isProvisioned) return null;
 
@@ -78,7 +88,7 @@ class AuthTokenProvider extends ChangeNotifier {
     );
   }
 
-  /// sha256(pin|salt) — локальная проверка PIN без хранения PIN.
+  /// sha256(pin|salt)
   String hashPin(String pin) {
     final bytes = utf8.encode('${pin.trim()}|$pinSalt');
     return sha256.convert(bytes).toString();
@@ -96,24 +106,24 @@ class AuthTokenProvider extends ChangeNotifier {
     _organizationId = prefs.getString(_kOrganizationId);
     _accountId = prefs.getString(_kAccountId);
 
-    // device id
+    _shiftId = prefs.getString(_kShiftId);
+    _activeUserId = prefs.getString(_kActiveUserId);
+
     if (_deviceId == null || _deviceId!.isEmpty) {
       _deviceId = const Uuid().v4();
       await prefs.setString(_kDeviceId, _deviceId!);
     }
 
-    // pin salt
     _pinSalt = prefs.getString(_kPinSalt);
     if (_pinSalt == null || _pinSalt!.isEmpty) {
       _pinSalt = const Uuid().v4();
       await prefs.setString(_kPinSalt, _pinSalt!);
     }
 
-    // users
     final usersStr = prefs.getString(_kUsers);
     if (usersStr != null && usersStr.isNotEmpty) {
       try {
-        final decoded = jsonDecode(usersStr);
+        final decoded = dc.jsonDecode(usersStr);
         if (decoded is List) {
           _users = decoded
               .whereType<Map<String, dynamic>>()
@@ -138,8 +148,6 @@ class AuthTokenProvider extends ChangeNotifier {
 
   Future<void> clearPosKey() async {
     _posKey = null;
-
-    // если меняем ключ — логично сбрасывать provisioning
     await clearProvisioned(keepDeviceId: true);
 
     final prefs = await SharedPreferences.getInstance();
@@ -148,8 +156,6 @@ class AuthTokenProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Сохраняем provisioning + пользователей в кэш.
-  /// Важно: PIN в кэш НЕ кладём, вместо этого кладём pin_hash.
   Future<void> setProvisioned(PosProvisionResponse resp) async {
     _posKey = resp.key;
 
@@ -159,12 +165,9 @@ class AuthTokenProvider extends ChangeNotifier {
     _organizationId = resp.organizationId;
     _accountId = resp.accountId;
 
-    // хешируем PINы для оффлайн-проверки
     _users = resp.users.map((u) {
       final apiPin = u.pinCode.trim();
       final h = apiPin.isEmpty ? null : hashPin(apiPin);
-
-      // ⚠️ не храним pinCode после provisioning
       return u.copyWith(pinHash: h, pinCode: '');
     }).toList();
 
@@ -179,7 +182,7 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.setString(_kOrganizationId, _organizationId ?? '');
     await prefs.setString(_kAccountId, _accountId ?? '');
 
-    final jsonUsers = jsonEncode(_users.map((u) => u.toJson()).toList());
+    final jsonUsers = dc.jsonEncode(_users.map((u) => u.toJson()).toList());
     await prefs.setString(_kUsers, jsonUsers);
   }
 
@@ -191,6 +194,9 @@ class AuthTokenProvider extends ChangeNotifier {
     _accountId = null;
     _users = [];
 
+    _shiftId = null;
+    _activeUserId = null;
+
     if (!keepDeviceId) _deviceId = null;
 
     final prefs = await SharedPreferences.getInstance();
@@ -201,9 +207,52 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.remove(_kAccountId);
     await prefs.remove(_kUsers);
 
+    await prefs.remove(_kShiftId);
+    await prefs.remove(_kActiveUserId);
+
     if (!keepDeviceId) {
       await prefs.remove(_kDeviceId);
     }
+
+    notifyListeners();
+  }
+
+  Future<void> setShiftId(String id) async {
+    final v = id.trim();
+    if (v.isEmpty) return;
+
+    _shiftId = v;
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kShiftId, v);
+  }
+
+  Future<void> clearShiftId() async {
+    _shiftId = null;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kShiftId);
+
+    notifyListeners();
+  }
+
+  Future<void> setActiveUserId(String userId) async {
+    final v = userId.trim();
+    if (v.isEmpty) return;
+
+    _activeUserId = v;
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kActiveUserId, v);
+  }
+
+  Future<void> clearActiveUserId() async {
+    _activeUserId = null;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kActiveUserId);
 
     notifyListeners();
   }

@@ -12,17 +12,18 @@ class AuthRemoteDataSource {
     final safeKey = key.trim();
 
     final res = await _dio.get(
-      'https://leemon.kz/api/organizations/pos/$safeKey',
+      '/organizations/pos/$safeKey',
       queryParameters: {
         'device_id': deviceId,
         'include': 'users',
       },
     );
 
-    if (res.data is Map<String, dynamic>) {
-      return PosProvisionResponse.fromJson(res.data as Map<String, dynamic>);
+    final data = res.data;
+    if (data is Map<String, dynamic>) {
+      return PosProvisionResponse.fromJson(data);
     }
 
-    throw Exception('Unexpected response type: ${res.data.runtimeType}');
+    throw Exception('Unexpected response type: ${data.runtimeType}');
   }
 }

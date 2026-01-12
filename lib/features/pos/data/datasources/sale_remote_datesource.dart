@@ -36,6 +36,7 @@ class SaleRemoteDataSource {
       queryParameters: {
         'page': page,
         'per_page': perPage,
+        'include': 'items', 
       },
     );
 

@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pos_desktop_clean/core/di/api/device_id_store.dart';
 import 'package:pos_desktop_clean/features/pos/domain/repositories/auth_repository.dart';
 import 'package:pos_desktop_clean/features/pos/domain/repositories/product_repository.dart';
+import 'package:pos_desktop_clean/features/pos/domain/repositories/session_repository.dart';
 import 'package:pos_desktop_clean/features/pos/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
@@ -66,6 +67,7 @@ Future<void> main() async {
         BlocProvider<AuthCubit>(
           create: (ctx) => AuthCubit(
             authRepository: sl<AuthRepository>(),
+            sessionRepository: sl<SessionRepository>(),
             tokenProvider: ctx.read<AuthTokenProvider>(),
           ),
         ),

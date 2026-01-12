@@ -4,28 +4,29 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
 import 'package:pos_desktop_clean/core/di/api/service_locator.dart';
+import 'package:pos_desktop_clean/core/models/pos_provision_response.dart';
 import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
 import 'package:pos_desktop_clean/features/pos/data/datasources/product_local_datasource.dart';
 import 'package:pos_desktop_clean/features/pos/data/utils/app_theme.dart';
 import 'package:pos_desktop_clean/features/pos/presentation/pages/auth/auth_bloc/auth_cubit.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/pages/auth/auth_bloc/auth_state.dart';
 import 'package:pos_desktop_clean/features/pos/presentation/pages/products/product_bloc/product_cubit.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/widgets/close_shift_bottom.dart';
+
 import 'package:window_manager/window_manager.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/widgets/close_shift_bottom.dart';
 
 Future<void> showPosActionsDialog(BuildContext context) {
   final actions = <_PosAction>[
     _PosAction('ВЫХОД ИЗ ПРОГРАММЫ', () {
-      final router = GoRouter.of(context); // возьми router ДО pop()
-      // context.read<AuthCubit>().logout(); // 1) снять авторизацию
-
-      Navigator.of(context, rootNavigator: true).pop(); // 2) закрыть диалог
-
-      // 3) можно не вызывать, redirect сам уведёт на /login.
-      // Но если хочешь явно:
-      Future.microtask(() => router.go('/login'));
+      Navigator.of(context, rootNavigator: true).pop();
+      context.read<AuthCubit>().lockToCashiers();
     }),
-    _PosAction('ЗАБЛОКИРОВАТЬ КАССУ', () {/* TODO */}),
+    _PosAction('ЗАБЛОКИРОВАТЬ КАССУ', () {
+      Navigator.of(context, rootNavigator: true).pop();
+      context.read<AuthCubit>().lockToCashiers();
+    }),
     _PosAction('РАСПЕЧАТАТЬ ЧЕК\nПОСЛЕДНЕЙ ПРОДАЖИ', () {/* TODO */}),
     _PosAction(
       'СИНХРОНИЗАЦИЯ',
@@ -33,10 +34,6 @@ Future<void> showPosActionsDialog(BuildContext context) {
         Navigator.of(context, rootNavigator: true).pop(); // закрыть диалог
 
         // 1) берём key (обязательно)
-        final auth = context.read<AuthTokenProvider>();
-
-        // TODO: замени на своё поле (примерно так)
-        // final String key = auth.posKey; // <-- вот тут твой key
 
         final local = sl<ProductLocalDataSource>();
         await local.clear(); // очистили Hive
@@ -52,24 +49,21 @@ Future<void> showPosActionsDialog(BuildContext context) {
 
       if (!kIsWeb &&
           (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
-        // 1) выйти из полноэкранного перед сворачиванием
         if (await windowManager.isFullScreen()) {
           await windowManager.setFullScreen(false);
         }
-        // 2) временно разрешить сворачивание
         await windowManager.setMinimizable(true);
-        // 3) свернуть
         await windowManager.minimize();
-        // 4) (не обязательно) сразу вернуть запрет — на некоторых платформах это
-        //    сработает уже после события minimize; если нет — вернётся в onWindowRestore()
         await windowManager.setMinimizable(false);
       }
     }),
     _PosAction('ПРОВЕРИТЬ ОБНОВЛЕНИЕ', () {/* TODO */}),
     _PosAction('ВЗНОС В КАССУ', () {/* TODO */}),
     _PosAction('РАСХОД', () {/* TODO */}),
-    _PosAction('СДАТЬ СМЕНУ', () {
-      AuthTokenProvider tokenProvider = context.read<AuthTokenProvider>();
+    _PosAction('СДАТЬ СМЕНУ', () async {
+      Navigator.of(context, rootNavigator: true)
+          .pop(); // закрыть actions dialog
+      await showCloseShiftSheet(context); // открыть sheet с клавой
     }),
     _PosAction('ПРИНТЕР', () {/* TODO */}),
   ];
@@ -139,6 +133,65 @@ Future<void> showPosActionsDialog(BuildContext context) {
       );
     },
   );
+}
+
+Future<num?> _askCashAmount(
+  BuildContext context, {
+  required String title,
+  required String hint,
+  required String confirmText,
+}) async {
+  final ctrl = TextEditingController();
+  final focus = FocusNode();
+
+  num? parseAmount(String s) {
+    final v = s.trim().replaceAll(' ', '').replaceAll(',', '.');
+    if (v.isEmpty) return null;
+    return num.tryParse(v);
+  }
+
+  final result = await showDialog<num?>(
+    context: context,
+    barrierDismissible: true,
+    builder: (ctx) {
+      return AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: ctrl,
+          focusNode: focus,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(
+            hintText: hint,
+          ),
+          onSubmitted: (_) {
+            final amount = parseAmount(ctrl.text);
+            if (amount == null || amount < 0) return;
+            Navigator.of(ctx).pop(amount);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final amount = parseAmount(ctrl.text);
+              if (amount == null || amount < 0) return;
+              Navigator.of(ctx).pop(amount);
+            },
+            child: Text(confirmText),
+          ),
+        ],
+      );
+    },
+  );
+
+  ctrl.dispose();
+  focus.dispose();
+
+  return result;
 }
 
 class _PosAction {

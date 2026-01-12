@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
@@ -81,19 +82,16 @@ class _LoginPageState extends State<LoginPage> {
             child: Card(
               elevation: 0,
               color: Colors.white.withOpacity(0.9),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
               child: Row(
                 children: [
                   const Expanded(child: _LeftBrandPane()),
                   const VerticalDivider(width: 1),
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 40, vertical: 32),
+                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
                       child: MultiBlocListener(
                         listeners: [
-                          // --- AUTH -> если успех, стартуем загрузку товаров ---
                           BlocListener<AuthCubit, AuthState>(
                             listener: (context, state) {
                               if (state is AuthFailure) {
@@ -103,16 +101,10 @@ class _LoginPageState extends State<LoginPage> {
                               }
 
                               if (state is AuthSuccess) {
-                                final key = context
-                                        .read<AuthTokenProvider>()
-                                        .posKey
-                                        ?.trim() ??
-                                    '';
+                                final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
                                 if (key.isEmpty) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                        content: Text(
-                                            'posKey пустой, не могу загрузить товары')),
+                                    const SnackBar(content: Text('posKey пустой, не могу загрузить товары')),
                                   );
                                   return;
                                 }
@@ -125,17 +117,15 @@ class _LoginPageState extends State<LoginPage> {
                             },
                           ),
 
-                          // --- PRODUCTS -> когда загрузились, идём в POS ---
                           BlocListener<ProductsCubit, ProductsState>(
                             listener: (context, state) {
                               if (state is ProductsLoaded) {
-                                Navigator.pushReplacementNamed(context, '/pos');
+                                context.go('/pos');
                               }
+
                               if (state is ProductsError) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text(
-                                          'Ошибка загрузки товаров: ${state.message}')),
+                                  SnackBar(content: Text('Ошибка загрузки товаров: ${state.message}')),
                                 );
                               }
                             },
@@ -143,19 +133,15 @@ class _LoginPageState extends State<LoginPage> {
                         ],
                         child: BlocBuilder<AuthCubit, AuthState>(
                           builder: (context, authState) {
-                            final productsState =
-                                context.watch<ProductsCubit>().state;
-
+                            final productsState = context.watch<ProductsCubit>().state;
                             final isLoadingAuth = authState is AuthLoading;
-                            final isLoadingProducts =
-                                productsState is ProductsLoading;
 
-                            // если уже прошли PIN и грузим товары — показываем отдельный экран загрузки
+                            // ✅ после AuthSuccess грузим товары
                             if (authState is AuthSuccess) {
-                              if (productsState is ProductsLoading ||
-                                  productsState is ProductsInitial) {
-                                return _LoadingProductsStep(
+                              if (productsState is ProductsLoading || productsState is ProductsInitial) {
+                                return _LoadingStep(
                                   theme: theme,
+                                  title: 'Подготовка кассы',
                                   subtitle: 'Загружаем товары...',
                                 );
                               }
@@ -168,13 +154,20 @@ class _LoginPageState extends State<LoginPage> {
                                 );
                               }
 
-                              // ProductsLoaded отловится listener'ом и сделает навигацию
                               return const SizedBox.shrink();
                             }
 
+                            // ✅ запрос на open-session
+                            if (authState is AuthOpeningSession) {
+                              return _LoadingStep(
+                                theme: theme,
+                                title: 'Подготовка кассы',
+                                subtitle: 'Открываем смену...',
+                              );
+                            }
+
                             // STEP: KEY
-                            if (authState is AuthInitial ||
-                                authState is AuthLoading) {
+                            if (authState is AuthInitial || authState is AuthLoading) {
                               return _KeyStep(
                                 theme: theme,
                                 controller: _keyController,
@@ -182,9 +175,7 @@ class _LoginPageState extends State<LoginPage> {
                                 submitted: _keySubmitted,
                                 loading: isLoadingAuth,
                                 onSubmit: isLoadingAuth ? null : _submitKey,
-                                hint: provider.deviceId == null
-                                    ? null
-                                    : 'Device ID: ${provider.deviceId}',
+                                hint: provider.deviceId == null ? null : 'Device ID: ${provider.deviceId}',
                               );
                             }
 
@@ -193,13 +184,8 @@ class _LoginPageState extends State<LoginPage> {
                               return _UsersStep(
                                 theme: theme,
                                 provision: authState.provision,
-                                onChangeKey: () =>
-                                    context.read<AuthCubit>().resetAll(),
-                                onSelect: (u) =>
-                                    context.read<AuthCubit>().selectUser(
-                                          authState.provision,
-                                          u,
-                                        ),
+                                onChangeKey: () => context.read<AuthCubit>().resetAll(),
+                                onSelect: (u) => context.read<AuthCubit>().selectUser(authState.provision, u),
                               );
                             }
 
@@ -207,20 +193,32 @@ class _LoginPageState extends State<LoginPage> {
                             if (authState is AuthPinStep) {
                               return _PinStep(
                                 theme: theme,
-                                provision: authState.provision,
                                 user: authState.user,
                                 errorText: authState.errorText,
-                                onBack: () => context
-                                    .read<AuthCubit>()
-                                    .backToUsers(authState.provision),
-                                onVerify: (pin) =>
-                                    context.read<AuthCubit>().verifyPin(
-                                          provision: authState.provision,
-                                          user: authState.user,
-                                          inputPin: pin,
-                                        ),
-                                onChangeKey: () =>
-                                    context.read<AuthCubit>().resetAll(),
+                                onBack: () => context.read<AuthCubit>().backToUsers(authState.provision),
+                                onVerify: (pin) => context.read<AuthCubit>().verifyPin(
+                                      provision: authState.provision,
+                                      user: authState.user,
+                                      inputPin: pin,
+                                    ),
+                                onChangeKey: () => context.read<AuthCubit>().resetAll(),
+                              );
+                            }
+
+                            // ✅ STEP: OPENING CASH INPUT
+                            if (authState is AuthOpeningCashStep) {
+                              return _OpeningCashStep(
+                                theme: theme,
+                                user: authState.user,
+                                onBack: () => context.read<AuthCubit>().selectUser(
+                                      authState.provision,
+                                      authState.user,
+                                    ),
+                                onSubmit: (amount) => context.read<AuthCubit>().openSessionWithCash(
+                                      provision: authState.provision,
+                                      user: authState.user,
+                                      openingCashAmount: amount,
+                                    ),
                               );
                             }
 
@@ -270,8 +268,7 @@ class _KeyStep extends StatelessWidget {
       children: [
         Text(
           'Подключение кассы',
-          style: theme.textTheme.headlineSmall!
-              .copyWith(fontWeight: FontWeight.w800),
+          style: theme.textTheme.headlineSmall!.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 8),
         Text(
@@ -280,9 +277,7 @@ class _KeyStep extends StatelessWidget {
         ),
         if (hint != null) ...[
           const SizedBox(height: 8),
-          Text(hint!,
-              style:
-                  theme.textTheme.bodySmall!.copyWith(color: Colors.black45)),
+          Text(hint!, style: theme.textTheme.bodySmall!.copyWith(color: Colors.black45)),
         ],
         const SizedBox(height: 22),
         TextField(
@@ -296,8 +291,7 @@ class _KeyStep extends StatelessWidget {
             hintText: 'Введите ключ вашей кассы',
             errorText: showError ? 'Ключ обязателен' : null,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           ),
         ),
         const SizedBox(height: 14),
@@ -307,21 +301,18 @@ class _KeyStep extends StatelessWidget {
           child: FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFD45F4F),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
             onPressed: loading ? null : onSubmit,
             child: loading
                 ? const SizedBox(
                     width: 22,
                     height: 22,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   )
                 : const Text(
                     'Продолжить',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w800, letterSpacing: 0.3),
+                    style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.3),
                   ),
           ),
         ),
@@ -362,12 +353,10 @@ class _UsersStep extends StatelessWidget {
             Expanded(
               child: Text(
                 'Касса: ${provision.name}',
-                style: theme.textTheme.titleLarge!
-                    .copyWith(fontWeight: FontWeight.w800),
+                style: theme.textTheme.titleLarge!.copyWith(fontWeight: FontWeight.w800),
               ),
             ),
-            TextButton(
-                onPressed: onChangeKey, child: const Text('Сменить ключ')),
+            TextButton(onPressed: onChangeKey, child: const Text('Сменить ключ')),
           ],
         ),
         const SizedBox(height: 6),
@@ -377,11 +366,8 @@ class _UsersStep extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         if (users.isEmpty)
-          Text(
-            'Пользователи не найдены',
-            style:
-                theme.textTheme.bodyMedium!.copyWith(color: Colors.redAccent),
-          )
+          Text('Пользователи не найдены',
+              style: theme.textTheme.bodyMedium!.copyWith(color: Colors.redAccent))
         else
           Expanded(
             child: ListView.separated(
@@ -412,9 +398,7 @@ class _UserTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    final letter =
-        user.name.isNotEmpty ? user.name.trim().characters.first : 'U';
+    final letter = user.name.isNotEmpty ? user.name.trim().characters.first : 'U';
 
     return InkWell(
       borderRadius: BorderRadius.circular(14),
@@ -431,27 +415,19 @@ class _UserTile extends StatelessWidget {
             CircleAvatar(
               radius: 20,
               backgroundColor: const Color(0xFFEFF6FF),
-              child: Text(
-                letter,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w900, color: Color(0xFF3B82F6)),
-              ),
+              child: Text(letter,
+                  style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF3B82F6))),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    user.name,
-                    style: theme.textTheme.titleMedium!
-                        .copyWith(fontWeight: FontWeight.w800),
-                  ),
+                  Text(user.name, style: theme.textTheme.titleMedium!.copyWith(fontWeight: FontWeight.w800)),
                   const SizedBox(height: 2),
                   Text(
                     user.emailAddress.isEmpty ? '—' : user.emailAddress,
-                    style: theme.textTheme.bodySmall!
-                        .copyWith(color: Colors.black54),
+                    style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54),
                   ),
                 ],
               ),
@@ -468,7 +444,6 @@ class _UserTile extends StatelessWidget {
 
 class _PinStep extends StatefulWidget {
   final ThemeData theme;
-  final PosProvisionResponse provision;
   final PosUser user;
   final String? errorText;
   final VoidCallback onBack;
@@ -477,7 +452,6 @@ class _PinStep extends StatefulWidget {
 
   const _PinStep({
     required this.theme,
-    required this.provision,
     required this.user,
     required this.onBack,
     required this.onChangeKey,
@@ -491,18 +465,14 @@ class _PinStep extends StatefulWidget {
 
 class _PinStepState extends State<_PinStep> {
   final _pinController = TextEditingController();
-  final _pinFocus = FocusNode();
 
   @override
   void dispose() {
     _pinController.dispose();
-    _pinFocus.dispose();
     super.dispose();
   }
 
-  void _submit() {
-    widget.onVerify(_pinController.text.trim());
-  }
+  void _submit() => widget.onVerify(_pinController.text.trim());
 
   @override
   Widget build(BuildContext context) {
@@ -513,30 +483,22 @@ class _PinStepState extends State<_PinStep> {
       children: [
         Row(
           children: [
-            IconButton(
-                onPressed: widget.onBack, icon: const Icon(Icons.arrow_back)),
+            IconButton(onPressed: widget.onBack, icon: const Icon(Icons.arrow_back)),
             Expanded(
               child: Text(
                 widget.user.name,
-                style: theme.textTheme.titleLarge!
-                    .copyWith(fontWeight: FontWeight.w800),
+                style: theme.textTheme.titleLarge!.copyWith(fontWeight: FontWeight.w800),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            TextButton(
-                onPressed: widget.onChangeKey,
-                child: const Text('Сменить ключ')),
+            TextButton(onPressed: widget.onChangeKey, child: const Text('Сменить ключ')),
           ],
         ),
         const SizedBox(height: 6),
-        Text(
-          'Введи PIN пользователя',
-          style: theme.textTheme.bodyMedium!.copyWith(color: Colors.black54),
-        ),
+        Text('Введи PIN пользователя', style: theme.textTheme.bodyMedium!.copyWith(color: Colors.black54)),
         const SizedBox(height: 16),
         TextField(
           controller: _pinController,
-          focusNode: _pinFocus,
           keyboardType: TextInputType.number,
           textInputAction: TextInputAction.done,
           obscureText: true,
@@ -546,8 +508,7 @@ class _PinStepState extends State<_PinStep> {
             hintText: 'Например: 1050',
             errorText: widget.errorText,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           ),
         ),
         const SizedBox(height: 14),
@@ -557,34 +518,129 @@ class _PinStepState extends State<_PinStep> {
           child: FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFD45F4F),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
             onPressed: _submit,
-            child: const Text(
-              'Войти',
-              style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.3),
-            ),
+            child: const Text('Продолжить', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.3)),
           ),
         ),
         const Spacer(),
-        Text(
-          '© ${DateTime.now().year} POS Desktop',
-          style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54),
-        ),
+        Text('© ${DateTime.now().year} POS Desktop', style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54)),
       ],
     );
   }
 }
 
-// -------------------- STEP: LOADING PRODUCTS --------------------
+// -------------------- STEP: OPENING CASH --------------------
 
-class _LoadingProductsStep extends StatelessWidget {
+class _OpeningCashStep extends StatefulWidget {
   final ThemeData theme;
+  final PosUser user;
+  final VoidCallback onBack;
+  final ValueChanged<num> onSubmit;
+
+  const _OpeningCashStep({
+    required this.theme,
+    required this.user,
+    required this.onBack,
+    required this.onSubmit,
+  });
+
+  @override
+  State<_OpeningCashStep> createState() => _OpeningCashStepState();
+}
+
+class _OpeningCashStepState extends State<_OpeningCashStep> {
+  final _cashController = TextEditingController();
+  bool _submitted = false;
+
+  @override
+  void dispose() {
+    _cashController.dispose();
+    super.dispose();
+  }
+
+  num _parseAmount(String v) {
+    // поддержим "1000", "1 000", "1,000", "1000.50"
+    final clean = v.trim().replaceAll(' ', '').replaceAll(',', '.');
+    return num.tryParse(clean) ?? 0;
+  }
+
+  void _submit() {
+    setState(() => _submitted = true);
+    final amount = _parseAmount(_cashController.text);
+
+    if (amount < 0) return;
+    widget.onSubmit(amount);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+    final amount = _parseAmount(_cashController.text);
+    final showError = _submitted && amount < 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            IconButton(onPressed: widget.onBack, icon: const Icon(Icons.arrow_back)),
+            Expanded(
+              child: Text(
+                widget.user.name,
+                style: theme.textTheme.titleLarge!.copyWith(fontWeight: FontWeight.w800),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text('Сумма открытия смены', style: theme.textTheme.bodyMedium!.copyWith(color: Colors.black54)),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _cashController,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _submit(),
+          decoration: InputDecoration(
+            labelText: 'Сумма',
+            hintText: 'Например: 10000',
+            errorText: showError ? 'Сумма не может быть отрицательной' : null,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          ),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFD45F4F),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            onPressed: _submit,
+            child: const Text('Открыть смену', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.3)),
+          ),
+        ),
+        const Spacer(),
+        Text('© ${DateTime.now().year} POS Desktop', style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54)),
+      ],
+    );
+  }
+}
+
+// -------------------- LOADING --------------------
+
+class _LoadingStep extends StatelessWidget {
+  final ThemeData theme;
+  final String title;
   final String subtitle;
 
-  const _LoadingProductsStep({
+  const _LoadingStep({
     required this.theme,
+    required this.title,
     required this.subtitle,
   });
 
@@ -593,29 +649,19 @@ class _LoadingProductsStep extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Подготовка кассы',
-          style: theme.textTheme.headlineSmall!
-              .copyWith(fontWeight: FontWeight.w800),
-        ),
+        Text(title, style: theme.textTheme.headlineSmall!.copyWith(fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
-        Text(
-          subtitle,
-          style: theme.textTheme.bodyMedium!.copyWith(color: Colors.black54),
-        ),
+        Text(subtitle, style: theme.textTheme.bodyMedium!.copyWith(color: Colors.black54)),
         const SizedBox(height: 18),
         const Center(child: CircularProgressIndicator()),
         const Spacer(),
-        Text(
-          '© ${DateTime.now().year} POS Desktop',
-          style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54),
-        ),
+        Text('© ${DateTime.now().year} POS Desktop', style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54)),
       ],
     );
   }
 }
 
-// -------------------- STEP: PRODUCTS ERROR --------------------
+// -------------------- PRODUCTS ERROR --------------------
 
 class _ProductsErrorStep extends StatelessWidget {
   final ThemeData theme;
@@ -633,16 +679,10 @@ class _ProductsErrorStep extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Не удалось загрузить товары',
-          style: theme.textTheme.headlineSmall!
-              .copyWith(fontWeight: FontWeight.w800),
-        ),
+        Text('Не удалось загрузить товары',
+            style: theme.textTheme.headlineSmall!.copyWith(fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
-        Text(
-          message,
-          style: theme.textTheme.bodyMedium!.copyWith(color: Colors.redAccent),
-        ),
+        Text(message, style: theme.textTheme.bodyMedium!.copyWith(color: Colors.redAccent)),
         const SizedBox(height: 18),
         SizedBox(
           width: double.infinity,
@@ -651,18 +691,13 @@ class _ProductsErrorStep extends StatelessWidget {
             onPressed: onRetry,
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFD45F4F),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
-            child: const Text('Повторить',
-                style: TextStyle(fontWeight: FontWeight.w800)),
+            child: const Text('Повторить', style: TextStyle(fontWeight: FontWeight.w800)),
           ),
         ),
         const Spacer(),
-        Text(
-          '© ${DateTime.now().year} POS Desktop',
-          style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54),
-        ),
+        Text('© ${DateTime.now().year} POS Desktop', style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54)),
       ],
     );
   }
@@ -696,11 +731,7 @@ class _LeftBrandPane extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
             ),
             alignment: Alignment.center,
-            child: Text(
-              'POS',
-              style: theme.textTheme.titleMedium!
-                  .copyWith(fontWeight: FontWeight.w800),
-            ),
+            child: Text('POS', style: theme.textTheme.titleMedium!.copyWith(fontWeight: FontWeight.w800)),
           ),
           const Spacer(),
           Text(
@@ -709,17 +740,12 @@ class _LeftBrandPane extends StatelessWidget {
               color: Colors.white,
               height: 1.05,
               fontWeight: FontWeight.w800,
-              shadows: const [
-                Shadow(
-                    blurRadius: 10, color: Colors.black26, offset: Offset(0, 2))
-              ],
+              shadows: const [Shadow(blurRadius: 10, color: Colors.black26, offset: Offset(0, 2))],
             ),
           ),
           const SizedBox(height: 12),
-          Text(
-            'Быстро. Стабильно. Оффлайн/онлайн.',
-            style: theme.textTheme.titleMedium!.copyWith(color: Colors.white70),
-          ),
+          Text('Быстро. Стабильно. Оффлайн/онлайн.',
+              style: theme.textTheme.titleMedium!.copyWith(color: Colors.white70)),
           const Spacer(),
           const _MiniFeatures(),
         ],
