@@ -34,7 +34,8 @@ Future<void> showCloseShiftSheet(BuildContext context) async {
   // ✅ навигация только СНАРУЖИ шторки
   if (closed == true && context.mounted) {
     context.go('/login');
-    context.read<AuthCubit>().lockToCashiers();
+    // или если хочешь просто блокировку без /login:
+    // context.read<AuthCubit>().lockToCashiers();
   }
 }
 
@@ -63,12 +64,14 @@ class _CloseShiftSheetState extends State<_CloseShiftSheet> {
   Future<void> _submit() async {
     final amount = _parseAmount(_ctrl.text);
     if (amount == null || amount < 0) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Введите корректную сумму')),
       );
       return;
     }
 
+    // ✅ отправляем закрытие смены, дальше слушатель поймает AuthShiftClosed
     await context.read<AuthCubit>().closeSessionWithCash(
           closingCashAmount: amount,
         );
@@ -79,7 +82,8 @@ class _CloseShiftSheetState extends State<_CloseShiftSheet> {
     final bottom = MediaQuery.of(context).viewInsets.bottom;
 
     return BlocConsumer<AuthCubit, AuthState>(
-      listenWhen: (prev, curr) => curr is AuthFailure || curr is AuthShiftClosed,
+      listenWhen: (prev, curr) =>
+          curr is AuthFailure || curr is AuthShiftClosed,
       listener: (context, state) {
         if (state is AuthFailure) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -92,6 +96,14 @@ class _CloseShiftSheetState extends State<_CloseShiftSheet> {
           Navigator.of(context).pop(true); // ✅ вернуть успех наружу
         }
       },
+
+      // ✅ чтобы UI не прыгал от промежуточных стейтов (AuthProvisioned/AuthInitial)
+      buildWhen: (prev, curr) =>
+          curr is AuthClosingSession ||
+          curr is AuthFailure ||
+          prev is AuthClosingSession ||
+          prev is AuthFailure,
+
       builder: (context, state) {
         final isLoading = state is AuthClosingSession;
 
@@ -131,7 +143,8 @@ class _CloseShiftSheetState extends State<_CloseShiftSheet> {
 
                   TextField(
                     controller: _ctrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
                     style: const TextStyle(color: Colors.black87),
                     decoration: InputDecoration(
                       filled: true,
@@ -152,7 +165,8 @@ class _CloseShiftSheetState extends State<_CloseShiftSheet> {
                     onChanged: (t) {
                       setState(() {
                         _ctrl.text = t;
-                        _ctrl.selection = TextSelection.collapsed(offset: t.length);
+                        _ctrl.selection =
+                            TextSelection.collapsed(offset: t.length);
                       });
                     },
                   ),
@@ -165,10 +179,13 @@ class _CloseShiftSheetState extends State<_CloseShiftSheet> {
                         child: SizedBox(
                           height: 46,
                           child: OutlinedButton(
-                            onPressed: isLoading ? null : () => Navigator.of(context).pop(false),
+                            onPressed: isLoading
+                                ? null
+                                : () => Navigator.of(context).pop(false),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.white,
-                              side: BorderSide(color: Colors.white.withOpacity(.35)),
+                              side: BorderSide(
+                                  color: Colors.white.withOpacity(.35)),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),

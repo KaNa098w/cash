@@ -75,6 +75,17 @@ class AuthOpeningSession extends AuthState {
   List<Object?> get props => [provision, user, openingCashAmount];
 }
 
+/// ✅ Смена уже открыта, просто разблокировали кассира (без открытия смены)
+class AuthUnlocked extends AuthState {
+  final PosProvisionResponse provision;
+  final PosUser user;
+
+  const AuthUnlocked({required this.provision, required this.user});
+
+  @override
+  List<Object?> get props => [provision, user];
+}
+
 class AuthClosingSession extends AuthState {
   final num closingCashAmount;
 
@@ -86,6 +97,7 @@ class AuthClosingSession extends AuthState {
   List<Object?> get props => [closingCashAmount];
 }
 
+/// ✅ “Готово к входу в POS” (после успешного открытия смены)
 class AuthSuccess extends AuthState {
   const AuthSuccess();
 }

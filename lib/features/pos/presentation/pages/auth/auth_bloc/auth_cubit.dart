@@ -29,13 +29,16 @@ class AuthCubit extends Cubit<AuthState> {
     emit(AuthProvisioned(cached));
   }
 
-  void lockToCashiers() {
+  Future<void> lockToCashiers() async {
+    // ✅ блокировка = забыли текущего кассира, но смену НЕ закрываем
+    await _tokenProvider.clearActiveUserId();
+
     final cached = _tokenProvider.cachedProvision;
     if (cached != null) {
       emit(AuthProvisioned(cached));
-      return;
+    } else {
+      emit(const AuthInitial());
     }
-    emit(const AuthInitial());
   }
 
   Future<void> provisionByKey(String key) async {
@@ -80,11 +83,12 @@ class AuthCubit extends Cubit<AuthState> {
     emit(AuthProvisioned(provision));
   }
 
-  void verifyPin({
+  /// ✅ ВАЖНО: сделали async, чтобы await setActiveUserId() не терялся
+  Future<void> verifyPin({
     required PosProvisionResponse provision,
     required PosUser user,
     required String inputPin,
-  }) {
+  }) async {
     final pin = inputPin.trim();
     if (pin.isEmpty) {
       emit(AuthPinStep(provision: provision, user: user, errorText: 'Введите PIN'));
@@ -107,8 +111,15 @@ class AuthCubit extends Cubit<AuthState> {
     }
 
     // ✅ запоминаем активного кассира
-    _tokenProvider.setActiveUserId(user.id.toString());
+    await _tokenProvider.setActiveUserId(user.id.toString());
 
+    // ✅ если смена уже открыта — просто разблокируем (НЕ просим сумму и НЕ открываем смену)
+    if (_tokenProvider.hasShiftId) {
+      emit(AuthUnlocked(provision: provision, user: user));
+      return;
+    }
+
+    // иначе обычный сценарий открытия смены
     emit(AuthOpeningCashStep(provision: provision, user: user));
   }
 
@@ -127,7 +138,6 @@ class AuthCubit extends Cubit<AuthState> {
       final key = _tokenProvider.posKey?.trim() ?? '';
       if (key.isEmpty) throw Exception('posKey пустой');
 
-      // ✅ sessionId вернулся — сохраняем
       final sessionId = await _session_repositoryOpen(
         key: key,
         userId: user.id.toString(),
@@ -139,7 +149,9 @@ class AuthCubit extends Cubit<AuthState> {
 
       emit(const AuthSuccess());
     } on DioException catch (e) {
-      emit(AuthFailure('Не удалось открыть смену: Dio ${e.response?.statusCode}: ${e.response?.data}'));
+      emit(AuthFailure(
+        'Не удалось открыть смену: Dio ${e.response?.statusCode}: ${e.response?.data}',
+      ));
       emit(AuthOpeningCashStep(provision: provision, user: user));
     } catch (e) {
       emit(AuthFailure('Не удалось открыть смену: $e'));
@@ -147,7 +159,6 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
-  // чтобы не путаться с именами — отдельный приватный вызов
   Future<String> _session_repositoryOpen({
     required String key,
     required String userId,
@@ -169,10 +180,14 @@ class AuthCubit extends Cubit<AuthState> {
       if (key.isEmpty) throw Exception('posKey пустой');
 
       final sessionId = _tokenProvider.shiftId?.trim() ?? '';
-      if (sessionId.isEmpty) throw Exception('sessionId отсутствует: нечего закрывать');
+      if (sessionId.isEmpty) {
+        throw Exception('sessionId отсутствует: нечего закрывать');
+      }
 
       final userId = _tokenProvider.activeUserId?.trim() ?? '';
-      if (userId.isEmpty) throw Exception('activeUserId отсутствует: не определён кассир');
+      if (userId.isEmpty) {
+        throw Exception('activeUserId отсутствует: не определён кассир');
+      }
 
       emit(AuthClosingSession(closingCashAmount: closingCashAmount));
 
@@ -187,7 +202,16 @@ class AuthCubit extends Cubit<AuthState> {
       await _tokenProvider.clearShiftId();
       await _tokenProvider.clearActiveUserId();
 
+      // ✅ это состояние ловит шторка и закрывается
       emit(const AuthShiftClosed());
+
+      // ✅ дальше возвращаемся на выбор кассира (кэш provisioning остаётся)
+      final cached = _tokenProvider.cachedProvision;
+      if (cached != null) {
+        emit(AuthProvisioned(cached));
+      } else {
+        emit(const AuthInitial());
+      }
     } catch (e) {
       emit(AuthFailure('Не удалось закрыть смену: $e'));
     }
