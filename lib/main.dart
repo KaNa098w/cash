@@ -5,6 +5,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:pos_desktop_clean/core/di/api/device_id_store.dart';
 import 'package:pos_desktop_clean/features/pos/domain/repositories/auth_repository.dart';
 import 'package:pos_desktop_clean/features/pos/domain/repositories/product_repository.dart';
@@ -85,17 +86,28 @@ class _KioskWindowListener with WindowListener {
   void onWindowRestore() async {}
 }
 
-class PosApp extends StatelessWidget {
+class PosApp extends StatefulWidget {
   const PosApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final router = createRouter(context);
+  State<PosApp> createState() => _PosAppState();
+}
 
+class _PosAppState extends State<PosApp> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = createRouter(context); // ✅ один раз
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
       title: 'POS',
-      routerConfig: router,
+      routerConfig: _router,
     );
   }
 }

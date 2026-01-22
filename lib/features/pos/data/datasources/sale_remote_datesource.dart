@@ -36,7 +36,7 @@ class SaleRemoteDataSource {
       queryParameters: {
         'page': page,
         'per_page': perPage,
-        'include': 'items', 
+        'include': 'items',
       },
     );
 
@@ -69,6 +69,15 @@ class SaleRemoteDataSource {
       total: total,
       perPage: perPageMeta,
     );
+  }
+
+  /// ✅ NEW: получаем последнюю продажу (page=1, per_page=1)
+  Future<SaleModel?> getLastSale({
+    required String key,
+  }) async {
+    final res = await getSales(key: key, page: 1, perPage: 1);
+    if (res.items.isEmpty) return null;
+    return res.items.first; // "первый = последний" по твоей логике
   }
 
   /// ВСЕ страницы (если понадобится)

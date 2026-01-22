@@ -4,6 +4,7 @@ import 'package:pos_desktop_clean/core/models/sale_model.dart';
 class SalesHistoryState {
   final bool loading;
   final bool loadingMore;
+  final bool printing; // ✅ NEW
   final String? error;
 
   final List<SaleModel> sales;
@@ -13,6 +14,7 @@ class SalesHistoryState {
   const SalesHistoryState({
     required this.loading,
     required this.loadingMore,
+    required this.printing,
     required this.sales,
     required this.page,
     required this.lastPage,
@@ -22,6 +24,7 @@ class SalesHistoryState {
   factory SalesHistoryState.initial() => const SalesHistoryState(
         loading: true,
         loadingMore: false,
+        printing: false, // ✅
         sales: [],
         page: 1,
         lastPage: 1,
@@ -33,6 +36,7 @@ class SalesHistoryState {
   SalesHistoryState copyWith({
     bool? loading,
     bool? loadingMore,
+    bool? printing,
     String? error,
     List<SaleModel>? sales,
     int? page,
@@ -41,6 +45,7 @@ class SalesHistoryState {
     return SalesHistoryState(
       loading: loading ?? this.loading,
       loadingMore: loadingMore ?? this.loadingMore,
+      printing: printing ?? this.printing,
       error: error,
       sales: sales ?? this.sales,
       page: page ?? this.page,

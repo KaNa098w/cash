@@ -34,6 +34,8 @@ class SalesHistoryCubit extends Cubit<SalesHistoryState> {
     }
   }
 
+  
+
   Future<void> loadMore({
     required String key,
     int perPage = 15,

@@ -27,6 +27,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
+    // AuthTokenProvider().clearProvisioned();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<AuthTokenProvider>();
@@ -96,15 +97,15 @@ class _LoginPageState extends State<LoginPage> {
         ),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 980, maxHeight: 620),
+            constraints: const BoxConstraints(maxWidth: 980, maxHeight: 750),
             child: Card(
               elevation: 0,
               color: Colors.white.withOpacity(0.9),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
               child: Row(
                 children: [
-                  const Expanded(child: LeftBrandPane()),
-                  const VerticalDivider(width: 1),
+                  // const Expanded(child: LeftBrandPane()),
+                  // const VerticalDivider(width: 1),
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),

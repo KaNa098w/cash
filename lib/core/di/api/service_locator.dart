@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
+import 'package:pos_desktop_clean/features/pos/data/datasources/payment_remote_datasource.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 
 import 'package:pos_desktop_clean/core/di/api/app_config.dart';
@@ -146,6 +147,10 @@ Future<void> initDependencies() async {
       ),
     );
   }
+
+  sl.registerLazySingleton<PaymentsRemoteDataSource>(
+    () => PaymentsRemoteDataSource(sl<Dio>()),
+  );
 
   if (!sl.isRegistered<SaleRepository>()) {
     sl.registerLazySingleton<SaleRepository>(

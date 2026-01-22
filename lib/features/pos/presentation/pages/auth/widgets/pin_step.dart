@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:pos_desktop_clean/core/models/pos_provision_response.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/widgets/amount_keypad.dart';
 
 class PinStep extends StatefulWidget {
   final ThemeData theme;
@@ -32,6 +33,14 @@ class _PinStepState extends State<PinStep> {
     super.dispose();
   }
 
+  void _setPin(String v) {
+    _pinController.value = TextEditingValue(
+      text: v,
+      selection: TextSelection.collapsed(offset: v.length),
+    );
+    setState(() {});
+  }
+
   void _submit() => widget.onVerify(_pinController.text.trim());
 
   @override
@@ -51,18 +60,19 @@ class _PinStepState extends State<PinStep> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            TextButton(onPressed: widget.onChangeKey, child: const Text('Сменить ключ')),
+            // TextButton(onPressed: widget.onChangeKey, child: const Text('Сменить ключ')),
           ],
         ),
         const SizedBox(height: 6),
         Text('Введи PIN пользователя', style: theme.textTheme.bodyMedium!.copyWith(color: Colors.black54)),
         const SizedBox(height: 16),
+
         TextField(
           controller: _pinController,
-          keyboardType: TextInputType.number,
-          textInputAction: TextInputAction.done,
+          readOnly: true,
+          showCursor: false,
+          enableInteractiveSelection: false,
           obscureText: true,
-          onSubmitted: (_) => _submit(),
           decoration: InputDecoration(
             labelText: 'PIN',
             hintText: 'Например: 1050',
@@ -71,6 +81,7 @@ class _PinStepState extends State<PinStep> {
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           ),
         ),
+
         const SizedBox(height: 14),
         SizedBox(
           width: double.infinity,
@@ -84,7 +95,18 @@ class _PinStepState extends State<PinStep> {
             child: const Text('Продолжить', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.3)),
           ),
         ),
-        const Spacer(),
+
+        const SizedBox(height: 16),
+
+        AmountKeypad(
+          text: _pinController.text,
+          onChanged: _setPin,
+          allowDecimal: false,
+          maxLength: 4, // если PIN другой длины — поменяй
+          showQuickRows: false,
+        ),
+
+        const SizedBox(height: 12),
         Text('© ${DateTime.now().year} POS Desktop', style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54)),
       ],
     );

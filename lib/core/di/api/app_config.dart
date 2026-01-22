@@ -18,7 +18,7 @@ class AppConfig {
     switch (env) {
       case AppEnvironment.dev:
         _instance = AppConfig._internal(
-          baseUrl: 'https://leemon.kz/api',
+          baseUrl: 'https://stage.leemon.kz/api',
           environment: env,
         );
         break;

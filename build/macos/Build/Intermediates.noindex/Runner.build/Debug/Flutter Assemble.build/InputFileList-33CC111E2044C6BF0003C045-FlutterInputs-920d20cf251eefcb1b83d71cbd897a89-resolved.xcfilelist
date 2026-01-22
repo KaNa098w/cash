@@ -1929,7 +1929,7 @@
 /Users/beyinfotech/.pub-cache/hosted/pub.dev/xml-6.5.0/lib/xml.dart
 /Users/beyinfotech/.pub-cache/hosted/pub.dev/xml-6.5.0/lib/xml_events.dart
 /Users/beyinfotech/.pub-cache/hosted/pub.dev/yaml-3.1.3/LICENSE
-/Users/beyinfotech/Documents/cash/pos_desktop_clean/DOES_NOT_EXIST_RERUN_FOR_WILDCARD795088619
+/Users/beyinfotech/Documents/cash/pos_desktop_clean/DOES_NOT_EXIST_RERUN_FOR_WILDCARD247568517
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/assets/svg/Exclude.svg
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/assets/svg/bag.svg
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/assets/svg/cancel.svg
@@ -1951,6 +1951,7 @@
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/core/route/go_router.dart
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/data/datasources/auth_remote_datasource.dart
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/data/datasources/local_pos_datasource.dart
+/Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/data/datasources/payment_remote_datasource.dart
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/data/datasources/product_local_datasource.dart
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/data/datasources/product_remote_datasource.dart
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/data/datasources/sale_local_datasource.dart
@@ -1993,13 +1994,16 @@
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/presentation/state/pos_state.dart
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/presentation/widgets/amount_keypad.dart
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/presentation/widgets/close_shift_bottom.dart
+/Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/presentation/widgets/customer_create_page.dart
+/Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/presentation/widgets/customer_create_state.dart
+/Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/presentation/widgets/deposit_to_cash_sheel.dart
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/presentation/widgets/footer_status.dart
+/Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/presentation/widgets/onscreen_keyboar_widget.dart
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/presentation/widgets/payment_panel.dart
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/presentation/widgets/search_bar.dart
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/presentation/widgets/show_pos_action_dialog.dart
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/features/pos/presentation/widgets/top_bar.dart
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/main.dart
-/Users/beyinfotech/Documents/cash/pos_desktop_clean/lib/preloader.dart
 /Users/beyinfotech/Documents/cash/pos_desktop_clean/pubspec.yaml
 /Users/beyinfotech/development/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf
 /Users/beyinfotech/development/flutter/bin/cache/dart-sdk/pkg/_macros/LICENSE

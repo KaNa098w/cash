@@ -12,16 +12,26 @@ class AmountKeypad extends StatelessWidget {
       ['+2 000', '+5 000', '+10 000'],
     ],
     this.showQuickRows = true,
+    this.allowDecimal = true,
+    this.maxLength,
   });
 
-  final String text; // текущее значение (то, что в TextField)
+  final String text;
   final AmountChanged onChanged;
 
   final List<List<String>> rows;
   final bool showQuickRows;
 
+  /// Для PIN ставь false
+  final bool allowDecimal;
+
+  /// Для PIN ставь 4 (или сколько нужно)
+  final int? maxLength;
+
   String _applyToken(String current, String token) {
     var t = current;
+
+    if (token.isEmpty) return t;
 
     if (token == '⌫') {
       if (t.isNotEmpty) t = t.substring(0, t.length - 1);
@@ -29,6 +39,7 @@ class AmountKeypad extends StatelessWidget {
     }
 
     if (token == '.') {
+      if (!allowDecimal) return t;
       if (!t.contains('.')) {
         t = t.isEmpty ? '0.' : '$t.';
       }
@@ -36,6 +47,8 @@ class AmountKeypad extends StatelessWidget {
     }
 
     // цифра
+    if (maxLength != null && t.length >= maxLength!) return t;
+
     t = t == '0' ? token : '$t$token';
 
     // нормализуем ведущие нули
@@ -48,7 +61,6 @@ class AmountKeypad extends StatelessWidget {
     final curr = double.tryParse(current.replaceAll(',', '.')) ?? 0;
     final next = curr + inc;
 
-    // аккуратное форматирование
     var s = next.toStringAsFixed(2);
     if (s.endsWith('.00')) s = s.substring(0, s.length - 3);
     else if (s.endsWith('0')) s = s.substring(0, s.length - 1);
@@ -60,17 +72,16 @@ class AmountKeypad extends StatelessWidget {
   Widget build(BuildContext context) {
     const keyGrey = Color(0xFF999999);
 
-    const keys = [
+    final keys = <List<String>>[
       ['7', '8', '9'],
       ['4', '5', '6'],
       ['1', '2', '3'],
-      ['.', '0', '⌫'],
+      [allowDecimal ? '.' : '', '0', '⌫'],
     ];
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // цифровая клавиатура
         Column(
           children: [
             for (final r in keys)
@@ -83,21 +94,23 @@ class AmountKeypad extends StatelessWidget {
                         child: SizedBox(
                           height: 48,
                           child: TextButton(
-                            onPressed: () {
-                              final next = _applyToken(text, r[i]);
-                              onChanged(next);
-                            },
+                            onPressed: r[i].isEmpty
+                                ? null
+                                : () {
+                                    final next = _applyToken(text, r[i]);
+                                    onChanged(next);
+                                  },
                             style: TextButton.styleFrom(
-                              backgroundColor: keyGrey,
+                              backgroundColor: r[i].isEmpty ? keyGrey.withOpacity(0.35) : keyGrey,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
                             child: Text(
-                              r[i],
+                              r[i].isEmpty ? '' : r[i],
                               style: const TextStyle(
-                                fontSize: 11,
+                                fontSize: 14,
                                 fontWeight: FontWeight.w400,
                               ),
                             ),
@@ -111,7 +124,6 @@ class AmountKeypad extends StatelessWidget {
               ),
           ],
         ),
-
         if (showQuickRows) ...[
           const SizedBox(height: 6),
           _QuickRows(

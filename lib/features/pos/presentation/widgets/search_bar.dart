@@ -3,6 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pos_desktop_clean/core/models/product_response.dart';
 import 'package:pos_desktop_clean/features/pos/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:pos_desktop_clean/features/pos/presentation/pages/products/product_bloc/product_state.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/widgets/customer_create_page.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/widgets/onscreen_keyboar_widget.dart';
 import '../state/pos_cubit.dart';
 import 'package:pos_desktop_clean/features/pos/data/utils/app_theme.dart';
 
@@ -54,8 +56,31 @@ class _SearchBarState extends State<SearchBar> {
     }
   }
 
-  void _openKeyboard() {
-    // TODO: сюда потом подключишь flutter_onscreen_keyboard
+  void _openKeyboard() async {
+    // прячем список товаров, чтобы не мешал
+    _removeChooser();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.transparent, // ← ВАЖНО
+      builder: (_) {
+        return OnScreenKeyboardSheet(
+          controller: _controller,
+          onEnter: () {
+            Navigator.of(context).pop();
+            _doSearch();
+          },
+        );
+      },
+    );
+
+    // после закрытия верни фокус в поле
+    if (mounted) {
+      _focusNode.requestFocus();
+      _ensureValidSelection();
+    }
   }
 
   void _removeChooser() {
@@ -322,7 +347,11 @@ class _SearchBarState extends State<SearchBar> {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(22),
             child: ElevatedButton(
-              onPressed: () {},
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const CustomerCreatePage()),
+                );
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: Colors.black,

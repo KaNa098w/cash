@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:pos_desktop_clean/core/models/pos_provision_response.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/widgets/amount_keypad.dart';
 
 class OpeningCashStep extends StatefulWidget {
   final ThemeData theme;
@@ -34,6 +35,14 @@ class _OpeningCashStepState extends State<OpeningCashStep> {
     return num.tryParse(clean) ?? 0;
   }
 
+  void _setAmountText(String v) {
+    _cashController.value = TextEditingValue(
+      text: v,
+      selection: TextSelection.collapsed(offset: v.length),
+    );
+    setState(() {});
+  }
+
   void _submit() {
     setState(() => _submitted = true);
     final amount = _parseAmount(_cashController.text);
@@ -65,11 +74,12 @@ class _OpeningCashStepState extends State<OpeningCashStep> {
         const SizedBox(height: 6),
         Text('Сумма открытия смены', style: theme.textTheme.bodyMedium!.copyWith(color: Colors.black54)),
         const SizedBox(height: 16),
+
         TextField(
           controller: _cashController,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          textInputAction: TextInputAction.done,
-          onSubmitted: (_) => _submit(),
+          readOnly: true,
+          showCursor: false,
+          enableInteractiveSelection: false,
           decoration: InputDecoration(
             labelText: 'Сумма',
             hintText: 'Например: 10000',
@@ -78,6 +88,7 @@ class _OpeningCashStepState extends State<OpeningCashStep> {
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           ),
         ),
+
         const SizedBox(height: 14),
         SizedBox(
           width: double.infinity,
@@ -91,7 +102,21 @@ class _OpeningCashStepState extends State<OpeningCashStep> {
             child: const Text('Открыть смену', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.3)),
           ),
         ),
-        const Spacer(),
+
+        const SizedBox(height: 16),
+
+        AmountKeypad(
+          text: _cashController.text,
+          onChanged: _setAmountText,
+          allowDecimal: true,
+          showQuickRows: true,
+          rows: const [
+            ['+200', '+500', '+1 000'],
+            ['+2 000', '+5 000', '+10 000'],
+          ],
+        ),
+
+        const SizedBox(height: 12),
         Text('© ${DateTime.now().year} POS Desktop', style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54)),
       ],
     );

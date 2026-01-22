@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -24,18 +26,24 @@ Future<void> showCloseShiftSheet(BuildContext context) async {
     return;
   }
 
+  final authCubit = context.read<AuthCubit>();
+
   final closed = await showModalBottomSheet<bool>(
     context: context,
+    useRootNavigator: true, // ✅ важно при go_router / вложенных навигаторах
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => const _CloseShiftSheet(),
+    builder: (_) => BlocProvider.value(
+      value: authCubit, // ✅ гарантируем доступ к cubit даже в rootNavigator
+      child: const _CloseShiftSheet(),
+    ),
   );
 
+  if (!context.mounted) return;
+
   // ✅ навигация только СНАРУЖИ шторки
-  if (closed == true && context.mounted) {
+  if (closed == true) {
     context.go('/login');
-    // или если хочешь просто блокировку без /login:
-    // context.read<AuthCubit>().lockToCashiers();
   }
 }
 
@@ -48,6 +56,7 @@ class _CloseShiftSheet extends StatefulWidget {
 
 class _CloseShiftSheetState extends State<_CloseShiftSheet> {
   final _ctrl = TextEditingController(text: '');
+  bool _didPop = false;
 
   @override
   void dispose() {
@@ -61,6 +70,20 @@ class _CloseShiftSheetState extends State<_CloseShiftSheet> {
     return num.tryParse(v);
   }
 
+  void _popOnce(bool result) {
+    if (_didPop) return;
+    _didPop = true;
+
+    if (!mounted) return;
+
+    // ✅ pop после кадра, чтобы не ловить !_debugLocked
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final nav = Navigator.of(context, rootNavigator: true);
+      if (nav.canPop()) nav.pop(result);
+    });
+  }
+
   Future<void> _submit() async {
     final amount = _parseAmount(_ctrl.text);
     if (amount == null || amount < 0) {
@@ -71,7 +94,7 @@ class _CloseShiftSheetState extends State<_CloseShiftSheet> {
       return;
     }
 
-    // ✅ отправляем закрытие смены, дальше слушатель поймает AuthShiftClosed
+    // ✅ отправляем закрытие смены, дальше listener поймает AuthShiftClosed
     await context.read<AuthCubit>().closeSessionWithCash(
           closingCashAmount: amount,
         );
@@ -85,19 +108,21 @@ class _CloseShiftSheetState extends State<_CloseShiftSheet> {
       listenWhen: (prev, curr) =>
           curr is AuthFailure || curr is AuthShiftClosed,
       listener: (context, state) {
+        if (!mounted) return;
+
         if (state is AuthFailure) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(state.message)),
           );
+          return;
         }
 
         if (state is AuthShiftClosed) {
-          if (!mounted) return;
-          Navigator.of(context).pop(true); // ✅ вернуть успех наружу
+          _popOnce(true); // ✅ закрываем шторку ровно один раз
         }
       },
 
-      // ✅ чтобы UI не прыгал от промежуточных стейтов (AuthProvisioned/AuthInitial)
+      // ✅ чтобы UI не прыгал на другие auth-стейты
       buildWhen: (prev, curr) =>
           curr is AuthClosingSession ||
           curr is AuthFailure ||
@@ -140,7 +165,6 @@ class _CloseShiftSheetState extends State<_CloseShiftSheet> {
                     ),
                   ),
                   const SizedBox(height: 10),
-
                   TextField(
                     controller: _ctrl,
                     keyboardType:
@@ -155,11 +179,11 @@ class _CloseShiftSheetState extends State<_CloseShiftSheet> {
                         borderSide: BorderSide.none,
                       ),
                     ),
-                    onSubmitted: (_) => isLoading ? null : _submit(),
+                    onSubmitted: (_) {
+                      if (!isLoading) _submit();
+                    },
                   ),
-
                   const SizedBox(height: 12),
-
                   AmountKeypad(
                     text: _ctrl.text,
                     onChanged: (t) {
@@ -170,18 +194,14 @@ class _CloseShiftSheetState extends State<_CloseShiftSheet> {
                       });
                     },
                   ),
-
                   const SizedBox(height: 10),
-
                   Row(
                     children: [
                       Expanded(
                         child: SizedBox(
                           height: 46,
                           child: OutlinedButton(
-                            onPressed: isLoading
-                                ? null
-                                : () => Navigator.of(context).pop(false),
+                            onPressed: isLoading ? null : () => _popOnce(false),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.white,
                               side: BorderSide(

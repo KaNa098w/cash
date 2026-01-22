@@ -7,12 +7,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pos_desktop_clean/core/di/api/service_locator.dart';
 import 'package:pos_desktop_clean/core/models/pos_provision_response.dart';
 import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
+import 'package:pos_desktop_clean/features/pos/data/datasources/payment_remote_datasource.dart';
 import 'package:pos_desktop_clean/features/pos/data/datasources/product_local_datasource.dart';
 import 'package:pos_desktop_clean/features/pos/data/utils/app_theme.dart';
 import 'package:pos_desktop_clean/features/pos/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:pos_desktop_clean/features/pos/presentation/pages/auth/auth_bloc/auth_state.dart';
 import 'package:pos_desktop_clean/features/pos/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:pos_desktop_clean/features/pos/presentation/widgets/close_shift_bottom.dart';
+import 'package:pos_desktop_clean/features/pos/presentation/widgets/deposit_to_cash_sheel.dart';
 
 import 'package:window_manager/window_manager.dart';
 import 'package:pos_desktop_clean/features/pos/presentation/widgets/close_shift_bottom.dart';
@@ -37,9 +39,10 @@ Future<void> showPosActionsDialog(BuildContext context) {
 
         final local = sl<ProductLocalDataSource>();
         await local.clear(); // очистили Hive
+        final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
 
         await context.read<ProductsCubit>().loadFirstPage(
-              key: 'КЛЮЧ', // <-- замени на своё поле
+              key: key, // <-- замени на своё поле
               forceRefresh: true,
             );
       },
@@ -58,8 +61,14 @@ Future<void> showPosActionsDialog(BuildContext context) {
       }
     }),
     _PosAction('ПРОВЕРИТЬ ОБНОВЛЕНИЕ', () {/* TODO */}),
-    _PosAction('ВЗНОС В КАССУ', () {/* TODO */}),
-    _PosAction('РАСХОД', () {/* TODO */}),
+    _PosAction('ВЗНОС В КАССУ', () async {
+      Navigator.of(context, rootNavigator: true).pop();
+      await showDepositToCashSheet(context, true);
+    }),
+    _PosAction('РАСХОД', () async {
+      Navigator.of(context, rootNavigator: true).pop();
+      await showDepositToCashSheet(context, false);
+    }),
     _PosAction('СДАТЬ СМЕНУ', () async {
       Navigator.of(context, rootNavigator: true)
           .pop(); // закрыть actions dialog

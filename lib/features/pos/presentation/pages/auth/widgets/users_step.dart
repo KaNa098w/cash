@@ -31,7 +31,7 @@ class UsersStep extends StatelessWidget {
                 style: theme.textTheme.titleLarge!.copyWith(fontWeight: FontWeight.w800),
               ),
             ),
-            TextButton(onPressed: onChangeKey, child: const Text('Сменить ключ')),
+            // TextButton(onPressed: onChangeKey, child: const Text('Сменить ключ')),
           ],
         ),
         const SizedBox(height: 6),
