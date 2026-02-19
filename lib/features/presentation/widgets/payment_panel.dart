@@ -12,12 +12,12 @@ import 'package:pos_desktop_clean/core/provider/auth_provider.dart'
 import 'package:pos_desktop_clean/features/data/datasources/customers_remote_datasource.dart';
 import 'package:pos_desktop_clean/features/data/utils/app_theme.dart';
 import 'package:pos_desktop_clean/features/domain/repositories/sale_repository.dart';
+import 'package:pos_desktop_clean/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:pos_desktop_clean/features/presentation/pages/search/widgets/customer_create_dialog.dart';
 import 'package:pos_desktop_clean/features/presentation/pages/search/widgets/customer_create_page.dart';
 import 'package:printing/printing.dart';
 import 'package:uuid/uuid.dart';
 import '../../data/utils/money.dart';
-import '../state/pos_cubit.dart';
 import '../../domain/entities/payment.dart';
 
 class PaymentPanel extends StatefulWidget {
@@ -927,7 +927,8 @@ class _OrangePayTag extends StatelessWidget {
           children: [
             Container(
               alignment: Alignment.center,
-              child: const Icon(Icons.credit_card, size: 18, color: Colors.white),
+              child:
+                  const Icon(Icons.credit_card, size: 18, color: Colors.white),
             ),
             const SizedBox(width: 8),
             Text(
@@ -944,7 +945,6 @@ class _OrangePayTag extends StatelessWidget {
     );
   }
 }
-
 
 class _BottomButton extends StatelessWidget {
   const _BottomButton({

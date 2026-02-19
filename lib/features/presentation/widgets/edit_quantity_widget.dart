@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:pos_desktop_clean/features/presentation/state/pos_cubit.dart';
+import 'package:pos_desktop_clean/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:pos_desktop_clean/features/presentation/widgets/amount_keypad.dart';
 import 'package:pos_desktop_clean/features/presentation/widgets/dialog_primary_button.dart';
 

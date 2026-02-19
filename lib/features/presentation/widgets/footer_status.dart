@@ -12,7 +12,7 @@ import 'package:pos_desktop_clean/features/data/utils/app_theme.dart';
 import 'package:pos_desktop_clean/features/data/utils/money.dart';
 import 'package:pos_desktop_clean/features/domain/entities/payment.dart';
 import 'package:pos_desktop_clean/features/domain/repositories/sale_repository.dart';
-import 'package:pos_desktop_clean/features/presentation/state/pos_cubit.dart';
+import 'package:pos_desktop_clean/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:pos_desktop_clean/features/presentation/widgets/footer_panels_widget.dart';
 import 'package:pos_desktop_clean/features/presentation/widgets/live_data_text.dart';
 import 'package:pos_desktop_clean/features/presentation/widgets/payment_panel.dart';
@@ -259,7 +259,6 @@ class _FooterDesktop extends StatelessWidget {
 
       await showDialog<void>(
         context: context,
-        
         barrierDismissible: true,
         barrierColor: Colors.black.withOpacity(0.45),
         builder: (ctx) {

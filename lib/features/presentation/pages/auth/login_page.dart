@@ -30,6 +30,8 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
+    // final provider = context.read<AuthTokenProvider>();
+    // provider.clearProvisioned();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<AuthTokenProvider>();
@@ -68,7 +70,8 @@ class _LoginPageState extends State<LoginPage> {
     final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
     if (key.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('posKey пустой, не могу загрузить товары')),
+        const SnackBar(
+            content: Text('posKey пустой, не могу загрузить товары')),
       );
       return;
     }
@@ -115,7 +118,9 @@ class _LoginPageState extends State<LoginPage> {
 
               if (state is ProductsError) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Ошибка загрузки товаров: ${state.message}')),
+                  SnackBar(
+                      content:
+                          Text('Ошибка загрузки товаров: ${state.message}')),
                 );
               }
             },
@@ -131,20 +136,24 @@ class _LoginPageState extends State<LoginPage> {
               final provision = authState is AuthProvisioned
                   ? authState.provision
                   : (authState as AuthPinStep).provision;
-              final selectedUser = authState is AuthPinStep ? authState.user : null;
-              final errorText = authState is AuthPinStep ? authState.errorText : null;
+              final selectedUser =
+                  authState is AuthPinStep ? authState.user : null;
+              final errorText =
+                  authState is AuthPinStep ? authState.errorText : null;
 
               return CashierLoginStep(
                 provision: provision,
                 selectedUser: selectedUser,
                 errorText: errorText,
-                onSelectUser: (u) => context.read<AuthCubit>().selectUser(provision, u),
+                onSelectUser: (u) =>
+                    context.read<AuthCubit>().selectUser(provision, u),
                 onSubmitPin: (u, pin) => context.read<AuthCubit>().verifyPin(
                       provision: provision,
                       user: u,
                       inputPin: pin,
                     ),
-                onCancel: () => context.read<AuthCubit>().backToUsers(provision),
+                onCancel: () =>
+                    context.read<AuthCubit>().backToUsers(provision),
                 // optional: brandLogo/partnerLogo передай тут если есть
                 // brandLogo: SvgPicture.asset(...),
                 // partnerLogo: SvgPicture.asset(...),
@@ -158,25 +167,33 @@ class _LoginPageState extends State<LoginPage> {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   stops: [0.1, 0.5, 0.9],
-                  colors: [Color(0xFFEEF2FF), Color(0xFFE0E7FF), Color(0xFFF1F5F9)],
+                  colors: [
+                    Color(0xFFEEF2FF),
+                    Color(0xFFE0E7FF),
+                    Color(0xFFF1F5F9)
+                  ],
                 ),
               ),
               child: Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 980, maxHeight: 750),
+                  constraints:
+                      const BoxConstraints(maxWidth: 980, maxHeight: 750),
                   child: Card(
                     elevation: 0,
                     color: Colors.white.withOpacity(0.9),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24)),
                     child: Row(
                       children: [
                         Expanded(
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 40, vertical: 32),
                             child: Builder(
                               builder: (context) {
                                 // ✅ если уже пошли в загрузку товаров (после AuthSuccess / AuthUnlocked)
-                                if (authState is AuthSuccess || authState is AuthUnlocked) {
+                                if (authState is AuthSuccess ||
+                                    authState is AuthUnlocked) {
                                   if (productsState is ProductsLoading ||
                                       productsState is ProductsInitial) {
                                     return LoadingStep(
@@ -205,7 +222,8 @@ class _LoginPageState extends State<LoginPage> {
                                   );
                                 }
 
-                                if (authState is AuthInitial || authState is AuthLoading) {
+                                if (authState is AuthInitial ||
+                                    authState is AuthLoading) {
                                   return KeyStep(
                                     theme: theme,
                                     controller: _keyController,
@@ -223,10 +241,11 @@ class _LoginPageState extends State<LoginPage> {
                                   return OpeningCashStep(
                                     theme: theme,
                                     user: authState.user,
-                                    onBack: () => context.read<AuthCubit>().selectUser(
-                                          authState.provision,
-                                          authState.user,
-                                        ),
+                                    onBack: () =>
+                                        context.read<AuthCubit>().selectUser(
+                                              authState.provision,
+                                              authState.user,
+                                            ),
                                     onSubmit: (amount) => context
                                         .read<AuthCubit>()
                                         .openSessionWithCash(

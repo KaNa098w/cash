@@ -2,12 +2,11 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import 'package:pos_desktop_clean/core/models/product_response.dart'; // ProductModel
+import 'package:pos_desktop_clean/features/domain/entities/cart_item.dart';
+import 'package:pos_desktop_clean/features/domain/entities/payment.dart';
+import 'package:pos_desktop_clean/features/domain/entities/product.dart';
+import 'package:pos_desktop_clean/features/domain/repositories/pos_repository.dart';
 import 'package:pos_desktop_clean/features/presentation/pages/search/widgets/customer_create_dialog.dart';
-
-import '../../domain/entities/cart_item.dart';
-import '../../domain/entities/payment.dart';
-import '../../domain/entities/product.dart';
-import '../../domain/repositories/pos_repository.dart';
 
 part 'pos_state.dart';
 
@@ -48,8 +47,6 @@ class PosCubit extends Cubit<PosState> {
       vat: 0,
     );
   }
-
-  
 
   void clearAfterPayment() {
     final tickets = [...state.tickets];

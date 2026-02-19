@@ -2,8 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:pos_desktop_clean/features/presentation/pages/products/state/pos_cubit.dart';
 
-import '../state/pos_cubit.dart';
 import 'show_pos_action_dialog.dart';
 
 class TopBar extends StatelessWidget {
@@ -40,7 +40,6 @@ class TopBar extends StatelessWidget {
                           onTap: cubit.showHistory,
                         ),
                         const SizedBox(width: 5),
-
                         for (final t in state.tickets) ...[
                           _TicketTab(
                             text: 'Чек № ${t.id} | ${t.items.length} товаров',
@@ -54,7 +53,6 @@ class TopBar extends StatelessWidget {
                           ),
                           const SizedBox(width: 5),
                         ],
-
                         TextButton(
                           onPressed: cubit.createHoldTicket,
                           child: const Text(
@@ -238,8 +236,10 @@ class _StatusDot extends StatelessWidget {
       children: [
         Column(
           children: const [
-            Text('Қанат C', style: TextStyle(color: Colors.white70, fontSize: 16)),
-            Text('Кассир', style: TextStyle(color: Colors.white70, fontSize: 12)),
+            Text('Қанат C',
+                style: TextStyle(color: Colors.white70, fontSize: 16)),
+            Text('Кассир',
+                style: TextStyle(color: Colors.white70, fontSize: 12)),
           ],
         ),
         const SizedBox(width: 14),
