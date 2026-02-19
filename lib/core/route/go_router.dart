@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:pos_desktop_clean/features/pos/presentation/pages/auth/auth_bloc/auth_cubit.dart';
-import 'package:pos_desktop_clean/features/pos/presentation/pages/auth/auth_bloc/auth_state.dart';
+import 'package:pos_desktop_clean/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
+import 'package:pos_desktop_clean/features/presentation/pages/auth/auth_bloc/auth_state.dart';
 
-import 'package:pos_desktop_clean/features/pos/presentation/pages/auth/login_page.dart';
-import 'package:pos_desktop_clean/features/pos/presentation/pages/pos_page.dart';
-import 'package:pos_desktop_clean/features/pos/presentation/pages/sales_history/sales_history_page.dart';
+import 'package:pos_desktop_clean/features/presentation/pages/auth/login_page.dart';
+import 'package:pos_desktop_clean/features/presentation/pages/pos_page.dart';
+import 'package:pos_desktop_clean/features/presentation/pages/sales_history/sales_history_page.dart';
 
 class _GoRouterAuthRefresh extends ChangeNotifier {
   _GoRouterAuthRefresh(Stream stream) {

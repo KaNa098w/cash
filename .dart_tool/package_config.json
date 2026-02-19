@@ -327,9 +327,9 @@
     },
     {
       "name": "google_fonts",
-      "rootUri": "file:///Users/beyinfotech/.pub-cache/hosted/pub.dev/google_fonts-6.3.0",
+      "rootUri": "file:///Users/beyinfotech/.pub-cache/hosted/pub.dev/google_fonts-6.3.2",
       "packageUri": "lib/",
-      "languageVersion": "2.14"
+      "languageVersion": "3.7"
     },
     {
       "name": "graphs",
@@ -914,7 +914,7 @@
       "languageVersion": "3.4"
     }
   ],
-  "generated": "2026-01-22T06:09:32.401303Z",
+  "generated": "2026-01-28T11:33:49.750771Z",
   "generator": "pub",
   "generatorVersion": "3.7.2",
   "flutterRoot": "file:///Users/beyinfotech/development/flutter",

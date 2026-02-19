@@ -6,11 +6,12 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:pos_desktop_clean/core/di/api/device_id_store.dart';
-import 'package:pos_desktop_clean/features/pos/domain/repositories/auth_repository.dart';
-import 'package:pos_desktop_clean/features/pos/domain/repositories/product_repository.dart';
-import 'package:pos_desktop_clean/features/pos/domain/repositories/session_repository.dart';
-import 'package:pos_desktop_clean/features/pos/presentation/pages/products/product_bloc/product_cubit.dart';
+import 'package:pos_desktop_clean/features/domain/repositories/auth_repository.dart';
+import 'package:pos_desktop_clean/features/domain/repositories/product_repository.dart';
+import 'package:pos_desktop_clean/features/domain/repositories/session_repository.dart';
+import 'package:pos_desktop_clean/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -19,14 +20,15 @@ import 'core/di/api/service_locator.dart';
 import 'core/route/go_router.dart';
 
 import 'core/provider/auth_provider.dart';
-import 'features/pos/domain/repositories/pos_repository.dart';
-import 'features/pos/presentation/state/pos_cubit.dart';
-import 'features/pos/presentation/pages/auth/auth_bloc/auth_cubit.dart';
+import 'features/domain/repositories/pos_repository.dart';
+import 'features/presentation/state/pos_cubit.dart';
+import 'features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
+  await initializeDateFormatting('ru');
 
   final isDesktop =
       !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);

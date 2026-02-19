@@ -17,7 +17,6 @@ class PaginatedSales {
   });
 }
 
-
 // lib/core/models/sale_item_model.dart
 class SaleItemModel {
   final String saleId;
@@ -25,14 +24,15 @@ class SaleItemModel {
   final int quantity;
   final String price;
   final String totalPrice;
+  final int? refundQuantity;
 
-  const SaleItemModel({
-    required this.saleId,
-    required this.productId,
-    required this.quantity,
-    required this.price,
-    required this.totalPrice,
-  });
+  const SaleItemModel(
+      {required this.saleId,
+      required this.productId,
+      required this.quantity,
+      required this.price,
+      required this.totalPrice,
+      this.refundQuantity});
 
   factory SaleItemModel.fromJson(Map<String, dynamic> json) {
     return SaleItemModel(
@@ -41,6 +41,7 @@ class SaleItemModel {
       quantity: (json['quantity'] as num?)?.toInt() ?? 0,
       price: (json['price'] ?? '0').toString(),
       totalPrice: (json['total_price'] ?? '0').toString(),
+      refundQuantity: (json['refund_quantity'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -50,5 +51,6 @@ class SaleItemModel {
         'quantity': quantity,
         'price': price,
         'total_price': totalPrice,
+        'refund_quantity': refundQuantity
       };
 }
