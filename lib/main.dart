@@ -46,6 +46,19 @@ Future<void> main() async {
           windowButtonVisibility: false,
         );
       }
+
+      await windowManager.show();
+      await windowManager.focus();
+
+      // ✅ сразу на весь экран
+      await windowManager.setFullScreen(true);
+
+      // ✅ запретить изменение размеров
+      await windowManager.setResizable(false);
+
+      // ✅ maximize запретить, minimize разрешить
+      await windowManager.setMaximizable(false);
+      await windowManager.setMinimizable(true);
     });
 
     await initDependencies();
@@ -84,8 +97,61 @@ Future<void> main() async {
 }
 
 class _KioskWindowListener with WindowListener {
+  bool _restoring = false;
+
+  Future<void> _ensureKiosk() async {
+    if (kIsWeb ||
+        !(Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      return;
+    }
+    if (_restoring) return;
+    _restoring = true;
+
+    try {
+      await Future.delayed(const Duration(milliseconds: 80));
+
+      await windowManager.show();
+      await windowManager.focus();
+
+      if (!await windowManager.isFullScreen()) {
+        await windowManager.setFullScreen(true);
+      }
+
+      await windowManager.setResizable(false);
+      await windowManager.setMaximizable(false);
+      await windowManager.setMinimizable(true);
+    } finally {
+      _restoring = false;
+    }
+  }
+
   @override
-  void onWindowRestore() async {}
+  void onWindowRestore() {
+    _ensureKiosk();
+  }
+
+  @override
+  void onWindowFocus() {
+    _ensureKiosk();
+  }
+
+  @override
+  void onWindowMaximize() {
+    // если кто-то всё же попробовал
+    _ensureKiosk();
+  }
+
+  @override
+  void onWindowEnterFullScreen() {
+    // закрепляем ограничения при входе
+    _ensureKiosk();
+  }
+
+  @override
+  void onWindowLeaveFullScreen() {
+    // если каким-то образом вышли — сразу обратно
+    _ensureKiosk();
+  }
 }
 
 class PosApp extends StatefulWidget {

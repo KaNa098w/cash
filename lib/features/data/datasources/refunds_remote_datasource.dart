@@ -10,6 +10,7 @@ class RefundsRemoteDatasource {
     String? customerId,
     required num totalAmount,
     required List<RefundItemPayload> items,
+    required String returnAccessKey,
     DateTime? date,
   }) async {
     final safeKey = key.trim();
@@ -21,6 +22,11 @@ class RefundsRemoteDatasource {
     }
     if (items.isEmpty) {
       throw Exception('createRefundV2: items is empty');
+    }
+
+    final accessKey = returnAccessKey.trim();
+    if (accessKey.isEmpty) {
+      throw Exception('createRefundV2: returnAccessKey is empty');
     }
 
     final payload = <String, dynamic>{
@@ -35,6 +41,9 @@ class RefundsRemoteDatasource {
     final resp = await _dio.post(
       '/organizations/pos/$safeKey/refunds',
       data: payload,
+      queryParameters: {
+        'return_access_key': accessKey,
+      },
     );
 
     final body = resp.data;
@@ -63,6 +72,7 @@ class RefundsRemoteDatasource {
     required num totalAmount,
     required List<RefundItemPayload> items,
     DateTime? date,
+    required String returnAccessKey,
   }) async {
     final safeKey = key.trim();
     final rid = refundId.trim();
@@ -93,6 +103,9 @@ class RefundsRemoteDatasource {
     final resp = await _dio.put(
       '/organizations/pos/$safeKey/refunds/$rid', // ✅ ВАЖНО: /refunds/{refundId}
       data: payload,
+      queryParameters: {
+        'return_access_key': returnAccessKey,
+      },
     );
 
     final body = resp.data;

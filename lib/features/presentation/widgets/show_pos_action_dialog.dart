@@ -50,15 +50,22 @@ Future<void> showPosActionsDialog(BuildContext context) {
     _PosAction('СВЕРНУТЬ', () async {
       Navigator.of(context, rootNavigator: true).pop();
 
-      if (!kIsWeb &&
-          (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
-        if (await windowManager.isFullScreen()) {
-          await windowManager.setFullScreen(false);
-        }
-        await windowManager.setMinimizable(true);
-        await windowManager.minimize();
-        await windowManager.setMinimizable(false);
+      if (kIsWeb ||
+          !(Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+        return;
       }
+
+      final wasFs = await windowManager.isFullScreen();
+
+      await windowManager.setMinimizable(true);
+
+      // ⚠️ важно: в full-screen Windows часто не умеет minimize
+      if (wasFs) {
+        await windowManager.setFullScreen(false);
+        await Future.delayed(const Duration(milliseconds: 80));
+      }
+
+      await windowManager.minimize();
     }),
     _PosAction('ПРОВЕРИТЬ ОБНОВЛЕНИЕ', () {/* TODO */}),
     _PosAction('ВЗНОС В КАССУ', () async {
@@ -74,7 +81,10 @@ Future<void> showPosActionsDialog(BuildContext context) {
           .pop(); // закрыть actions dialog
       await showCloseShiftSheet(context); // открыть sheet с клавой
     }),
-    _PosAction('ПРИНТЕР', () {/* TODO */}),
+    _PosAction('ПРИНТЕР', () async {
+      Navigator.of(context, rootNavigator: true).pop();
+      await openWindowsPrintersSettings(context);
+    }),
   ];
 
   return showDialog(
@@ -144,63 +154,35 @@ Future<void> showPosActionsDialog(BuildContext context) {
   );
 }
 
-Future<num?> _askCashAmount(
-  BuildContext context, {
-  required String title,
-  required String hint,
-  required String confirmText,
-}) async {
-  final ctrl = TextEditingController();
-  final focus = FocusNode();
+Future<void> openWindowsPrintersSettings(BuildContext context) async {
+  if (kIsWeb || !Platform.isWindows) return;
 
-  num? parseAmount(String s) {
-    final v = s.trim().replaceAll(' ', '').replaceAll(',', '.');
-    if (v.isEmpty) return null;
-    return num.tryParse(v);
+  Future<bool> _run(List<String> args) async {
+    try {
+      final res = await Process.run(args.first, args.sublist(1));
+      return res.exitCode == 0;
+    } catch (_) {
+      return false;
+    }
   }
 
-  final result = await showDialog<num?>(
-    context: context,
-    barrierDismissible: true,
-    builder: (ctx) {
-      return AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: ctrl,
-          focusNode: focus,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(
-            hintText: hint,
-          ),
-          onSubmitted: (_) {
-            final amount = parseAmount(ctrl.text);
-            if (amount == null || amount < 0) return;
-            Navigator.of(ctx).pop(amount);
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(null),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final amount = parseAmount(ctrl.text);
-              if (amount == null || amount < 0) return;
-              Navigator.of(ctx).pop(amount);
-            },
-            child: Text(confirmText),
-          ),
-        ],
-      );
-    },
-  );
+  // 1) Windows 10/11 Settings -> Bluetooth & devices -> Printers & scanners
+  // (через explorer, так надёжнее)
+  final okSettings = await _run(['explorer.exe', 'ms-settings:printers']);
+  if (okSettings) return;
 
-  ctrl.dispose();
-  focus.dispose();
+  // 2) Панель управления: "Устройства и принтеры" (классика)
+  final okControl = await _run(['control.exe', 'printers']);
+  if (okControl) return;
 
-  return result;
+  // 3) Fallback: открыть Панель управления (если вдруг "printers" не сработал)
+  await _run(['control.exe']);
+
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Открываю настройки принтера…')),
+    );
+  }
 }
 
 class _PosAction {

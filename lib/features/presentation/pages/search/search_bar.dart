@@ -192,9 +192,9 @@ class _SearchBarState extends State<SearchBar> {
     }).toList();
 
     if (matches.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Товар не найден: "$query"')),
-      );
+      // ScaffoldMessenger.of(context).showSnackBar(
+      //   SnackBar(content: Text('Товар не найден: "$query"')),
+      // );
       _removeChooser();
       return;
     }

@@ -177,6 +177,7 @@ class SalesHistoryController {
           totalAmount: totalAmount,
           items: items.cast<RefundItemPayload>(),
           date: DateTime.now(),
+          returnAccessKey: '', // <— добавить в datasource
         );
 
         toast('Возврат обновлён');

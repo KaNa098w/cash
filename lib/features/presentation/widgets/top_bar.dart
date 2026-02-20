@@ -13,9 +13,9 @@ class TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: const Color(0xFF262B35),
-      height: 65,
+      height: 66,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
+        padding: const EdgeInsets.fromLTRB(20, 10, 8, 0),
         child: BlocBuilder<PosCubit, PosState>(
           buildWhen: (p, n) =>
               p.tickets != n.tickets ||

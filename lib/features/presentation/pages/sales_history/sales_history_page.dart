@@ -10,6 +10,7 @@ import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
 import 'package:pos_desktop_clean/features/data/datasources/sale_remote_datesource.dart';
 import 'package:pos_desktop_clean/features/data/datasources/refunds_remote_datasource.dart';
 import 'package:pos_desktop_clean/features/presentation/pages/sales_history/widgets/error_bloc.dart';
+import 'package:pos_desktop_clean/features/presentation/pages/sales_history/widgets/refund_access_dialog.dart';
 import 'package:pos_desktop_clean/features/presentation/pages/sales_history/widgets/sales_history_controller.dart';
 import 'package:pos_desktop_clean/features/presentation/pages/sales_history/widgets/sales_search_bar.dart';
 import 'package:pos_desktop_clean/features/presentation/widgets/onscreen_keyboar_widget.dart';
@@ -39,6 +40,16 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   final TextEditingController _saleSearchCtrl = TextEditingController();
   Timer? _saleSearchDebounce;
   String _saleQuery = '';
+
+  int? _statusCodeOf(Object e) {
+    try {
+      final dynamic de = e;
+      final dynamic resp = de.response;
+      final code = resp?.statusCode;
+      if (code is int) return code;
+    } catch (_) {}
+    return null;
+  }
 
   static const double _fs = 18;
   final FocusNode _saleSearchFocusNode = FocusNode();
@@ -196,14 +207,11 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
     if (picks.isEmpty) return _snack('Выбери товары для возврата');
 
-    // ВАЖНО: RefundItemPayload оставляю как у тебя (он в твоём проекте).
     final items = picks.map((e) {
       if (e.productId.trim().isEmpty) {
         throw Exception('product_id пустой у sale_item_id=${e.saleItemId}');
       }
-
       final q = (e.refundedQuantity + e.quantity).clamp(0, e.totalQuantity);
-
       return RefundItemPayload(
         productId: e.productId,
         saleItemId: e.saleItemId,
@@ -219,31 +227,56 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     final refundId = (sale.refund?.id ?? '').trim();
 
     _controller.setRefundLoading(saleId, true, () => setState(() {}));
+
     try {
-      if (refundId.isNotEmpty) {
-        await refundsRemote.updateRefundV2(
-          key: key,
-          refundId: refundId,
-          saleId: saleId,
-          customerId: sale.customerId,
-          totalAmount: totalAmount,
-          items: items,
-          date: DateTime.now(),
+      final ok = await _runWithDialogFocus(() async {
+        return showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => RefundAccessDialog(
+            onScanned: (barcode) async {
+              final accessKey = barcode.trim();
+              if (accessKey.isEmpty) return false;
+
+              try {
+                if (refundId.isNotEmpty) {
+                  // ✅ ВАЖНО: добавь в updateRefundV2 параметр returnAccessKey и прокинь в запрос
+                  await refundsRemote.updateRefundV2(
+                    key: key,
+                    refundId: refundId,
+                    saleId: saleId,
+                    customerId: sale.customerId,
+                    totalAmount: totalAmount,
+                    items: items,
+                    date: DateTime.now(),
+                    returnAccessKey: accessKey, // <— добавить в datasource
+                  );
+                } else {
+                  await refundsRemote.createRefundV2(
+                    key: key,
+                    saleId: saleId,
+                    customerId: sale.customerId,
+                    totalAmount: totalAmount,
+                    items: items,
+                    date: DateTime.now(),
+                    returnAccessKey: accessKey,
+                  );
+                }
+                return true; // 200 — доступ есть
+              } catch (e) {
+                // 401 — доступ нет, диалог покажет ошибку и попросит перескан
+                if (_statusCodeOf(e) == 401) return false;
+                rethrow; // остальные ошибки покажем как "Ошибка запроса"
+              }
+            },
+          ),
         );
-        if (!mounted) return;
-        _snack('Возврат обновлён');
-      } else {
-        final newRefundId = await refundsRemote.createRefundV2(
-          key: key,
-          saleId: saleId,
-          customerId: sale.customerId,
-          totalAmount: totalAmount,
-          items: items,
-          date: DateTime.now(),
-        );
-        if (!mounted) return;
-        _snack('Возврат создан: $newRefundId');
-      }
+      });
+
+      if (ok != true) return; // отмена/закрытие/нет доступа
+
+      if (!mounted) return;
+      _snack(refundId.isNotEmpty ? 'Возврат обновлён' : 'Возврат создан');
 
       _controller.clearPicksForSale(saleId, () => setState(() {}));
       await _cubit.refreshSaleById(key: key, saleId: saleId);

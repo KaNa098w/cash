@@ -31,7 +31,6 @@ class _LoginPageState extends State<LoginPage> {
   void initState() {
     super.initState();
     // final provider = context.read<AuthTokenProvider>();
-    // provider.clearProvisioned();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<AuthTokenProvider>();

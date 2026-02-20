@@ -10,19 +10,22 @@ class SalesHistoryCubit extends Cubit<SalesHistoryState> {
 
   final SaleRemoteDataSource _remote;
 
-  void showError(String message) {
-    emit(state.copyWith(loading: false, loadingMore: false, error: message));
+  void _safeEmit(SalesHistoryState s) {
+    if (isClosed) return;
+    emit(s);
   }
 
-  Future<void> loadFirst({
-    required String key,
-    int perPage = 15,
-  }) async {
-    emit(SalesHistoryState.initial());
+  void showError(String message) {
+    _safeEmit(
+        state.copyWith(loading: false, loadingMore: false, error: message));
+  }
+
+  Future<void> loadFirst({required String key, int perPage = 15}) async {
+    _safeEmit(SalesHistoryState.initial());
 
     try {
       final res = await _remote.getSales(key: key, page: 1, perPage: perPage);
-      emit(
+      _safeEmit(
         state.copyWith(
           loading: false,
           sales: res.items,
@@ -32,15 +35,53 @@ class SalesHistoryCubit extends Cubit<SalesHistoryState> {
         ),
       );
     } catch (e) {
-      emit(state.copyWith(loading: false, error: e.toString()));
+      _safeEmit(state.copyWith(loading: false, error: e.toString()));
+    }
+  }
+
+  Future<void> loadMore({required String key, int perPage = 15}) async {
+    if (!state.canLoadMore) return;
+
+    _safeEmit(state.copyWith(loadingMore: true, error: null));
+    final nextPage = state.page + 1;
+
+    try {
+      final res =
+          await _remote.getSales(key: key, page: nextPage, perPage: perPage);
+      _safeEmit(
+        state.copyWith(
+          loadingMore: false,
+          sales: [...state.sales, ...res.items],
+          page: res.currentPage,
+          lastPage: res.lastPage,
+          error: null,
+        ),
+      );
+    } catch (e) {
+      _safeEmit(state.copyWith(loadingMore: false, error: e.toString()));
+    }
+  }
+
+  Future<void> refreshSaleById(
+      {required String key, required String saleId}) async {
+    try {
+      final updated = await _remote.fetchSaleById(key: key, saleId: saleId);
+      final idx = state.sales.indexWhere((s) => s.localId == saleId);
+      if (idx == -1) return;
+
+      final next = List<SaleModel>.from(state.sales);
+      next[idx] = updated;
+
+      _safeEmit(state.copyWith(sales: next));
+    } catch (_) {
+      // ок
     }
   }
 
   void applyRefundOptimistic({
     required String saleId,
     required String refundId,
-    required Map<String, int>
-        pickedBySaleItemId, // saleItemId -> picked (доп. возврат)
+    required Map<String, int> pickedBySaleItemId,
   }) {
     final idx = state.sales.indexWhere((s) => s.localId == saleId);
     if (idx == -1) return;
@@ -67,54 +108,6 @@ class SalesHistoryCubit extends Cubit<SalesHistoryState> {
     final next = List<SaleModel>.from(state.sales);
     next[idx] = nextSale;
 
-    emit(state.copyWith(sales: next));
-  }
-
-  Future<void> refreshSaleById({
-    required String key,
-    required String saleId,
-  }) async {
-    try {
-      final updated = await _remote.fetchSaleById(key: key, saleId: saleId);
-
-      final cur = state.sales;
-      final idx = cur.indexWhere((s) => s.localId == saleId);
-
-      if (idx == -1) return;
-
-      final next = List<SaleModel>.from(cur);
-      next[idx] = updated;
-
-      emit(state.copyWith(sales: next));
-    } catch (e) {
-      // можно молча или показать ошибку
-      // showError('Не удалось обновить продажу: $e');
-    }
-  }
-
-  Future<void> loadMore({
-    required String key,
-    int perPage = 15,
-  }) async {
-    if (!state.canLoadMore) return;
-
-    emit(state.copyWith(loadingMore: true, error: null));
-    final nextPage = state.page + 1;
-
-    try {
-      final res =
-          await _remote.getSales(key: key, page: nextPage, perPage: perPage);
-      emit(
-        state.copyWith(
-          loadingMore: false,
-          sales: [...state.sales, ...res.items],
-          page: res.currentPage,
-          lastPage: res.lastPage,
-          error: null,
-        ),
-      );
-    } catch (e) {
-      emit(state.copyWith(loadingMore: false, error: e.toString()));
-    }
+    _safeEmit(state.copyWith(sales: next));
   }
 }
