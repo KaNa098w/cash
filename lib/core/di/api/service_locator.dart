@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:pos_desktop_clean/features/data/datasources/customers_remote_datasource.dart';
 import 'package:pos_desktop_clean/features/data/datasources/payment_remote_datasource.dart';
+import 'package:pos_desktop_clean/features/data/datasources/popular_products_local.dart';
+import 'package:pos_desktop_clean/features/data/datasources/popular_products_remote.dart';
 import 'package:pos_desktop_clean/features/data/datasources/refunds_remote_datasource.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 
@@ -110,6 +112,18 @@ Future<void> initDependencies() async {
     );
   }
 
+  if (!sl.isRegistered<PopularProductsRemoteDataSource>()) {
+    sl.registerLazySingleton<PopularProductsRemoteDataSource>(
+      () => PopularProductsRemoteDataSource(sl<Dio>()),
+    );
+  }
+
+  if (!sl.isRegistered<PopularProductsLocalDataSource>()) {
+    sl.registerLazySingleton<PopularProductsLocalDataSource>(
+      () => PopularProductsLocalDataSource(),
+    );
+  }
+
   if (!sl.isRegistered<SaleRemoteDataSource>()) {
     sl.registerLazySingleton<SaleRemoteDataSource>(
       () => SaleRemoteDataSource(sl<Dio>()),
@@ -141,16 +155,16 @@ Future<void> initDependencies() async {
       () => SessionRepositoryImpl(sl<SessionRemoteDataSource>()),
     );
   }
-
   if (!sl.isRegistered<ProductRepository>()) {
     sl.registerLazySingleton<ProductRepository>(
       () => ProductRepositoryImpl(
         sl<ProductRemoteDataSource>(),
         sl<ProductLocalDataSource>(),
+        sl<PopularProductsRemoteDataSource>(),
+        sl<PopularProductsLocalDataSource>(),
       ),
     );
   }
-
   if (!sl.isRegistered<CustomersRemoteDataSource>()) {
     sl.registerLazySingleton<CustomersRemoteDataSource>(
       () => CustomersRemoteDataSource(sl<Dio>()),

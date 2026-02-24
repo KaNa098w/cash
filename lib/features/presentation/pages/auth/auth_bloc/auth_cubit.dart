@@ -91,7 +91,8 @@ class AuthCubit extends Cubit<AuthState> {
   }) async {
     final pin = inputPin.trim();
     if (pin.isEmpty) {
-      emit(AuthPinStep(provision: provision, user: user, errorText: 'Введите PIN'));
+      emit(AuthPinStep(
+          provision: provision, user: user, errorText: 'Введите PIN'));
       return;
     }
 
@@ -106,12 +107,14 @@ class AuthCubit extends Cubit<AuthState> {
     }
 
     if (!ok) {
-      emit(AuthPinStep(provision: provision, user: user, errorText: 'Неверный PIN'));
+      emit(AuthPinStep(
+          provision: provision, user: user, errorText: 'Неверный PIN'));
       return;
     }
 
     // ✅ запоминаем активного кассира
     await _tokenProvider.setActiveUserId(user.id.toString());
+    await _tokenProvider.setActiveUserName(user.name);
 
     // ✅ если смена уже открыта — просто разблокируем (НЕ просим сумму и НЕ открываем смену)
     if (_tokenProvider.hasShiftId) {

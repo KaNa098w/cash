@@ -12,6 +12,7 @@ import 'package:pos_desktop_clean/features/data/utils/app_theme.dart';
 import 'package:pos_desktop_clean/features/data/utils/money.dart';
 import 'package:pos_desktop_clean/features/domain/entities/payment.dart';
 import 'package:pos_desktop_clean/features/domain/repositories/sale_repository.dart';
+import 'package:pos_desktop_clean/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:pos_desktop_clean/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:pos_desktop_clean/features/presentation/widgets/footer_panels_widget.dart';
 import 'package:pos_desktop_clean/features/presentation/widgets/live_data_text.dart';
@@ -593,19 +594,48 @@ class _FooterDesktop extends StatelessWidget {
                     onMinus: cubit.decrementSelectedQty,
                     onPlus: cubit.incrementSelectedQty,
                     onQuick: () async {
-                      final products = List.generate(
-                        20,
-                        (i) => QuickProduct(
-                            title: 'Наименование товара ... 2 строк',
-                            price: 315.00),
+                      final auth = context.read<AuthTokenProvider>();
+                      final key = auth.posKey?.trim() ?? '';
+                      if (key.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Нет posKey')),
+                        );
+                        return;
+                      }
+
+                      showDialog<void>(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) =>
+                            const Center(child: CircularProgressIndicator()),
                       );
 
-                      final picked = await showQuickProductsDialog(
-                        context,
-                        products: products,
-                      );
+                      try {
+                        final items = await context
+                            .read<ProductsCubit>()
+                            .loadPopularFirstPage(
+                              key: key,
+                              forceRefresh: false,
+                            );
 
-                      if (picked == null) return;
+                        if (!context.mounted) return;
+
+                        Navigator.of(context, rootNavigator: true).pop();
+
+                        final picked = await showQuickProductsDialog(
+                          context,
+                          products: items,
+                        );
+
+                        if (picked == null) return;
+                        cubit.addFromProductModel(picked);
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        Navigator.of(context, rootNavigator: true).maybePop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Ошибка popular-products: $e')),
+                        );
+                      }
                     },
                     onCancel: () async {
                       final ok = await _confirmClearCart(context);

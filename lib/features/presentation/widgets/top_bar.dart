@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
 import 'package:pos_desktop_clean/features/presentation/pages/products/state/pos_cubit.dart';
 
 import 'show_pos_action_dialog.dart';
@@ -232,11 +233,14 @@ class _StatusDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokenProvider = context.read<AuthTokenProvider>();
+    final cachierName = tokenProvider.activeUserName ?? 'Гость';
+
     return Row(
       children: [
         Column(
-          children: const [
-            Text('Қанат C',
+          children: [
+            Text(cachierName,
                 style: TextStyle(color: Colors.white70, fontSize: 16)),
             Text('Кассир',
                 style: TextStyle(color: Colors.white70, fontSize: 12)),

@@ -1,18 +1,12 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:pos_desktop_clean/core/models/product_response.dart';
 import 'package:pos_desktop_clean/features/data/utils/app_theme.dart';
 
-class QuickProduct {
-  final String title;
-  final double price;
-  const QuickProduct({required this.title, required this.price});
-}
-
-Future<QuickProduct?> showQuickProductsDialog(
+Future<ProductModel?> showQuickProductsDialog(
   BuildContext context, {
-  required List<QuickProduct> products,
+  required List<ProductModel> products,
 }) {
-  return showDialog<QuickProduct?>(
+  return showDialog<ProductModel?>(
     context: context,
     barrierDismissible: true,
     builder: (ctx) {
@@ -49,9 +43,10 @@ Future<QuickProduct?> showQuickProductsDialog(
                         itemCount: products.length,
                         itemBuilder: (context, i) {
                           final p = products[i];
-                          return _ProductCard(
-                            title: p.title,
-                            price: p.price,
+                          return _QuickProductTile(
+                            title: p.name,
+                            price: p.sellingPrice,
+                            onTap: () => Navigator.of(ctx).pop(p),
                           );
                         },
                       ),
@@ -136,7 +131,7 @@ class _ProductCard extends StatelessWidget {
       width: 90,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: MainAxisSize.max,
         children: [
           Stack(
             children: [
@@ -156,21 +151,23 @@ class _ProductCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          SizedBox(
-            width: 120,
-            child: Text(
-              title,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 10,
-                color: Color(0xFF6B7280),
-                height: 1.2,
+          Flexible(
+            child: SizedBox(
+              width: 120,
+              child: Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: Color(0xFF6B7280),
+                  height: 1.2,
+                ),
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Container(
             width: 100,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),

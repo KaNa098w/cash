@@ -82,6 +82,9 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     context.read<ProductsCubit>().loadFirstPage(key: key, forceRefresh: false);
+    context
+        .read<ProductsCubit>()
+        .loadPopularFirstPage(key: key, forceRefresh: false);
   }
 
   @override

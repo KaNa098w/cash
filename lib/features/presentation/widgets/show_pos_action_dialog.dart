@@ -1,29 +1,27 @@
 import 'dart:async';
 import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pos_desktop_clean/core/di/api/service_locator.dart';
-import 'package:pos_desktop_clean/core/models/pos_provision_response.dart';
 import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
-import 'package:pos_desktop_clean/features/data/datasources/payment_remote_datasource.dart';
 import 'package:pos_desktop_clean/features/data/datasources/product_local_datasource.dart';
 import 'package:pos_desktop_clean/features/data/utils/app_theme.dart';
 import 'package:pos_desktop_clean/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/auth/auth_bloc/auth_state.dart';
 import 'package:pos_desktop_clean/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:pos_desktop_clean/features/presentation/widgets/close_shift_bottom.dart';
 import 'package:pos_desktop_clean/features/presentation/widgets/deposit_to_cash_sheel.dart';
 
 import 'package:window_manager/window_manager.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/close_shift_bottom.dart';
 
 Future<void> showPosActionsDialog(BuildContext context) {
   final actions = <_PosAction>[
-    _PosAction('ВЫХОД ИЗ ПРОГРАММЫ', () {
+    _PosAction('ВЫХОД ИЗ ПРОГРАММЫ', () async {
       Navigator.of(context, rootNavigator: true).pop();
-      context.read<AuthCubit>().lockToCashiers();
+
+      // (опционально) если нужно перед выходом что-то сохранить/закрыть — делай здесь
+
+      await exitAppFully();
     }),
     _PosAction('ЗАБЛОКИРОВАТЬ КАССУ', () {
       Navigator.of(context, rootNavigator: true).pop();
@@ -45,6 +43,10 @@ Future<void> showPosActionsDialog(BuildContext context) {
               key: key, // <-- замени на своё поле
               forceRefresh: true,
             );
+
+        await context
+            .read<ProductsCubit>()
+            .loadPopularFirstPage(key: key, forceRefresh: true);
       },
     ),
     _PosAction('СВЕРНУТЬ', () async {
@@ -154,6 +156,31 @@ Future<void> showPosActionsDialog(BuildContext context) {
   );
 }
 
+Future<void> exitAppFully() async {
+  if (kIsWeb) return;
+
+  // Только desktop
+  if (!(Platform.isWindows || Platform.isLinux || Platform.isMacOS)) return;
+
+  try {
+    // Если окно в full-screen — сначала выйдем из него (иначе close/minimize может глючить)
+    final wasFs = await windowManager.isFullScreen();
+    if (wasFs) {
+      await windowManager.setFullScreen(false);
+      await Future.delayed(const Duration(milliseconds: 80));
+    }
+
+    // Попытка красиво закрыть окно
+    await windowManager.close();
+
+    // Если по какой-то причине не закрылось — добиваем процесс
+    await Future.delayed(const Duration(milliseconds: 150));
+    exit(0);
+  } catch (_) {
+    exit(0);
+  }
+}
+
 Future<void> openWindowsPrintersSettings(BuildContext context) async {
   if (kIsWeb || !Platform.isWindows) return;
 
@@ -166,8 +193,6 @@ Future<void> openWindowsPrintersSettings(BuildContext context) async {
     }
   }
 
-  // 1) Windows 10/11 Settings -> Bluetooth & devices -> Printers & scanners
-  // (через explorer, так надёжнее)
   final okSettings = await _run(['explorer.exe', 'ms-settings:printers']);
   if (okSettings) return;
 

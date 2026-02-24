@@ -26,6 +26,7 @@ class AuthTokenProvider extends ChangeNotifier {
 
   // ✅ активный кассир
   static const _kActiveUserId = 'activeUserId';
+  static const _kActiveUserName = 'activeUserName';
 
   String? _posKey;
   String? get posKey => _posKey;
@@ -58,10 +59,13 @@ class AuthTokenProvider extends ChangeNotifier {
 
   String? _activeUserId;
   String? get activeUserId => _activeUserId;
-  bool get hasActiveUserId => _activeUserId != null && _activeUserId!.trim().isNotEmpty;
+  bool get hasActiveUserId =>
+      _activeUserId != null && _activeUserId!.trim().isNotEmpty;
 
   List<PosUser> _users = [];
   List<PosUser> get users => List.unmodifiable(_users);
+  String? _activeUserName;
+  String? get activeUserName => _activeUserName;
 
   bool get isProvisioned =>
       hasPosKey &&
@@ -248,11 +252,24 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.setString(_kActiveUserId, v);
   }
 
+  Future<void> setActiveUserName(String userName) async {
+    final v = userName.trim();
+    if (v.isEmpty) return;
+
+    _activeUserName = v;
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kActiveUserName, v);
+  }
+
   Future<void> clearActiveUserId() async {
     _activeUserId = null;
+    _activeUserName = null;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kActiveUserId);
+    await prefs.remove(_kActiveUserName);
 
     notifyListeners();
   }

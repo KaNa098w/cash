@@ -10,15 +10,5 @@ abstract class ProductRepository {
     bool forceRefresh = false,
   });
 
-  Future<PaginatedProducts> getPopularProducts({
-    required String key,
-    int page = 1,
-    int perPage = 50,
-    bool forceRefresh = false,
-  });
-
   Future<void> clearProductsCache();
-
-  /// ✅ добавь это
-  Future<void> clearPopularProductsCache();
 }

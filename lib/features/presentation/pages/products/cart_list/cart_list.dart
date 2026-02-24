@@ -99,8 +99,6 @@ class CartList extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 16),
 
-                                // Количество (ТАП → диалог ввода)
-                                // Количество (ТАП → диалог ввода) + подсветка при выборе строки
                                 SizedBox(
                                   width: 50,
                                   child: InkWell(
