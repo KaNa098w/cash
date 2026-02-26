@@ -5,15 +5,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get_it/get_it.dart';
 
-import 'package:pos_desktop_clean/core/models/sale_model.dart';
-import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
-import 'package:pos_desktop_clean/features/data/datasources/sale_remote_datesource.dart';
-import 'package:pos_desktop_clean/features/data/datasources/refunds_remote_datasource.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/sales_history/widgets/error_bloc.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/sales_history/widgets/refund_access_dialog.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/sales_history/widgets/sales_history_controller.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/sales_history/widgets/sales_search_bar.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/onscreen_keyboar_widget.dart';
+import 'package:leemon_app/core/models/sale_model.dart';
+import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
+import 'package:leemon_app/features/data/datasources/refunds_remote_datasource.dart';
+import 'package:leemon_app/features/presentation/pages/sales_history/widgets/error_bloc.dart';
+import 'package:leemon_app/features/presentation/pages/sales_history/widgets/refund_access_dialog.dart';
+import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sales_history_controller.dart';
+import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sales_search_bar.dart';
+import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 
 import 'state/sales_cubit.dart';
 import 'state/sales_state.dart';

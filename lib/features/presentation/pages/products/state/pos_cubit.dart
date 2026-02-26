@@ -1,12 +1,12 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 
-import 'package:pos_desktop_clean/core/models/product_response.dart'; // ProductModel
-import 'package:pos_desktop_clean/features/domain/entities/cart_item.dart';
-import 'package:pos_desktop_clean/features/domain/entities/payment.dart';
-import 'package:pos_desktop_clean/features/domain/entities/product.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/pos_repository.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/search/widgets/customer_create_dialog.dart';
+import 'package:leemon_app/core/models/product_response.dart'; // ProductModel
+import 'package:leemon_app/features/domain/entities/cart_item.dart';
+import 'package:leemon_app/features/domain/entities/payment.dart';
+import 'package:leemon_app/features/domain/entities/product.dart';
+import 'package:leemon_app/features/domain/repositories/pos_repository.dart';
+import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_dialog.dart';
 
 part 'pos_state.dart';
 

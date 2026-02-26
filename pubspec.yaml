@@ -1,7 +1,7 @@
-name: pos_desktop_clean
+name: leemon_app
 description: "Flutter Desktop POS (Clean Architecture)"
 publish_to: "none"
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -34,6 +34,7 @@ dependencies:
   hive_flutter: ^1.1.0
   shared_preferences: ^2.2.3
   crypto: ^3.0.7
+  mobile_scanner: ^5.2.3
 
 dev_dependencies:
   flutter_test:
@@ -48,3 +49,9 @@ flutter:
   uses-material-design: true
   assets:
     - assets/svg/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/icon/leemon_icon.png
+  remove_alpha_ios: true

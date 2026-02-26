@@ -1,5 +1,5 @@
 // lib/features/pos/presentation/pages/sales_history/state/sales_state.dart
-import 'package:pos_desktop_clean/core/models/sale_model.dart';
+import 'package:leemon_app/core/models/sale_model.dart';
 
 class SalesHistoryState {
   final bool loading;

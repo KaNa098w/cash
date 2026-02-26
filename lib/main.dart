@@ -7,12 +7,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:pos_desktop_clean/core/di/api/device_id_store.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/auth_repository.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/product_repository.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/session_repository.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/product_bloc/product_cubit.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/core/di/api/device_id_store.dart';
+import 'package:leemon_app/features/domain/repositories/auth_repository.dart';
+import 'package:leemon_app/features/domain/repositories/product_repository.dart';
+import 'package:leemon_app/features/domain/repositories/session_repository.dart';
+import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -49,14 +49,8 @@ Future<void> main() async {
 
       await windowManager.show();
       await windowManager.focus();
-
-      // ✅ сразу на весь экран
       await windowManager.setFullScreen(true);
-
-      // ✅ запретить изменение размеров
       await windowManager.setResizable(false);
-
-      // ✅ maximize запретить, minimize разрешить
       await windowManager.setMaximizable(false);
       await windowManager.setMinimizable(true);
     });
@@ -68,11 +62,10 @@ Future<void> main() async {
     await initDependencies();
   }
 
-  // ✅ ВАЖНО: создаём и инициализируем до runApp
   final authProvider = AuthTokenProvider();
   await authProvider.init();
   sl<DeviceIdStore>().deviceId = authProvider.deviceId;
-
+ 
   runApp(
     MultiProvider(
       providers: [
@@ -137,19 +130,16 @@ class _KioskWindowListener with WindowListener {
 
   @override
   void onWindowMaximize() {
-    // если кто-то всё же попробовал
     _ensureKiosk();
   }
 
   @override
   void onWindowEnterFullScreen() {
-    // закрепляем ограничения при входе
     _ensureKiosk();
   }
 
   @override
   void onWindowLeaveFullScreen() {
-    // если каким-то образом вышли — сразу обратно
     _ensureKiosk();
   }
 }

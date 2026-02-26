@@ -1,8 +1,8 @@
 // product_cubit.dart
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:pos_desktop_clean/core/models/product_response.dart'; // ✅ ProductModel
-import 'package:pos_desktop_clean/features/domain/repositories/product_repository.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/product_bloc/product_state.dart';
+import 'package:leemon_app/core/models/product_response.dart'; // ✅ ProductModel
+import 'package:leemon_app/features/domain/repositories/product_repository.dart';
+import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_state.dart';
 
 class ProductsCubit extends Cubit<ProductsState> {
   final ProductRepository repo;

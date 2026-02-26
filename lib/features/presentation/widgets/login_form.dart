@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/auth/auth_bloc/auth_state.dart';
+import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_state.dart';
 
 class LoginForm extends StatefulWidget {
   const LoginForm({super.key, required this.loading});

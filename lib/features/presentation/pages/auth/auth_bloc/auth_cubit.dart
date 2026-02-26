@@ -1,11 +1,11 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
-import 'package:pos_desktop_clean/core/models/pos_provision_response.dart';
+import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/core/models/pos_provision_response.dart';
 
-import 'package:pos_desktop_clean/features/domain/repositories/auth_repository.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/session_repository.dart';
+import 'package:leemon_app/features/domain/repositories/auth_repository.dart';
+import 'package:leemon_app/features/domain/repositories/session_repository.dart';
 
 import 'auth_state.dart';
 
@@ -17,11 +17,17 @@ class AuthCubit extends Cubit<AuthState> {
   })  : _authRepository = authRepository,
         _sessionRepository = sessionRepository,
         _tokenProvider = tokenProvider,
-        super(const AuthInitial());
+        super(_resolveInitialState(tokenProvider));
 
   final AuthRepository _authRepository;
   final SessionRepository _sessionRepository;
   final AuthTokenProvider _tokenProvider;
+
+  static AuthState _resolveInitialState(AuthTokenProvider tokenProvider) {
+    final cached = tokenProvider.cachedProvision;
+    if (cached != null) return AuthProvisioned(cached);
+    return const AuthInitial();
+  }
 
   void bootstrapFromCache() {
     final cached = _tokenProvider.cachedProvision;

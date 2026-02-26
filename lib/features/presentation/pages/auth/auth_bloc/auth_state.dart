@@ -1,5 +1,5 @@
 import 'package:equatable/equatable.dart';
-import 'package:pos_desktop_clean/core/models/pos_provision_response.dart';
+import 'package:leemon_app/core/models/pos_provision_response.dart';
 
 abstract class AuthState extends Equatable {
   const AuthState();

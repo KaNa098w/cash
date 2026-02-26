@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:pos_desktop_clean/core/di/api/device_id_store.dart';
+import 'package:leemon_app/core/di/api/device_id_store.dart';
 
 class DeviceIdInterceptor extends Interceptor {
   DeviceIdInterceptor(this._store);

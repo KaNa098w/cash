@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:provider/provider.dart';
 
-import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/search/widgets/bottom_btn_widget.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/onscreen_keyboar_widget.dart';
+import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/presentation/pages/search/widgets/bottom_btn_widget.dart';
+import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 
 import 'customer_create_dialog.dart'; // CustomerLite + showCustomerCreateDialog
 

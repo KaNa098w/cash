@@ -1,11 +1,11 @@
-import 'package:pos_desktop_clean/core/models/product_response.dart';
-import 'package:pos_desktop_clean/features/data/datasources/popular_products_local.dart';
-import 'package:pos_desktop_clean/features/data/datasources/popular_products_remote.dart';
+import 'package:leemon_app/core/models/product_response.dart';
+import 'package:leemon_app/features/data/datasources/popular_products_local.dart';
+import 'package:leemon_app/features/data/datasources/popular_products_remote.dart';
 
-import 'package:pos_desktop_clean/features/data/datasources/product_local_datasource.dart';
-import 'package:pos_desktop_clean/features/data/datasources/product_remote_datasource.dart';
+import 'package:leemon_app/features/data/datasources/product_local_datasource.dart';
+import 'package:leemon_app/features/data/datasources/product_remote_datasource.dart';
 
-import 'package:pos_desktop_clean/features/domain/repositories/product_repository.dart';
+import 'package:leemon_app/features/domain/repositories/product_repository.dart';
 
 class ProductRepositoryImpl implements ProductRepository {
   final ProductRemoteDataSource remote;

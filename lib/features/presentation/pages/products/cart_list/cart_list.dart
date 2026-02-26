@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:pos_desktop_clean/features/data/utils/app_theme.dart';
-import 'package:pos_desktop_clean/features/data/utils/money.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/state/pos_cubit.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/keypad_widget.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/payment_panel.dart';
+import 'package:leemon_app/features/data/utils/app_theme.dart';
+import 'package:leemon_app/features/data/utils/money.dart';
+import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/widgets/keypad_widget.dart';
+import 'package:leemon_app/features/presentation/widgets/payment_panel.dart';
 
 const double kCartFs = 18;
 

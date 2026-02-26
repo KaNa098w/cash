@@ -1,5 +1,5 @@
 // lib/features/sales/domain/repositories/sale_repository.dart
-import 'package:pos_desktop_clean/core/models/sale_model.dart';
+import 'package:leemon_app/core/models/sale_model.dart';
 
 enum CreateSaleResult { sent, queued, rejected }
 

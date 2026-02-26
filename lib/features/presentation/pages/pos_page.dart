@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/state/pos_cubit.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/sales_history/sales_history_page.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/cart_list/cart_list.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/footer_status.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/search/search_bar.dart'
+import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/sales_history/sales_history_page.dart';
+import 'package:leemon_app/features/presentation/pages/products/cart_list/cart_list.dart';
+import 'package:leemon_app/features/presentation/widgets/footer_status.dart';
+import 'package:leemon_app/features/presentation/pages/search/search_bar.dart'
     as sb;
-import 'package:pos_desktop_clean/features/presentation/widgets/top_bar.dart';
+import 'package:leemon_app/features/presentation/widgets/top_bar.dart';
 
 class PosPage extends StatelessWidget {
   const PosPage({super.key});
@@ -22,14 +22,17 @@ class PosPage extends StatelessWidget {
             child: BlocBuilder<PosCubit, PosState>(
               builder: (context, state) {
                 if (state.isHistoryMode) {
-                  return const SalesHistoryPage();
+                  return const SafeArea(
+                    top: false,
+                    child: SalesHistoryPage(),
+                  );
                 }
 
                 return const Row(
                   children: [
                     Expanded(
                       child: Column(
-                        children: const [
+                        children: [
                           Padding(
                             padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
                             child: sb.SearchBar(),

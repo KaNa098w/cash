@@ -1,5 +1,5 @@
 // lib/core/models/sale_pagination.dart
-import 'package:pos_desktop_clean/core/models/sale_model.dart';
+import 'package:leemon_app/core/models/sale_model.dart';
 
 class PaginatedSales {
   final List<SaleModel> items;

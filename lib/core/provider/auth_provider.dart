@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
-import 'package:pos_desktop_clean/core/models/pos_provision_response.dart';
+import 'package:leemon_app/core/models/pos_provision_response.dart';
 
 class AuthTokenProvider extends ChangeNotifier {
   static const _kPosKey = 'posKey';
@@ -15,6 +15,7 @@ class AuthTokenProvider extends ChangeNotifier {
   static const _kPosName = 'posName';
   static const _kPosId = 'posId';
   static const _kStoreId = 'storeId';
+  static const _kStoreName = 'storeName';
   static const _kOrganizationId = 'organizationId';
   static const _kAccountId = 'accountId';
 
@@ -43,6 +44,9 @@ class AuthTokenProvider extends ChangeNotifier {
 
   String? _storeId;
   String? get storeId => _storeId;
+
+  String? _storeName;
+  String? get storeName => _storeName;
 
   String? _organizationId;
   String? get organizationId => _organizationId;
@@ -85,6 +89,7 @@ class AuthTokenProvider extends ChangeNotifier {
       key: _posKey ?? '',
       accountId: _accountId!,
       storeId: _storeId!,
+      storeName: _storeName ?? '',
       organizationId: _organizationId!,
       users: _users,
       createdAt: null,
@@ -107,6 +112,7 @@ class AuthTokenProvider extends ChangeNotifier {
     _posName = prefs.getString(_kPosName);
     _posId = prefs.getString(_kPosId);
     _storeId = prefs.getString(_kStoreId);
+    _storeName = prefs.getString(_kStoreName);
     _organizationId = prefs.getString(_kOrganizationId);
     _accountId = prefs.getString(_kAccountId);
 
@@ -166,6 +172,7 @@ class AuthTokenProvider extends ChangeNotifier {
     _posName = resp.name;
     _posId = resp.id;
     _storeId = resp.storeId;
+    _storeName = resp.storeName;
     _organizationId = resp.organizationId;
     _accountId = resp.accountId;
 
@@ -183,6 +190,7 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.setString(_kPosName, _posName ?? '');
     await prefs.setString(_kPosId, _posId ?? '');
     await prefs.setString(_kStoreId, _storeId ?? '');
+    await prefs.setString(_kStoreName, _storeName ?? '');
     await prefs.setString(_kOrganizationId, _organizationId ?? '');
     await prefs.setString(_kAccountId, _accountId ?? '');
 
@@ -194,6 +202,7 @@ class AuthTokenProvider extends ChangeNotifier {
     _posName = null;
     _posId = null;
     _storeId = null;
+    _storeName = null;
     _organizationId = null;
     _accountId = null;
     _users = [];
@@ -207,6 +216,7 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.remove(_kPosName);
     await prefs.remove(_kPosId);
     await prefs.remove(_kStoreId);
+    await prefs.remove(_kStoreName);
     await prefs.remove(_kOrganizationId);
     await prefs.remove(_kAccountId);
     await prefs.remove(_kUsers);

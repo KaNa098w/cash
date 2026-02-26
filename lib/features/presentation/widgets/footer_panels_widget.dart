@@ -36,118 +36,155 @@ class FooterControlsOnly extends StatelessWidget {
 
   static const double _totalW = 349;
   static const double _totalH = 62;
+  static const double _designRowW = 597;
+  static const double _outerRightPad = 8;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 16, 8, 16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : _designRowW;
+        final availableRowWidth =
+            (maxWidth - _outerRightPad).clamp(0.0, maxWidth);
+        final scale = (availableRowWidth / _designRowW).clamp(0.74, 1.0);
+
+        double s(double value) => value * scale;
+        final rowGap = s(_gap);
+        final smallBtnW = s(_kSmallBtnW);
+        final smallBtnH = s(_kSmallBtnH);
+        final totalW = s(_totalW);
+        final totalH = s(_totalH);
+        final payW = s(_PayBtn._w);
+        final payH = s(_PayBtn._h);
+        final radius = s(_r);
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(0, 16, _outerRightPad, 16 + bottomInset),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              _SmallBtn(
-                width: _kSmallBtnW,
-                height: _totalH,
-                radius: _r,
-                background: _btnGrey,
-                onTap: onMinus,
-                child: const Text(
-                  '−',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _SmallBtn(
+                    width: smallBtnW,
+                    height: totalH,
+                    radius: radius,
+                    background: _btnGrey,
+                    onTap: onMinus,
+                    child: Text(
+                      '−',
+                      style: TextStyle(
+                        fontSize: s(22),
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(width: _gap),
-              _SmallBtn(
-                width: _kSmallBtnW,
-                height: _totalH,
-                radius: _r,
-                background: _btnGrey,
-                onTap: onPlus,
-                child: const Text(
-                  '+',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black,
+                  SizedBox(width: rowGap),
+                  _SmallBtn(
+                    width: smallBtnW,
+                    height: totalH,
+                    radius: radius,
+                    background: _btnGrey,
+                    onTap: onPlus,
+                    child: Text(
+                      '+',
+                      style: TextStyle(
+                        fontSize: s(22),
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black,
+                      ),
+                    ),
                   ),
-                ),
+                  SizedBox(width: rowGap),
+                  SizedBox(
+                    width: totalW,
+                    height: totalH,
+                    child: _TotalBox(
+                      smallText: smallAmountText,
+                      bigText: bigAmountText,
+                      radius: radius,
+                      smallFontSize: s(12),
+                      bigFontSize: s(18),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: _gap),
-              SizedBox(
-                width: _totalW,
-                height: _totalH,
-                child: _TotalBox(
-                  smallText: smallAmountText,
-                  bigText: bigAmountText,
-                ),
+              SizedBox(height: s(12)),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _SmallBtn(
+                    width: smallBtnW,
+                    height: smallBtnH,
+                    radius: radius,
+                    background: _btnGrey,
+                    onTap: onQuick,
+                    child: Text(
+                      'Быстрые\nтовары',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: s(12),
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                        height: 1.05,
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: rowGap),
+                  _SmallBtn(
+                    width: smallBtnW,
+                    height: smallBtnH,
+                    radius: radius,
+                    background: _btnRed,
+                    onTap: onCancel,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'ОТМЕНА',
+                        maxLines: 1,
+                        softWrap: false,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: s(13),
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: rowGap),
+                  _SmallBtn(
+                    width: smallBtnW,
+                    height: smallBtnH,
+                    radius: radius,
+                    background: _btnYellow,
+                    onTap: onPayCard,
+                    child: SvgPicture.asset(
+                      'assets/svg/card.svg',
+                      width: s(22),
+                      height: s(22),
+                      colorFilter:
+                          const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                    ),
+                  ),
+                  SizedBox(width: rowGap),
+                  _PayBtn(
+                    onTap: onPay,
+                    width: payW,
+                    height: payH,
+                    radius: radius,
+                    fontSize: s(18),
+                  ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              _SmallBtn(
-                width: _kSmallBtnW,
-                height: _kSmallBtnH,
-                radius: _r,
-                background: _btnGrey,
-                onTap: onQuick,
-                child: const Text(
-                  'Быстрые\nтовары',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black87,
-                    height: 1.05,
-                  ),
-                ),
-              ),
-              const SizedBox(width: _gap),
-              _SmallBtn(
-                width: _kSmallBtnW,
-                height: _kSmallBtnH,
-                radius: _r,
-                background: _btnRed,
-                onTap: onCancel,
-                child: const Text(
-                  'ОТМЕНА',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              const SizedBox(width: _gap),
-              _SmallBtn(
-                width: _kSmallBtnW,
-                height: _kSmallBtnH,
-                radius: _r,
-                background: _btnYellow,
-                onTap: onPayCard,
-                child: SvgPicture.asset(
-                  'assets/svg/card.svg',
-                  width: 22,
-                  height: 22,
-                  colorFilter:
-                      const ColorFilter.mode(Colors.white, BlendMode.srcIn),
-                ),
-              ),
-              const SizedBox(width: _gap),
-              _PayBtn(onTap: onPay),
-            ],
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -193,12 +230,16 @@ class _TotalBox extends StatelessWidget {
   const _TotalBox({
     required this.smallText,
     required this.bigText,
+    required this.radius,
+    required this.smallFontSize,
+    required this.bigFontSize,
   });
 
   final String smallText;
   final String bigText;
-
-  static const double _r = 8;
+  final double radius;
+  final double smallFontSize;
+  final double bigFontSize;
 
   @override
   Widget build(BuildContext context) {
@@ -206,7 +247,7 @@ class _TotalBox extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(_r),
+        borderRadius: BorderRadius.circular(radius),
       ),
       child: Stack(
         children: [
@@ -216,8 +257,8 @@ class _TotalBox extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(
                 smallText,
-                style: const TextStyle(
-                  fontSize: 12,
+                style: TextStyle(
+                  fontSize: smallFontSize,
                   fontWeight: FontWeight.w500,
                   color: Color(0xFF7A7A7A),
                 ),
@@ -228,8 +269,8 @@ class _TotalBox extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: Text(
               bigText,
-              style: const TextStyle(
-                fontSize: 18,
+              style: TextStyle(
+                fontSize: bigFontSize,
                 fontWeight: FontWeight.w800,
                 color: Colors.black,
               ),
@@ -242,12 +283,21 @@ class _TotalBox extends StatelessWidget {
 }
 
 class _PayBtn extends StatelessWidget {
-  const _PayBtn({this.onTap});
+  const _PayBtn({
+    this.onTap,
+    required this.width,
+    required this.height,
+    required this.radius,
+    required this.fontSize,
+  });
 
   final VoidCallback? onTap;
+  final double width;
+  final double height;
+  final double radius;
+  final double fontSize;
 
   static const _btnGreen = Color(0xFF4BCA9B);
-  static const double _r = 8;
 
   static const double _w = 225;
   static const double _h = 71;
@@ -255,21 +305,21 @@ class _PayBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: _w,
-      height: _h,
+      width: width,
+      height: height,
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
           elevation: 0,
           backgroundColor: _btnGreen,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(_r),
+            borderRadius: BorderRadius.circular(radius),
           ),
         ),
-        child: const Text(
+        child: Text(
           'ОПЛАТА',
           style: TextStyle(
-            fontSize: 18,
+            fontSize: fontSize,
             fontWeight: FontWeight.w800,
             color: Colors.white,
             letterSpacing: 0.3,

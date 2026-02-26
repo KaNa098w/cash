@@ -3,14 +3,14 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:pos_desktop_clean/core/di/api/service_locator.dart';
-import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
-import 'package:pos_desktop_clean/features/data/datasources/product_local_datasource.dart';
-import 'package:pos_desktop_clean/features/data/utils/app_theme.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/product_bloc/product_cubit.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/close_shift_bottom.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/deposit_to_cash_sheel.dart';
+import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/data/datasources/product_local_datasource.dart';
+import 'package:leemon_app/features/data/utils/app_theme.dart';
+import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
+import 'package:leemon_app/features/presentation/widgets/close_shift_bottom.dart';
+import 'package:leemon_app/features/presentation/widgets/deposit_to_cash_sheel.dart';
 
 import 'package:window_manager/window_manager.dart';
 

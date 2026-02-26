@@ -2,8 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
-import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 
 import 'show_pos_action_dialog.dart';
 
@@ -14,9 +14,9 @@ class TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: const Color(0xFF262B35),
-      height: 66,
+      height: 85,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 10, 8, 0),
+        padding: const EdgeInsets.fromLTRB(20, 30, 8, 0),
         child: BlocBuilder<PosCubit, PosState>(
           buildWhen: (p, n) =>
               p.tickets != n.tickets ||

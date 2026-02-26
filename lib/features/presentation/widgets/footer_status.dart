@@ -4,20 +4,20 @@ import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:pos_desktop_clean/core/models/sale_model.dart'
+import 'package:leemon_app/core/models/sale_model.dart'
     show SaleItemModel, SaleModel;
-import 'package:pos_desktop_clean/core/print/print_service.dart';
-import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
-import 'package:pos_desktop_clean/features/data/utils/app_theme.dart';
-import 'package:pos_desktop_clean/features/data/utils/money.dart';
-import 'package:pos_desktop_clean/features/domain/entities/payment.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/sale_repository.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/product_bloc/product_cubit.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/state/pos_cubit.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/footer_panels_widget.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/live_data_text.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/payment_panel.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/quit_products_screen.dart';
+import 'package:leemon_app/core/print/print_service.dart';
+import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/data/utils/app_theme.dart';
+import 'package:leemon_app/features/data/utils/money.dart';
+import 'package:leemon_app/features/domain/entities/payment.dart';
+import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
+import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/widgets/footer_panels_widget.dart';
+import 'package:leemon_app/features/presentation/widgets/live_data_text.dart';
+import 'package:leemon_app/features/presentation/widgets/payment_panel.dart';
+import 'package:leemon_app/features/presentation/widgets/quit_products_screen.dart';
 import 'package:printing/printing.dart';
 import 'package:uuid/uuid.dart';
 
@@ -516,142 +516,160 @@ class _FooterDesktop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
-      child: Container(
-        height: 182,
-        decoration: BoxDecoration(
-          color: const Color(0xFF2B3440),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Container(
-                width: 190,
-                height: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1F2937),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: const Color.fromARGB(255, 255, 255, 255),
-                      width: 1),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+    return LayoutBuilder(
+      builder: (context, c) {
+        final auth = context.watch<AuthTokenProvider>();
+        final compact = c.maxWidth < 1200;
+        final infoWidth = compact ? 152.0 : 190.0;
+        final infoPad = compact ? 12.0 : 16.0;
+        final clockSize = compact ? 26.0 : 34.0;
+        final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+        final baseFooterHeight = compact ? 172.0 : 182.0;
+        final footerHeight = baseFooterHeight + bottomInset;
+        final posName = (auth.posName ?? '').trim();
+        final storeName = (auth.storeName ?? '').trim();
+        final footerTitle = '${posName.isEmpty ? 'Касса-1' : posName}\n'
+            '${storeName.isEmpty ? 'Наименование магазина' : storeName}';
+
+        return SizedBox(
+          height: footerHeight,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF2B3440),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Padding(
+                  padding: EdgeInsets.all(infoPad),
+                  child: Container(
+                    width: infoWidth,
+                    height: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1F2937),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: const Color.fromARGB(255, 255, 255, 255),
+                          width: 1),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.access_time,
-                            color: Colors.white, size: 20),
-                        const SizedBox(width: 6),
-                        StreamBuilder(
-                          stream: Stream.periodic(const Duration(seconds: 1)),
-                          builder: (_, __) {
-                            return Text(
-                              TimeOfDay.now().format(context),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 34,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            );
-                          },
+                        Row(
+                          children: [
+                            Icon(Icons.access_time,
+                                color: Colors.white, size: compact ? 18 : 20),
+                            const SizedBox(width: 6),
+                            StreamBuilder(
+                              stream:
+                                  Stream.periodic(const Duration(seconds: 1)),
+                              builder: (_, __) {
+                                return Text(
+                                  TimeOfDay.now().format(context),
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: clockSize,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        const LiveDateText(),
+                        const Spacer(),
+                        Text(
+                          footerTitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 11,
+                            height: 1.1,
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 2),
-                    const LiveDateText(),
-                    const Spacer(),
-                    const Text(
-                      'Касса-1\nНаименование Магаза',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white54,
-                        fontSize: 11,
-                        height: 1.1,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-            const Spacer(),
-            Expanded(
-              child: BlocBuilder<PosCubit, PosState>(
-                builder: (context, state) {
-                  final cubit = context.read<PosCubit>();
-                  final total = cubit.total;
-                  final discount = cubit.discountSum;
-                  final beforeDiscount = total + discount;
-                  return FooterControlsOnly(
-                    smallAmountText: money(beforeDiscount),
-                    bigAmountText: money(total),
-                    onMinus: cubit.decrementSelectedQty,
-                    onPlus: cubit.incrementSelectedQty,
-                    onQuick: () async {
-                      final auth = context.read<AuthTokenProvider>();
-                      final key = auth.posKey?.trim() ?? '';
-                      if (key.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Нет posKey')),
-                        );
-                        return;
-                      }
+                const Spacer(),
+                Expanded(
+                  child: BlocBuilder<PosCubit, PosState>(
+                    builder: (context, state) {
+                      final cubit = context.read<PosCubit>();
+                      final total = cubit.total;
+                      final discount = cubit.discountSum;
+                      final beforeDiscount = total + discount;
+                      return FooterControlsOnly(
+                        smallAmountText: money(beforeDiscount),
+                        bigAmountText: money(total),
+                        onMinus: cubit.decrementSelectedQty,
+                        onPlus: cubit.incrementSelectedQty,
+                        onQuick: () async {
+                          final auth = context.read<AuthTokenProvider>();
+                          final key = auth.posKey?.trim() ?? '';
+                          if (key.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Нет posKey')),
+                            );
+                            return;
+                          }
 
-                      showDialog<void>(
-                        context: context,
-                        barrierDismissible: false,
-                        builder: (_) =>
-                            const Center(child: CircularProgressIndicator()),
-                      );
+                          showDialog<void>(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (_) => const Center(
+                                child: CircularProgressIndicator()),
+                          );
 
-                      try {
-                        final items = await context
-                            .read<ProductsCubit>()
-                            .loadPopularFirstPage(
-                              key: key,
-                              forceRefresh: false,
+                          try {
+                            final items = await context
+                                .read<ProductsCubit>()
+                                .loadPopularFirstPage(
+                                  key: key,
+                                  forceRefresh: false,
+                                );
+
+                            if (!context.mounted) return;
+
+                            Navigator.of(context, rootNavigator: true).pop();
+
+                            final picked = await showQuickProductsDialog(
+                              context,
+                              products: items,
                             );
 
-                        if (!context.mounted) return;
-
-                        Navigator.of(context, rootNavigator: true).pop();
-
-                        final picked = await showQuickProductsDialog(
-                          context,
-                          products: items,
-                        );
-
-                        if (picked == null) return;
-                        cubit.addFromProductModel(picked);
-                      } catch (e) {
-                        if (!context.mounted) return;
-                        Navigator.of(context, rootNavigator: true).maybePop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Ошибка popular-products: $e')),
-                        );
-                      }
+                            if (picked == null) return;
+                            cubit.addFromProductModel(picked);
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            Navigator.of(context, rootNavigator: true)
+                                .maybePop();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                  content: Text('Ошибка popular-products: $e')),
+                            );
+                          }
+                        },
+                        onCancel: () async {
+                          final ok = await _confirmClearCart(context);
+                          if (ok) cubit.clearAfterPayment();
+                        },
+                        onPayCard: () async {
+                          await _payByCardWithPrint(context);
+                        },
+                        onPay: () => _showPaymentPanelCenter(context),
+                      );
                     },
-                    onCancel: () async {
-                      final ok = await _confirmClearCart(context);
-                      if (ok) cubit.clearAfterPayment();
-                    },
-                    onPayCard: () async {
-                      await _payByCardWithPrint(context);
-                    },
-                    onPay: () => _showPaymentPanelCenter(context),
-                  );
-                },
-              ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:pos_desktop_clean/core/models/sale_model.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/onscreen_keyboar_widget.dart';
+import 'package:leemon_app/core/models/sale_model.dart';
+import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 
 class RefundDialogResult {
   final int totalAmount;

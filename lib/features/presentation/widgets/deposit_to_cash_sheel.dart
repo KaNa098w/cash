@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:pos_desktop_clean/core/di/api/service_locator.dart';
-import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
-import 'package:pos_desktop_clean/features/data/datasources/payment_remote_datasource.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/amount_keypad.dart';
+import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/data/datasources/payment_remote_datasource.dart';
+import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 
 /// type: true = ВЗНОС, false = РАСХОД
 Future<bool> showDepositToCashSheet(BuildContext context, bool type) async {

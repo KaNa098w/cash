@@ -1,9 +1,9 @@
 // // lib/features/auth/data/auth_service.dart
 
 // import 'package:dio/dio.dart';
-// import 'package:pos_desktop_clean/core/di/api/api_client.dart';
-// import 'package:pos_desktop_clean/core/di/api/api_exception.dart';
-// import 'package:pos_desktop_clean/core/models/login_response.dart';
+// import 'package:leemon_app/core/di/api/api_client.dart';
+// import 'package:leemon_app/core/di/api/api_exception.dart';
+// import 'package:leemon_app/core/models/login_response.dart';
 
 // class AuthService {
 //   final Dio _dio;

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:pos_desktop_clean/core/models/sale_model.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/sales_history/widgets/sale_items_row.dart';
+import 'package:leemon_app/core/models/sale_model.dart';
+import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sale_items_row.dart';
 
 import '../models/refund_pick.dart';
 

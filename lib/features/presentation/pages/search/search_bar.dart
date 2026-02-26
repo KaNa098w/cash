@@ -1,17 +1,20 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
-import 'package:pos_desktop_clean/core/di/api/service_locator.dart';
-import 'package:pos_desktop_clean/core/models/product_response.dart';
-import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
-import 'package:pos_desktop_clean/features/data/datasources/customers_remote_datasource.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/product_bloc/product_cubit.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/product_bloc/product_state.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/search/widgets/customer_create_dialog.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/search/widgets/customer_create_page.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/onscreen_keyboar_widget.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/core/models/product_response.dart';
+import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
+import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_state.dart';
+import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_dialog.dart';
+import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_page.dart';
+import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 import '../products/state/pos_cubit.dart';
 
 class SearchBar extends StatefulWidget {
@@ -25,6 +28,7 @@ class _SearchBarState extends State<SearchBar> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   bool _allowAutoRefocus = true;
+  bool _disableSearchFieldForIpad = false;
 
   final _layerLink = LayerLink();
   final _fieldKey = GlobalKey();
@@ -33,14 +37,27 @@ class _SearchBarState extends State<SearchBar> {
   OverlayEntry? _chooserEntry;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
+      _disableSearchFieldForIpad = false;
+      return;
+    }
+    final shortestSide = MediaQuery.of(context).size.shortestSide;
+    _disableSearchFieldForIpad = shortestSide >= 600;
+  }
+
+  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_focusNode.hasFocus) _focusNode.requestFocus();
+      if (!_disableSearchFieldForIpad && !_focusNode.hasFocus) {
+        _focusNode.requestFocus();
+      }
       _ensureValidSelection();
     });
     _focusNode.addListener(() {
-      if (!_allowAutoRefocus) return;
+      if (_disableSearchFieldForIpad || !_allowAutoRefocus) return;
 
       if (_focusNode.hasFocus) {
         _ensureValidSelection();
@@ -105,7 +122,7 @@ class _SearchBarState extends State<SearchBar> {
       if (mounted) {
         // Дать кадр на закрытие диалога
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
+          if (mounted && !_disableSearchFieldForIpad) {
             _focusNode.requestFocus();
             _ensureValidSelection();
           }
@@ -135,6 +152,66 @@ class _SearchBarState extends State<SearchBar> {
     }).whenComplete(() {
       _keyboardOpen = false;
     });
+  }
+
+  Future<void> _openCameraScanner() async {
+    String? extractCode(BarcodeCapture capture) {
+      for (final b in capture.barcodes) {
+        final v = b.rawValue?.trim() ?? '';
+        if (v.isNotEmpty) return v;
+      }
+      return null;
+    }
+
+    final scanned = await _runWithDialogFocus(() async {
+      bool handled = false;
+
+      return showModalBottomSheet<String>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.black,
+        builder: (ctx) {
+          final h = MediaQuery.of(ctx).size.height * 0.76;
+          return SafeArea(
+            child: SizedBox(
+              height: h,
+              child: Stack(
+                children: [
+                  MobileScanner(
+                    onDetect: (capture) {
+                      if (handled) return;
+                      final code = extractCode(capture);
+                      if (code == null) return;
+                      handled = true;
+                      Navigator.of(ctx).pop(code);
+                    },
+                  ),
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: Material(
+                      color: Colors.black54,
+                      shape: const CircleBorder(),
+                      child: IconButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        icon: const Icon(Icons.close, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    });
+
+    if (!mounted) return;
+    final code = (scanned ?? '').trim();
+    if (code.isEmpty) return;
+    _controller.text = code;
+    _controller.selection = TextSelection.collapsed(offset: code.length);
+    _doSearch();
   }
 
   void _ensureValidSelection() {
@@ -206,7 +283,7 @@ class _SearchBarState extends State<SearchBar> {
 
       _controller.clear();
       _removeChooser();
-      _focusNode.requestFocus();
+      if (!_disableSearchFieldForIpad) _focusNode.requestFocus();
       return;
     }
 
@@ -318,6 +395,10 @@ class _SearchBarState extends State<SearchBar> {
 
   @override
   Widget build(BuildContext context) {
+    final isMobileCameraCapable = !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.android);
+
     return Row(
       children: [
         Expanded(
@@ -339,7 +420,11 @@ class _SearchBarState extends State<SearchBar> {
                 child: TextField(
                   controller: _controller,
                   focusNode: _focusNode,
-                  autofocus: true,
+                  autofocus: !_disableSearchFieldForIpad,
+                  canRequestFocus: !_disableSearchFieldForIpad,
+                  readOnly: _disableSearchFieldForIpad,
+                  showCursor: !_disableSearchFieldForIpad,
+                  enableInteractiveSelection: !_disableSearchFieldForIpad,
                   onSubmitted: (_) => _doSearch(),
                   onChanged: _onQueryChanged,
                   textInputAction: TextInputAction.search,
@@ -403,6 +488,21 @@ class _SearchBarState extends State<SearchBar> {
             onPressed: _openKeyboard,
           ),
         ),
+        if (isMobileCameraCapable) ...[
+          const SizedBox(width: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: Colors.grey, width: 1.2),
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: IconButton(
+              tooltip: 'Сканер штрихкода',
+              icon: const Icon(Icons.qr_code_scanner),
+              onPressed: _openCameraScanner,
+            ),
+          ),
+        ],
         const SizedBox(width: 16),
         OutlinedButton(
           onPressed: () async {

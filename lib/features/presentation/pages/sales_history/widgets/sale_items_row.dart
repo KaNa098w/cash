@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pos_desktop_clean/core/models/sale_model.dart';
+import 'package:leemon_app/core/models/sale_model.dart';
 
 import '../models/refund_pick.dart';
 import '../utils/formatters.dart';

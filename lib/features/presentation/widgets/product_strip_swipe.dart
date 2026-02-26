@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pos_desktop_clean/features/data/utils/app_theme.dart';
+import 'package:leemon_app/features/data/utils/app_theme.dart';
 
 class QuickProduct {
   final String title;

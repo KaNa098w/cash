@@ -4,17 +4,17 @@ import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:pos_desktop_clean/core/di/api/service_locator.dart';
-import 'package:pos_desktop_clean/core/models/sale_model.dart';
-import 'package:pos_desktop_clean/core/print/print_service.dart';
-import 'package:pos_desktop_clean/core/provider/auth_provider.dart'
+import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/core/models/sale_model.dart';
+import 'package:leemon_app/core/print/print_service.dart';
+import 'package:leemon_app/core/provider/auth_provider.dart'
     show AuthTokenProvider;
-import 'package:pos_desktop_clean/features/data/datasources/customers_remote_datasource.dart';
-import 'package:pos_desktop_clean/features/data/utils/app_theme.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/sale_repository.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/state/pos_cubit.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/search/widgets/customer_create_dialog.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/search/widgets/customer_create_page.dart';
+import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
+import 'package:leemon_app/features/data/utils/app_theme.dart';
+import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
+import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_dialog.dart';
+import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_page.dart';
 import 'package:printing/printing.dart';
 import 'package:uuid/uuid.dart';
 import '../../data/utils/money.dart';
@@ -108,6 +108,160 @@ class _PaymentPanelState extends State<PaymentPanel> {
   }
 
   final _printService = PrintService();
+
+  Future<void> _showPaymentSuccessDialog(
+    BuildContext context, {
+    required CreateSaleResult result,
+    required String amountText,
+    required PaymentKind paymentKind,
+  }) async {
+    final methodLabel = switch (paymentKind) {
+      PaymentKind.cash => 'Наличные',
+      PaymentKind.card => 'Безналичный',
+      PaymentKind.credit => 'В долг',
+    };
+    final subtitle = switch (result) {
+      CreateSaleResult.sent => 'Оплата проведена и отправлена на сервер',
+      CreateSaleResult.queued => 'Оплата принята. Продажа сохранена в очереди',
+      CreateSaleResult.rejected => 'Оплата отклонена',
+    };
+
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'payment-success',
+      barrierColor: Colors.black.withOpacity(0.48),
+      transitionDuration: const Duration(milliseconds: 260),
+      pageBuilder: (ctx, _, __) {
+        return SafeArea(
+          child: Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: 420,
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFECFDF3), Color(0xFFFFFFFF)],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF15803D).withOpacity(0.18),
+                      blurRadius: 28,
+                      offset: const Offset(0, 16),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFDCFCE7),
+                        border: Border.all(
+                          color: const Color(0xFF86EFAC),
+                          width: 2,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.check_rounded,
+                        size: 42,
+                        color: Color(0xFF15803D),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Оплата прошла успешно',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFF14532D),
+                        height: 1.05,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            amountText,
+                            style: GoogleFonts.inter(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w900,
+                              color: const Color(0xFF111827),
+                              height: 1,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '$methodLabel • $subtitle',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF374151),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 46,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF16A34A),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          'Готово',
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutBack);
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.88, end: 1).animate(curved),
+          child: FadeTransition(opacity: anim, child: child),
+        );
+      },
+    );
+  }
 
   Future<pw.Document> _buildReceipt80mm(PosCubit cubit) async {
     final items = cubit.state.items;
@@ -350,6 +504,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       child: _GreyButton(
                                         text: 'Счета на\nоплату',
                                         height: 46,
+                                        selected: false,
                                         onTap: () {},
                                       ),
                                     ),
@@ -358,6 +513,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       child: _GreyButton(
                                         text: 'В долг',
                                         height: 46,
+                                        selected: state.paymentKind ==
+                                            PaymentKind.credit,
                                         onTap: () => cubit
                                             .setPaymentKind(PaymentKind.credit),
                                       ),
@@ -546,6 +703,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
                                     setState(() => _paying = true);
                                     try {
+                                      final totalPaid = posCubit.total;
+                                      final paymentKind =
+                                          posCubit.state.paymentKind;
                                       final result = await repo.createSale(
                                         key: key,
                                         deviceId: deviceId,
@@ -556,23 +716,28 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                           () => _buildReceipt80mm(posCubit));
 
                                       if (!mounted) return;
-
-                                      final msg = switch (result) {
-                                        CreateSaleResult.sent =>
-                                          'Продажа отправлена',
-                                        CreateSaleResult.queued =>
-                                          'Нет сети: продажа добавлена в очередь',
-                                        CreateSaleResult.rejected =>
-                                          'Продажа отклонена сервером',
-                                      };
-
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                              SnackBar(content: Text(msg)));
-
-                                      if (result != CreateSaleResult.rejected) {
-                                        posCubit.clearAfterPayment();
+                                      if (result == CreateSaleResult.rejected) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                                'Продажа отклонена сервером'),
+                                          ),
+                                        );
+                                        return;
                                       }
+
+                                      final rootContext = Navigator.of(context,
+                                              rootNavigator: true)
+                                          .context;
+                                      Navigator.of(context).pop();
+                                      posCubit.clearAfterPayment();
+                                      await _showPaymentSuccessDialog(
+                                        rootContext,
+                                        result: result,
+                                        amountText: money(totalPaid),
+                                        paymentKind: paymentKind,
+                                      );
                                     } catch (e) {
                                       if (!mounted) return;
                                       ScaffoldMessenger.of(context)
@@ -865,24 +1030,35 @@ class _QuickGrid extends StatelessWidget {
 }
 
 class _GreyButton extends StatelessWidget {
-  const _GreyButton(
-      {required this.text, required this.onTap, required this.height});
+  const _GreyButton({
+    required this.text,
+    required this.onTap,
+    required this.height,
+    this.selected = false,
+  });
 
   final String text;
   final VoidCallback onTap;
   final double height;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
+    final bg = selected ? const Color(0xFFF59E0B) : Colors.white;
+    final fg = selected ? Colors.white : const Color(0xFF111827);
+    final border = selected ? const Color(0xFFF59E0B) : const Color(0xFFD1D5DB);
+
     return SizedBox(
       height: height,
       child: TextButton(
           onPressed: onTap,
           style: TextButton.styleFrom(
-            backgroundColor: Colors.white,
-            foregroundColor: const Color(0xFF111827),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            backgroundColor: bg,
+            foregroundColor: fg,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+              side: BorderSide(color: border, width: 1),
+            ),
           ),
           child: Text(
             text,
@@ -891,6 +1067,7 @@ class _GreyButton extends StatelessWidget {
               fontSize: 12,
               fontWeight: FontWeight.w600,
               height: 1,
+              color: fg,
             ),
           )),
     );
@@ -910,7 +1087,9 @@ class _OrangePayTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = const Color(0xFFF59E0B); // оранжевый как на скрине
+    final bg = selected ? const Color(0xFFF59E0B) : Colors.white;
+    final fg = selected ? Colors.white : const Color(0xFF111827);
+    final border = selected ? const Color(0xFFF59E0B) : const Color(0xFFD1D5DB);
 
     return SizedBox(
       height: 44,
@@ -919,16 +1098,18 @@ class _OrangePayTag extends StatelessWidget {
         onPressed: onTap,
         style: TextButton.styleFrom(
           backgroundColor: bg,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          foregroundColor: fg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(6),
+            side: BorderSide(color: border, width: 1),
+          ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
               alignment: Alignment.center,
-              child:
-                  const Icon(Icons.credit_card, size: 18, color: Colors.white),
+              child: Icon(Icons.credit_card, size: 18, color: fg),
             ),
             const SizedBox(width: 8),
             Text(
@@ -936,7 +1117,7 @@ class _OrangePayTag extends StatelessWidget {
               style: GoogleFonts.interTextTheme().bodyMedium?.copyWith(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                    color: fg,
                   ),
             ),
           ],

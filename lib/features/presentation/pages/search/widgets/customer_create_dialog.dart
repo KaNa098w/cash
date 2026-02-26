@@ -2,10 +2,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 
-import 'package:pos_desktop_clean/features/data/datasources/customers_remote_datasource.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/search/widgets/blue_field_widget.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/search/widgets/bottom_btn_widget.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/onscreen_keyboar_widget.dart';
+import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
+import 'package:leemon_app/features/presentation/pages/search/widgets/blue_field_widget.dart';
+import 'package:leemon_app/features/presentation/pages/search/widgets/bottom_btn_widget.dart';
+import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 
 class CustomerLite {
   final String id;

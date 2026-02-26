@@ -2,12 +2,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/state/pos_cubit.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/amount_keypad.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/dialog_primary_button.dart';
+import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
+import 'package:leemon_app/features/presentation/widgets/dialog_primary_button.dart';
 
 // У тебя уже есть AmountKeypad в проекте
-// import 'package:pos_desktop_clean/features/pos/presentation/widgets/amount_keypad.dart';
+// import 'package:leemon_app/features/pos/presentation/widgets/amount_keypad.dart';
 
 Future<void> editSelectedQty(BuildContext context) async {
   final cubit = context.read<PosCubit>();

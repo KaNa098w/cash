@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
-import 'package:pos_desktop_clean/core/models/pos_provision_response.dart';
+import 'package:leemon_app/core/models/pos_provision_response.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class CashierLoginStep extends StatefulWidget {

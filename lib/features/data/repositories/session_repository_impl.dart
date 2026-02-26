@@ -1,5 +1,5 @@
-import 'package:pos_desktop_clean/features/data/datasources/session_remote_datasource.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/session_repository.dart';
+import 'package:leemon_app/features/data/datasources/session_remote_datasource.dart';
+import 'package:leemon_app/features/domain/repositories/session_repository.dart';
 
 class SessionRepositoryImpl implements SessionRepository {
   SessionRepositoryImpl(this.remote);

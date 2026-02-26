@@ -1,5 +1,5 @@
 import 'package:hive/hive.dart';
-import 'package:pos_desktop_clean/core/models/product_response.dart';
+import 'package:leemon_app/core/models/product_response.dart';
 
 class PopularProductsLocalDataSource {
   static const _boxName = 'popular_products_box';

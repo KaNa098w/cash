@@ -4,6 +4,7 @@ class PosProvisionResponse {
   final String key;
   final String accountId;
   final String storeId;
+  final String storeName;
   final String organizationId;
 
   final DateTime? createdAt;
@@ -17,6 +18,7 @@ class PosProvisionResponse {
     required this.key,
     required this.accountId,
     required this.storeId,
+    required this.storeName,
     required this.organizationId,
     required this.users,
     this.createdAt,
@@ -34,6 +36,13 @@ class PosProvisionResponse {
     final key = (data['key'] ?? '').toString();
     final accountId = (data['account_id'] ?? '').toString();
     final storeId = (data['store_id'] ?? '').toString();
+    String storeName =
+        (data['store_name'] ?? data['storeName'] ?? '').toString();
+    final store = data['store'];
+    if (store is Map<String, dynamic>) {
+      final fromStore = (store['name'] ?? store['title'] ?? '').toString();
+      if (fromStore.isNotEmpty) storeName = fromStore;
+    }
     final organizationId = (data['organization_id'] ?? '').toString();
 
     if (name.isEmpty ||
@@ -65,6 +74,7 @@ class PosProvisionResponse {
       key: key,
       accountId: accountId,
       storeId: storeId,
+      storeName: storeName,
       organizationId: organizationId,
       createdAt: parseDt(data['created']),
       updatedAt: parseDt(data['updated']),

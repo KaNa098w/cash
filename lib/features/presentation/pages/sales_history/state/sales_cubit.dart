@@ -1,9 +1,9 @@
 // lib/features/pos/presentation/pages/sales_history/state/sales_cubit.dart
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:pos_desktop_clean/core/models/refund_model.dart';
-import 'package:pos_desktop_clean/core/models/sale_model.dart';
-import 'package:pos_desktop_clean/features/data/datasources/sale_remote_datesource.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/sales_history/state/sales_state.dart';
+import 'package:leemon_app/core/models/refund_model.dart';
+import 'package:leemon_app/core/models/sale_model.dart';
+import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
+import 'package:leemon_app/features/presentation/pages/sales_history/state/sales_state.dart';
 
 class SalesHistoryCubit extends Cubit<SalesHistoryState> {
   SalesHistoryCubit(this._remote) : super(SalesHistoryState.initial());

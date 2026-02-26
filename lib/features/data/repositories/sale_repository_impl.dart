@@ -1,9 +1,9 @@
 // lib/features/sales/data/repositories/sale_repository_impl.dart
 import 'package:dio/dio.dart';
-import 'package:pos_desktop_clean/core/di/utils/dio_error_utils.dart';
-import 'package:pos_desktop_clean/core/models/sale_model.dart';
-import 'package:pos_desktop_clean/features/data/datasources/sale_remote_datesource.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/sale_repository.dart';
+import 'package:leemon_app/core/di/utils/dio_error_utils.dart';
+import 'package:leemon_app/core/models/sale_model.dart';
+import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
+import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 
 import '../datasources/sale_local_datasource.dart';
 

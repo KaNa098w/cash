@@ -1,5 +1,5 @@
-import 'package:pos_desktop_clean/core/models/pos_provision_response.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/auth_repository.dart';
+import 'package:leemon_app/core/models/pos_provision_response.dart';
+import 'package:leemon_app/features/domain/repositories/auth_repository.dart';
 import '../datasources/auth_remote_datasource.dart';
 
 class AuthRepositoryImpl implements AuthRepository {

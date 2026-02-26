@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:pos_desktop_clean/core/models/pos_provision_response.dart';
-import 'package:pos_desktop_clean/features/presentation/widgets/amount_keypad.dart';
+import 'package:leemon_app/core/models/pos_provision_response.dart';
+import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 
 class OpeningCashStep extends StatefulWidget {
   final ThemeData theme;

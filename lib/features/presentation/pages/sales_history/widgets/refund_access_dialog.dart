@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:pos_desktop_clean/features/data/utils/app_theme.dart';
+import 'package:leemon_app/features/data/utils/app_theme.dart';
 
 typedef RefundAccessSubmit = Future<bool> Function(String barcode);
 

@@ -1,4 +1,4 @@
-package com.example.pos_desktop
+package com.beyinfotech.leemon
 
 import io.flutter.embedding.android.FlutterActivity
 

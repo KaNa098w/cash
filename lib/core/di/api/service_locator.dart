@@ -1,38 +1,38 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
-import 'package:pos_desktop_clean/features/data/datasources/customers_remote_datasource.dart';
-import 'package:pos_desktop_clean/features/data/datasources/payment_remote_datasource.dart';
-import 'package:pos_desktop_clean/features/data/datasources/popular_products_local.dart';
-import 'package:pos_desktop_clean/features/data/datasources/popular_products_remote.dart';
-import 'package:pos_desktop_clean/features/data/datasources/refunds_remote_datasource.dart';
+import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
+import 'package:leemon_app/features/data/datasources/payment_remote_datasource.dart';
+import 'package:leemon_app/features/data/datasources/popular_products_local.dart';
+import 'package:leemon_app/features/data/datasources/popular_products_remote.dart';
+import 'package:leemon_app/features/data/datasources/refunds_remote_datasource.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 
-import 'package:pos_desktop_clean/core/di/api/app_config.dart';
-import 'package:pos_desktop_clean/core/di/api/device_id_interceptor.dart';
-import 'package:pos_desktop_clean/core/di/api/device_id_store.dart';
+import 'package:leemon_app/core/di/api/app_config.dart';
+import 'package:leemon_app/core/di/api/device_id_interceptor.dart';
+import 'package:leemon_app/core/di/api/device_id_store.dart';
 
-import 'package:pos_desktop_clean/features/data/datasources/local_pos_datasource.dart';
-import 'package:pos_desktop_clean/features/data/repositories/pos_repository_impl.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/pos_repository.dart';
+import 'package:leemon_app/features/data/datasources/local_pos_datasource.dart';
+import 'package:leemon_app/features/data/repositories/pos_repository_impl.dart';
+import 'package:leemon_app/features/domain/repositories/pos_repository.dart';
 
-import 'package:pos_desktop_clean/features/data/datasources/auth_remote_datasource.dart';
-import 'package:pos_desktop_clean/features/data/repositories/auth_repository_impl.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/auth_repository.dart';
+import 'package:leemon_app/features/data/datasources/auth_remote_datasource.dart';
+import 'package:leemon_app/features/data/repositories/auth_repository_impl.dart';
+import 'package:leemon_app/features/domain/repositories/auth_repository.dart';
 
-import 'package:pos_desktop_clean/features/data/datasources/session_remote_datasource.dart';
-import 'package:pos_desktop_clean/features/data/repositories/session_repository_impl.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/session_repository.dart';
+import 'package:leemon_app/features/data/datasources/session_remote_datasource.dart';
+import 'package:leemon_app/features/data/repositories/session_repository_impl.dart';
+import 'package:leemon_app/features/domain/repositories/session_repository.dart';
 
-import 'package:pos_desktop_clean/features/data/datasources/product_remote_datasource.dart';
-import 'package:pos_desktop_clean/features/data/datasources/product_local_datasource.dart';
-import 'package:pos_desktop_clean/features/data/repositories/product_repository_impl.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/product_repository.dart';
+import 'package:leemon_app/features/data/datasources/product_remote_datasource.dart';
+import 'package:leemon_app/features/data/datasources/product_local_datasource.dart';
+import 'package:leemon_app/features/data/repositories/product_repository_impl.dart';
+import 'package:leemon_app/features/domain/repositories/product_repository.dart';
 
-import 'package:pos_desktop_clean/features/data/datasources/sale_remote_datesource.dart';
-import 'package:pos_desktop_clean/features/data/datasources/sale_local_datasource.dart';
-import 'package:pos_desktop_clean/features/data/repositories/sale_repository_impl.dart';
-import 'package:pos_desktop_clean/features/domain/repositories/sale_repository.dart';
+import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
+import 'package:leemon_app/features/data/datasources/sale_local_datasource.dart';
+import 'package:leemon_app/features/data/repositories/sale_repository_impl.dart';
+import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 
 final sl = GetIt.instance;
 

@@ -1,7 +1,7 @@
 // lib/features/pos/data/datasources/sale_remote_datasource.dart
 import 'package:dio/dio.dart';
-import 'package:pos_desktop_clean/core/models/sale_item_response.dart';
-import 'package:pos_desktop_clean/core/models/sale_model.dart';
+import 'package:leemon_app/core/models/sale_item_response.dart';
+import 'package:leemon_app/core/models/sale_model.dart';
 
 class SaleRemoteDataSource {
   SaleRemoteDataSource(this._dio);

@@ -1,6 +1,6 @@
 import 'package:hive/hive.dart';
 
-import 'package:pos_desktop_clean/core/models/product_response.dart';
+import 'package:leemon_app/core/models/product_response.dart';
 
 class ProductLocalDataSource {
   static const _boxName = 'products_box';

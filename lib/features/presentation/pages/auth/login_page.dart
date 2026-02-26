@@ -1,18 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/auth/widgets/cachier_login_page_widget.dart';
-import 'package:provider/provider.dart';
-
-import 'package:pos_desktop_clean/core/provider/auth_provider.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/auth/auth_bloc/auth_state.dart';
-
-import 'package:pos_desktop_clean/features/presentation/pages/products/product_bloc/product_cubit.dart';
-import 'package:pos_desktop_clean/features/presentation/pages/products/product_bloc/product_state.dart';
-
-// ✅ ОСТАВЬ ОДИН ИМПОРТ ГДЕ CASHIER LOGIN STEP (исправленный)
-// Удаляй второй, чтобы не было дубля класса!
+import 'package:leemon_app/features/presentation/pages/auth/widgets/cachier_login_page_widget.dart';
+import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_state.dart';
+import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_state.dart';
 import 'widgets/login_steps.dart';
 
 class LoginPage extends StatefulWidget {
@@ -30,13 +24,8 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-    // final provider = context.read<AuthTokenProvider>();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = context.read<AuthTokenProvider>();
-      _keyController.text = provider.posKey ?? '';
-      context.read<AuthCubit>().bootstrapFromCache();
-    });
+    final provider = context.read<AuthTokenProvider>();
+    _keyController.text = provider.posKey ?? '';
   }
 
   @override
@@ -132,8 +121,6 @@ class _LoginPageState extends State<LoginPage> {
           builder: (context, authState) {
             final productsState = context.watch<ProductsCubit>().state;
             final isLoadingAuth = authState is AuthLoading;
-
-            // ✅ ВОТ ГЛАВНОЕ: кассирский экран — ПОЛНОЭКРАННО, БЕЗ Card/градиента
             if (authState is AuthProvisioned || authState is AuthPinStep) {
               final provision = authState is AuthProvisioned
                   ? authState.provision
@@ -142,7 +129,6 @@ class _LoginPageState extends State<LoginPage> {
                   authState is AuthPinStep ? authState.user : null;
               final errorText =
                   authState is AuthPinStep ? authState.errorText : null;
-
               return CashierLoginStep(
                 provision: provision,
                 selectedUser: selectedUser,
@@ -156,13 +142,8 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                 onCancel: () =>
                     context.read<AuthCubit>().backToUsers(provision),
-                // optional: brandLogo/partnerLogo передай тут если есть
-                // brandLogo: SvgPicture.asset(...),
-                // partnerLogo: SvgPicture.asset(...),
               );
             }
-
-            // ✅ дальше — твой старый UI в Card/градиенте (для KEY, LOADING, OPENING CASH и т.д.)
             return DecoratedBox(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
@@ -193,7 +174,6 @@ class _LoginPageState extends State<LoginPage> {
                                 horizontal: 40, vertical: 32),
                             child: Builder(
                               builder: (context) {
-                                // ✅ если уже пошли в загрузку товаров (после AuthSuccess / AuthUnlocked)
                                 if (authState is AuthSuccess ||
                                     authState is AuthUnlocked) {
                                   if (productsState is ProductsLoading ||
@@ -257,7 +237,6 @@ class _LoginPageState extends State<LoginPage> {
                                         ),
                                   );
                                 }
-
                                 return const SizedBox.shrink();
                               },
                             ),
