@@ -58,8 +58,17 @@ class SaleCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < 1280;
+        final compact = constraints.maxWidth < 1024;
+        final desktopNarrow = !compact && constraints.maxWidth < 1180;
         final actionWidth = (constraints.maxWidth - 36).clamp(180.0, 520.0);
+        final saleNumberWidth = desktopNarrow ? 150.0 : 205.0;
+        final dateWidth = desktopNarrow ? 220.0 : 400.0;
+        final statusWidth = desktopNarrow ? 130.0 : 180.0;
+        final cashierWidth = desktopNarrow ? 170.0 : 250.0;
+        final amountWidth = desktopNarrow ? 110.0 : 140.0;
+        final refundBtnWidth = desktopNarrow ? 180.0 : 220.0;
+        final invoiceBtnWidth = desktopNarrow ? 130.0 : 170.0;
+        final printBtnWidth = desktopNarrow ? 180.0 : 220.0;
 
         return Column(
           children: [
@@ -135,7 +144,7 @@ class SaleCard extends StatelessWidget {
                     : Row(
                         children: [
                           SizedBox(
-                            width: 205,
+                            width: saleNumberWidth,
                             child: Text(
                               saleNumber(sale),
                               overflow: TextOverflow.ellipsis,
@@ -144,11 +153,11 @@ class SaleCard extends StatelessWidget {
                             ),
                           ),
                           SizedBox(
-                              width: 400,
+                              width: dateWidth,
                               child: Text(fmtSaleDate(sale.date),
                                   overflow: TextOverflow.ellipsis)),
                           SizedBox(
-                            width: 180,
+                            width: statusWidth,
                             child: Align(
                               alignment: Alignment.centerLeft,
                               child: StatusChip(
@@ -158,12 +167,12 @@ class SaleCard extends StatelessWidget {
                             ),
                           ),
                           SizedBox(
-                              width: 250,
+                              width: cashierWidth,
                               child: Text(cashierLabel(sale),
                                   overflow: TextOverflow.ellipsis)),
                           const Spacer(),
                           SizedBox(
-                            width: 140,
+                            width: amountWidth,
                             child: Text(
                               money0(sale.totalAmount),
                               textAlign: TextAlign.right,
@@ -245,7 +254,7 @@ class SaleCard extends StatelessWidget {
                             label: selectedCount == 0
                                 ? 'Выбери товары'
                                 : 'Оформить возврат',
-                            width: 220,
+                            width: refundBtnWidth,
                             bg: selectedCount == 0
                                 ? const Color(0xFFB0B0B0)
                                 : const Color(0xFF7B7B7B),
@@ -257,13 +266,13 @@ class SaleCard extends StatelessWidget {
                           const SizedBox(width: 12),
                           BottomActionButton(
                               label: 'Накладная',
-                              width: 170,
+                              width: invoiceBtnWidth,
                               bg: const Color(0xFF21B3C0),
                               onTap: () {}),
                           const SizedBox(width: 12),
                           BottomActionButton(
                               label: 'Распечатать чек',
-                              width: 220,
+                              width: printBtnWidth,
                               bg: const Color(0xFF21B3C0),
                               onTap: () {}),
                         ],

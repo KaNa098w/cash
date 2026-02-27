@@ -1,4 +1,4 @@
-import 'dart:convert' as dc show jsonDecode, jsonEncode, utf8;
+import 'dart:convert' as dc show jsonDecode, jsonEncode;
 import 'dart:convert' show utf8;
 
 import 'package:crypto/crypto.dart';
@@ -24,6 +24,7 @@ class AuthTokenProvider extends ChangeNotifier {
   static const _kPinSalt = 'pinSalt';
 
   static const _kShiftId = 'shiftId';
+  static const _kReceiptPaperMm = 'receiptPaperMm';
 
   // ✅ активный кассир
   static const _kActiveUserId = 'activeUserId';
@@ -60,6 +61,10 @@ class AuthTokenProvider extends ChangeNotifier {
   String? _shiftId;
   String? get shiftId => _shiftId;
   bool get hasShiftId => _shiftId != null && _shiftId!.trim().isNotEmpty;
+
+  int _receiptPaperMm = 80;
+  int get receiptPaperMm => _receiptPaperMm == 57 ? 57 : 80;
+  bool get isReceipt57mm => receiptPaperMm == 57;
 
   String? _activeUserId;
   String? get activeUserId => _activeUserId;
@@ -118,6 +123,7 @@ class AuthTokenProvider extends ChangeNotifier {
 
     _shiftId = prefs.getString(_kShiftId);
     _activeUserId = prefs.getString(_kActiveUserId);
+    _receiptPaperMm = (prefs.getInt(_kReceiptPaperMm) == 57) ? 57 : 80;
 
     if (_deviceId == null || _deviceId!.isEmpty) {
       _deviceId = const Uuid().v4();
@@ -209,6 +215,7 @@ class AuthTokenProvider extends ChangeNotifier {
 
     _shiftId = null;
     _activeUserId = null;
+    _receiptPaperMm = 80;
 
     if (!keepDeviceId) _deviceId = null;
 
@@ -223,12 +230,22 @@ class AuthTokenProvider extends ChangeNotifier {
 
     await prefs.remove(_kShiftId);
     await prefs.remove(_kActiveUserId);
+    await prefs.remove(_kReceiptPaperMm);
 
     if (!keepDeviceId) {
       await prefs.remove(_kDeviceId);
     }
 
     notifyListeners();
+  }
+
+  Future<void> setReceiptPaperMm(int mm) async {
+    final next = mm == 57 ? 57 : 80;
+    _receiptPaperMm = next;
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_kReceiptPaperMm, next);
   }
 
   Future<void> setShiftId(String id) async {

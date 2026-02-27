@@ -398,6 +398,10 @@ class _SearchBarState extends State<SearchBar> {
     final isMobileCameraCapable = !kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.iOS ||
             defaultTargetPlatform == TargetPlatform.android);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final compactDesktop = screenWidth <= 1100;
+    final customerGapWidth = compactDesktop ? 8.0 : 12.0;
+    final buyerBtnFontSize = compactDesktop ? 16.0 : 18.0;
 
     return Row(
       children: [
@@ -565,12 +569,12 @@ class _SearchBarState extends State<SearchBar> {
               borderRadius: BorderRadius.circular(7),
             ),
           ),
-          child: const Text(
+          child: Text(
             'Покупатель',
-            style: TextStyle(fontSize: 18),
+            style: TextStyle(fontSize: buyerBtnFontSize),
           ),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: customerGapWidth),
         BlocBuilder<PosCubit, PosState>(
           buildWhen: (prev, next) =>
               prev.activeTicket.customer != next.activeTicket.customer,
@@ -602,7 +606,7 @@ class _SearchBarState extends State<SearchBar> {
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 260),
                     child: Text(
-                      '${c.name} • ${c.phone}',
+                      c.name,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 14,

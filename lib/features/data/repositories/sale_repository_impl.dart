@@ -1,4 +1,6 @@
 // lib/features/sales/data/repositories/sale_repository_impl.dart
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:leemon_app/core/di/utils/dio_error_utils.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
@@ -19,6 +21,12 @@ class SaleRepositoryImpl implements SaleRepository {
     required String deviceId,
     required SaleModel sale,
   }) async {
+    // Если сети нет, не тратим время на попытку запроса: сразу в локальную очередь.
+    if (!await _hasInternet()) {
+      await _local.enqueue(sale);
+      return CreateSaleResult.queued;
+    }
+
     try {
       await _remote.createSale(key: key, deviceId: deviceId, sale: sale);
       return CreateSaleResult.sent;
@@ -55,6 +63,16 @@ class SaleRepositoryImpl implements SaleRepository {
       } catch (_) {
         break;
       }
+    }
+  }
+
+  Future<bool> _hasInternet() async {
+    try {
+      final result = await InternetAddress.lookup('example.com')
+          .timeout(const Duration(milliseconds: 900));
+      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
     }
   }
 }

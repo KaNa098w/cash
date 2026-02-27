@@ -57,7 +57,7 @@ class FooterControlsOnly extends StatelessWidget {
         final totalW = s(_totalW);
         final totalH = s(_totalH);
         final payW = s(_PayBtn._w);
-        final payH = s(_PayBtn._h);
+        final payH = smallBtnH;
         final radius = s(_r);
 
         return Padding(
@@ -113,7 +113,7 @@ class FooterControlsOnly extends StatelessWidget {
                   ),
                 ],
               ),
-              SizedBox(height: s(12)),
+              SizedBox(height: rowGap),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -260,7 +260,7 @@ class _TotalBox extends StatelessWidget {
                 style: TextStyle(
                   fontSize: smallFontSize,
                   fontWeight: FontWeight.w500,
-                  color: Color(0xFF7A7A7A),
+                  color: const Color(0xFF7A7A7A),
                 ),
               ),
             ),
@@ -300,7 +300,6 @@ class _PayBtn extends StatelessWidget {
   static const _btnGreen = Color(0xFF4BCA9B);
 
   static const double _w = 225;
-  static const double _h = 71;
 
   @override
   Widget build(BuildContext context) {

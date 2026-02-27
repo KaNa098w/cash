@@ -40,7 +40,10 @@ class FooterStatus extends StatelessWidget {
 class _FooterDesktop extends StatelessWidget {
   const _FooterDesktop();
 
-  Future<pw.Document> _buildReceipt80mm(PosCubit cubit) async {
+  Future<pw.Document> _buildReceipt(
+    PosCubit cubit, {
+    required PdfPageFormat pageFormat,
+  }) async {
     final items = cubit.state.items;
     final total = cubit.total;
     final discountSum = cubit.discountSum;
@@ -74,7 +77,7 @@ class _FooterDesktop extends StatelessWidget {
 
     doc.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat.roll80, // ширина 80 мм, высота 200 мм
+        pageFormat: pageFormat,
         orientation: pw.PageOrientation.portrait, // книжная
         margin: const pw.EdgeInsets.only(right: 18, top: 12, bottom: 12),
         build: (ctx) {
@@ -177,6 +180,8 @@ class _FooterDesktop extends StatelessWidget {
     }
 
     final total = posCubit.total;
+    final pageFormat =
+        auth.receiptPaperMm == 57 ? PdfPageFormat.roll57 : PdfPageFormat.roll80;
     final ok = await _confirmCardPayment(context, amount: money(total));
     if (!ok) return;
 
@@ -256,7 +261,9 @@ class _FooterDesktop extends StatelessWidget {
 
       final printer = PrintService();
 
-      await printer.print80mmSilently(() => _buildReceipt80mm(posCubit));
+      await printer.print80mmSilently(
+        () => _buildReceipt(posCubit, pageFormat: pageFormat),
+      );
 
       await showDialog<void>(
         context: context,
@@ -538,7 +545,6 @@ class _FooterDesktop extends StatelessWidget {
               color: Color(0xFF2B3440),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Padding(
                   padding: EdgeInsets.all(infoPad),
@@ -579,7 +585,7 @@ class _FooterDesktop extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         const LiveDateText(),
-                        const Spacer(),
+                        SizedBox(height: compact ? 8 : 14),
                         Text(
                           footerTitle,
                           maxLines: 2,
@@ -594,75 +600,86 @@ class _FooterDesktop extends StatelessWidget {
                     ),
                   ),
                 ),
-                const Spacer(),
+                SizedBox(width: compact ? 10 : 16),
                 Expanded(
-                  child: BlocBuilder<PosCubit, PosState>(
-                    builder: (context, state) {
-                      final cubit = context.read<PosCubit>();
-                      final total = cubit.total;
-                      final discount = cubit.discountSum;
-                      final beforeDiscount = total + discount;
-                      return FooterControlsOnly(
-                        smallAmountText: money(beforeDiscount),
-                        bigAmountText: money(total),
-                        onMinus: cubit.decrementSelectedQty,
-                        onPlus: cubit.incrementSelectedQty,
-                        onQuick: () async {
-                          final auth = context.read<AuthTokenProvider>();
-                          final key = auth.posKey?.trim() ?? '';
-                          if (key.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Нет posKey')),
-                            );
-                            return;
-                          }
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        // На 1024x768 держим блок кнопок в "дизайн"-ширине,
+                        // чтобы ряды были как в макете и не расползались.
+                        maxWidth: compact ? 605 : double.infinity,
+                      ),
+                      child: BlocBuilder<PosCubit, PosState>(
+                        builder: (context, state) {
+                          final cubit = context.read<PosCubit>();
+                          final total = cubit.total;
+                          final discount = cubit.discountSum;
+                          final beforeDiscount = total + discount;
+                          return FooterControlsOnly(
+                            smallAmountText: money(beforeDiscount),
+                            bigAmountText: money(total),
+                            onMinus: cubit.decrementSelectedQty,
+                            onPlus: cubit.incrementSelectedQty,
+                            onQuick: () async {
+                              final auth = context.read<AuthTokenProvider>();
+                              final key = auth.posKey?.trim() ?? '';
+                              if (key.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Нет posKey')),
+                                );
+                                return;
+                              }
 
-                          showDialog<void>(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (_) => const Center(
-                                child: CircularProgressIndicator()),
-                          );
+                              showDialog<void>(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (_) => const Center(
+                                    child: CircularProgressIndicator()),
+                              );
 
-                          try {
-                            final items = await context
-                                .read<ProductsCubit>()
-                                .loadPopularFirstPage(
-                                  key: key,
-                                  forceRefresh: false,
+                              try {
+                                final items = await context
+                                    .read<ProductsCubit>()
+                                    .loadPopularFirstPage(
+                                      key: key,
+                                      forceRefresh: false,
+                                    );
+
+                                if (!context.mounted) return;
+
+                                Navigator.of(context, rootNavigator: true).pop();
+
+                                final picked = await showQuickProductsDialog(
+                                  context,
+                                  products: items,
                                 );
 
-                            if (!context.mounted) return;
-
-                            Navigator.of(context, rootNavigator: true).pop();
-
-                            final picked = await showQuickProductsDialog(
-                              context,
-                              products: items,
-                            );
-
-                            if (picked == null) return;
-                            cubit.addFromProductModel(picked);
-                          } catch (e) {
-                            if (!context.mounted) return;
-                            Navigator.of(context, rootNavigator: true)
-                                .maybePop();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content: Text('Ошибка popular-products: $e')),
-                            );
-                          }
+                                if (picked == null) return;
+                                cubit.addFromProductModel(picked);
+                              } catch (e) {
+                                if (!context.mounted) return;
+                                Navigator.of(context, rootNavigator: true)
+                                    .maybePop();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content:
+                                          Text('Ошибка popular-products: $e')),
+                                );
+                              }
+                            },
+                            onCancel: () async {
+                              final ok = await _confirmClearCart(context);
+                              if (ok) cubit.clearAfterPayment();
+                            },
+                            onPayCard: () async {
+                              await _payByCardWithPrint(context);
+                            },
+                            onPay: () => _showPaymentPanelCenter(context),
+                          );
                         },
-                        onCancel: () async {
-                          final ok = await _confirmClearCart(context);
-                          if (ok) cubit.clearAfterPayment();
-                        },
-                        onPayCard: () async {
-                          await _payByCardWithPrint(context);
-                        },
-                        onPay: () => _showPaymentPanelCenter(context),
-                      );
-                    },
+                      ),
+                    ),
                   ),
                 ),
               ],

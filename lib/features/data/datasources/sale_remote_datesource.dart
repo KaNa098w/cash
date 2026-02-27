@@ -28,6 +28,7 @@ class SaleRemoteDataSource {
     required String key,
     int page = 1,
     int perPage = 15,
+    String sort = '-date',
   }) async {
     final safeKey = key.trim();
     if (safeKey.isEmpty) throw Exception('pos key is empty');
@@ -36,9 +37,9 @@ class SaleRemoteDataSource {
       '/organizations/pos/$safeKey/sales',
       queryParameters: {
         'page': page,
-        'per_page': perPage,
+        'perPage': perPage,
         'include': 'items,refund.items',
-        'sort': '-date',
+        'sort': sort,
       },
     );
 
@@ -56,9 +57,10 @@ class SaleRemoteDataSource {
     }
 
     final items = rawList.map((e) {
-      if (e is! Map)
+      if (e is! Map) {
         throw Exception('Sale item is not a Map: ${e.runtimeType}');
-      return SaleModel.fromApiJson(Map<String, dynamic>.from(e as Map));
+      }
+      return SaleModel.fromApiJson(Map<String, dynamic>.from(e));
     }).toList();
 
     final meta = data['meta'] as Map<String, dynamic>? ?? const {};
@@ -77,35 +79,39 @@ class SaleRemoteDataSource {
   }
 
   Future<SaleModel> fetchSaleById({
-  required String key,
-  required String saleId,
-}) async {
-  final safeKey = key.trim();
-  final sid = saleId.trim();
+    required String key,
+    required String saleId,
+  }) async {
+    final safeKey = key.trim();
+    final sid = saleId.trim();
 
-  if (safeKey.isEmpty) throw Exception('fetchSaleById: key is empty');
-  if (sid.isEmpty) throw Exception('fetchSaleById: saleId is empty');
+    if (safeKey.isEmpty) throw Exception('fetchSaleById: key is empty');
+    if (sid.isEmpty) throw Exception('fetchSaleById: saleId is empty');
 
-  final resp = await _dio.get('/organizations/pos/sales/$sid');
+    final resp = await _dio.get('/organizations/pos/sales/$sid');
 
-  final body = resp.data;
-  if (body is! Map<String, dynamic>) {
-    throw Exception('fetchSaleById: invalid response (expected Map)');
+    final body = resp.data;
+    if (body is! Map<String, dynamic>) {
+      throw Exception('fetchSaleById: invalid response (expected Map)');
+    }
+
+    final data = body['data'];
+    if (data is! Map<String, dynamic>) {
+      throw Exception('fetchSaleById: invalid data (expected Map)');
+    }
+
+    return SaleModel.fromApiJson(Map<String, dynamic>.from(data));
   }
-
-  final data = body['data'];
-  if (data is! Map<String, dynamic>) {
-    throw Exception('fetchSaleById: invalid data (expected Map)');
-  }
-
-  return SaleModel.fromApiJson(Map<String, dynamic>.from(data));
-}
-
 
   Future<SaleModel?> getLastSale({
     required String key,
   }) async {
-    final res = await getSales(key: key, page: 1, perPage: 1);
+    final res = await getSales(
+      key: key,
+      page: 1,
+      perPage: 1,
+      sort: '-created_at',
+    );
     if (res.items.isEmpty) return null;
     return res.items.first;
   }

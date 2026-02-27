@@ -263,7 +263,10 @@ class _PaymentPanelState extends State<PaymentPanel> {
     );
   }
 
-  Future<pw.Document> _buildReceipt80mm(PosCubit cubit) async {
+  Future<pw.Document> _buildReceipt(
+    PosCubit cubit, {
+    required PdfPageFormat pageFormat,
+  }) async {
     final items = cubit.state.items;
     final total = cubit.total;
     final discountSum = cubit.discountSum;
@@ -297,7 +300,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
     doc.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat.roll80,
+        pageFormat: pageFormat,
         orientation: pw.PageOrientation.portrait,
         margin: const pw.EdgeInsets.only(right: 18, top: 12, bottom: 12),
         build: (ctx) {
@@ -476,6 +479,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                             onTap: _pickCustomer,
                           ),
                         ),
+                        const SizedBox(width: 6),
                       ],
                     ),
                   ),
@@ -703,6 +707,10 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
                                     setState(() => _paying = true);
                                     try {
+                                      final pageFormat =
+                                          auth.receiptPaperMm == 57
+                                              ? PdfPageFormat.roll57
+                                              : PdfPageFormat.roll80;
                                       final totalPaid = posCubit.total;
                                       final paymentKind =
                                           posCubit.state.paymentKind;
@@ -713,7 +721,11 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       );
 
                                       await _printService.print80mmSilently(
-                                          () => _buildReceipt80mm(posCubit));
+                                        () => _buildReceipt(
+                                          posCubit,
+                                          pageFormat: pageFormat,
+                                        ),
+                                      );
 
                                       if (!mounted) return;
                                       if (result == CreateSaleResult.rejected) {

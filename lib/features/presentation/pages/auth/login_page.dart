@@ -20,6 +20,9 @@ class _LoginPageState extends State<LoginPage> {
   final _keyController = TextEditingController();
   final _keyFocus = FocusNode();
   bool _keySubmitted = false;
+  bool _syncingProducts = false;
+  double _syncProgress = 0;
+  String _syncStage = 'Подготовка синхронизации...';
 
   @override
   void initState() {
@@ -47,11 +50,58 @@ class _LoginPageState extends State<LoginPage> {
     context.read<AuthCubit>().provisionByKey(key);
   }
 
-  void _retryProductsLoad() {
+  Future<void> _retryProductsLoad() async {
+    await _syncProducts(forceRefresh: true);
+  }
+
+  Future<void> _syncProducts({required bool forceRefresh}) async {
+    if (_syncingProducts) return;
+
     final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
     if (key.isEmpty) return;
 
-    context.read<ProductsCubit>().loadFirstPage(key: key, forceRefresh: true);
+    setState(() {
+      _syncingProducts = true;
+      _syncProgress = 0.08;
+      _syncStage = 'Подготавливаем синхронизацию...';
+    });
+
+    try {
+      final cubit = context.read<ProductsCubit>();
+      setState(() {
+        _syncProgress = 0.35;
+        _syncStage = 'Загружаем товары...';
+      });
+      await cubit.loadFirstPage(key: key, forceRefresh: forceRefresh);
+
+      if (!mounted) return;
+      setState(() {
+        _syncProgress = 0.78;
+        _syncStage = 'Загружаем быстрые товары...';
+      });
+      await cubit.loadPopularFirstPage(key: key, forceRefresh: forceRefresh);
+
+      if (!mounted) return;
+      setState(() {
+        _syncProgress = 1.0;
+        _syncStage = 'Синхронизация завершена';
+      });
+
+      await Future.delayed(const Duration(milliseconds: 220));
+      if (!mounted) return;
+      context.go('/pos');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка загрузки товаров: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _syncingProducts = false;
+        });
+      }
+    }
   }
 
   void _ensureProductsLoadedAndGoPos() {
@@ -70,10 +120,7 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    context.read<ProductsCubit>().loadFirstPage(key: key, forceRefresh: false);
-    context
-        .read<ProductsCubit>()
-        .loadPopularFirstPage(key: key, forceRefresh: false);
+    _syncProducts(forceRefresh: false);
   }
 
   @override
@@ -103,10 +150,6 @@ class _LoginPageState extends State<LoginPage> {
           ),
           BlocListener<ProductsCubit, ProductsState>(
             listener: (context, state) {
-              if (state is ProductsLoaded) {
-                context.go('/pos');
-              }
-
               if (state is ProductsError) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -176,12 +219,17 @@ class _LoginPageState extends State<LoginPage> {
                               builder: (context) {
                                 if (authState is AuthSuccess ||
                                     authState is AuthUnlocked) {
-                                  if (productsState is ProductsLoading ||
+                                  if (_syncingProducts ||
+                                      productsState is ProductsLoading ||
                                       productsState is ProductsInitial) {
                                     return LoadingStep(
                                       theme: theme,
                                       title: 'Подготовка кассы',
-                                      subtitle: 'Загружаем товары...',
+                                      subtitle: 'Выполняется синхронизация',
+                                      progress:
+                                          _syncingProducts ? _syncProgress : null,
+                                      stage:
+                                          _syncingProducts ? _syncStage : null,
                                     );
                                   }
 

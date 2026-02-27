@@ -230,53 +230,67 @@ class _BrandPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        // Центр: munara логотип
-        Center(child: brandLogo ?? const _FallbackMunaraLogo()),
-
-        // ✅ Низ слева: leemon + тексты (теперь всегда видно)
-        Positioned(
-          left: 28,
-          bottom: 18,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                SizedBox(
-                  height: 34,
-                  child: Align(
-                    alignment: Alignment.bottomLeft,
-                    child: partnerLogo ?? const _FallbackLeemonLogo(),
-                  ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final logoWidth = (constraints.maxWidth * 0.72).clamp(320.0, 520.0);
+        return Stack(
+          children: [
+            // Центр: munara логотип
+            Align(
+              alignment: Alignment.center,
+              child: SizedBox(
+                width: logoWidth,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: brandLogo ?? const _FallbackMunaraLogo(),
                 ),
-                const SizedBox(width: 14),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 360),
-                  child: DefaultTextStyle(
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      height: 1.25,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(siteText, style: GoogleFonts.inter()),
-                        const SizedBox(height: 2),
-                        Text(contactsText, style: GoogleFonts.inter()),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
-      ],
+
+            // ✅ Низ слева: leemon + тексты (теперь всегда видно)
+            Positioned(
+              left: 28,
+              bottom: 18,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    SizedBox(
+                      height: 34,
+                      child: Align(
+                        alignment: Alignment.bottomLeft,
+                        child: partnerLogo ?? const _FallbackLeemonLogo(),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 360),
+                      child: DefaultTextStyle(
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          height: 1.25,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(siteText, style: GoogleFonts.inter()),
+                            const SizedBox(height: 2),
+                            Text(contactsText, style: GoogleFonts.inter()),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

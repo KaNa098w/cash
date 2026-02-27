@@ -1,4 +1,8 @@
 // top_bar.dart
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
@@ -12,102 +16,113 @@ class TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF262B35),
-      height: 85,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 30, 8, 0),
-        child: BlocBuilder<PosCubit, PosState>(
-          buildWhen: (p, n) =>
-              p.tickets != n.tickets ||
-              p.activeTicketId != n.activeTicketId ||
-              p.isHistoryMode != n.isHistoryMode,
-          builder: (context, state) {
-            final cubit = context.read<PosCubit>();
-            final canCloseTickets = state.tickets.length > 1;
+    return LayoutBuilder(
+      builder: (context, c) {
+        final compact = c.maxWidth <= 1100;
+        final barHeight = compact ? 72.0 : 85.0;
+        final topPad = compact ? 12.0 : 30.0;
+        final sidePad = compact ? 10.0 : 20.0;
+        final tabGap = compact ? 8.0 : 5.0;
+        final holdFont = compact ? 16.0 : 18.0;
 
-            return Row(
-              children: [
-                // вкладки слева
-                Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _Chip(
-                          text: 'История',
-                          icon: 'assets/svg/history.svg',
-                          active: state.isHistoryMode,
-                          onTap: cubit.showHistory,
-                        ),
-                        const SizedBox(width: 5),
-                        for (final t in state.tickets) ...[
-                          _TicketTab(
-                            text: 'Чек № ${t.id} | ${t.items.length} товаров',
-                            active: !state.isHistoryMode &&
-                                t.id == state.activeTicketId,
-                            onTap: () => cubit.switchTicket(t.id),
-                            showClose: canCloseTickets,
-                            onClose: canCloseTickets
-                                ? () => cubit.closeTicket(t.id)
-                                : null,
-                          ),
-                          const SizedBox(width: 5),
-                        ],
-                        TextButton(
-                          onPressed: cubit.createHoldTicket,
-                          child: const Text(
-                            '+ Отложка',
-                            style: TextStyle(
-                              color: Color(0xFFFFFFFF),
-                              fontSize: 18,
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+        return Container(
+          color: const Color(0xFF262B35),
+          height: barHeight,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(sidePad, topPad, 8, 0),
+            child: BlocBuilder<PosCubit, PosState>(
+              buildWhen: (p, n) =>
+                  p.tickets != n.tickets ||
+                  p.activeTicketId != n.activeTicketId ||
+                  p.isHistoryMode != n.isHistoryMode,
+              builder: (context, state) {
+                final cubit = context.read<PosCubit>();
+                final canCloseTickets = state.tickets.length > 1;
 
-                const SizedBox(width: 12),
-
-                // иконки справа
-                Row(
-                  mainAxisSize: MainAxisSize.min,
+                return Row(
                   children: [
-                    IconButton(
-                      onPressed: () {},
-                      icon: SvgPicture.asset(
-                        'assets/svg/bag.svg',
-                        width: 24,
-                        height: 24,
-                        color: Colors.white70,
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _Chip(
+                              text: 'История',
+                              icon: 'assets/svg/history.svg',
+                              active: state.isHistoryMode,
+                              compact: compact,
+                              onTap: cubit.showHistory,
+                            ),
+                            SizedBox(width: tabGap),
+                            for (final t in state.tickets) ...[
+                              _TicketTab(
+                                text: '№${t.id} | ${t.items.length} товар',
+                                active: !state.isHistoryMode &&
+                                    t.id == state.activeTicketId,
+                                compact: compact,
+                                onTap: () => cubit.switchTicket(t.id),
+                                showClose: canCloseTickets,
+                                onClose: canCloseTickets
+                                    ? () => cubit.closeTicket(t.id)
+                                    : null,
+                              ),
+                              SizedBox(width: tabGap),
+                            ],
+                            TextButton(
+                              onPressed: cubit.createHoldTicket,
+                              child: Text(
+                                '+ ОТЛОЖКА',
+                                style: TextStyle(
+                                  color: const Color(0xFFFFFFFF),
+                                  fontSize: holdFont,
+                                  fontWeight: FontWeight.w500,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      tooltip: '',
                     ),
-                    _divider(),
-                    IconButton(
-                      onPressed: () => showPosActionsDialog(context),
-                      icon: SvgPicture.asset(
-                        'assets/svg/elements.svg',
-                        width: 24,
-                        height: 24,
-                        color: Colors.white70,
-                      ),
-                      tooltip: '',
-                    ),
-                    _divider(),
-                    const SizedBox(width: 5),
-                    const _StatusDot(),
                     const SizedBox(width: 12),
+                    if (!compact)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            onPressed: () {},
+                            icon: SvgPicture.asset(
+                              'assets/svg/bag.svg',
+                              width: 24,
+                              height: 24,
+                              color: Colors.white70,
+                            ),
+                            tooltip: '',
+                          ),
+                          _divider(),
+                          IconButton(
+                            onPressed: () => showPosActionsDialog(context),
+                            icon: SvgPicture.asset(
+                              'assets/svg/elements.svg',
+                              width: 24,
+                              height: 24,
+                              color: Colors.white70,
+                            ),
+                            tooltip: '',
+                          ),
+                          _divider(),
+                          const SizedBox(width: 5),
+                          const _StatusDot(),
+                          const SizedBox(width: 12),
+                        ],
+                      ),
                   ],
-                ),
-              ],
-            );
-          },
-        ),
-      ),
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -122,6 +137,7 @@ class TopBar extends StatelessWidget {
 class _TicketTab extends StatelessWidget {
   final String text;
   final bool active;
+  final bool compact;
   final VoidCallback? onTap;
 
   final bool showClose;
@@ -130,6 +146,7 @@ class _TicketTab extends StatelessWidget {
   const _TicketTab({
     required this.text,
     this.active = false,
+    this.compact = false,
     this.onTap,
     this.showClose = false,
     this.onClose,
@@ -143,7 +160,10 @@ class _TicketTab extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 18 : 16,
+          vertical: compact ? 12 : 16,
+        ),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: const BorderRadius.only(
@@ -156,7 +176,11 @@ class _TicketTab extends StatelessWidget {
           children: [
             Text(
               text,
-              style: TextStyle(color: textColor, fontSize: 18),
+              style: TextStyle(
+                color: textColor,
+                fontSize: compact ? 16 : 18,
+                fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
+              ),
               overflow: TextOverflow.ellipsis,
             ),
             if (showClose && onClose != null) ...[
@@ -169,7 +193,7 @@ class _TicketTab extends StatelessWidget {
                 },
                 child: Icon(
                   Icons.close,
-                  size: 18,
+                  size: compact ? 16 : 18,
                   color: active ? Colors.black54 : Colors.white70,
                 ),
               ),
@@ -185,12 +209,14 @@ class _Chip extends StatelessWidget {
   final String text;
   final String icon; // <-- svg asset path
   final bool active;
+  final bool compact;
   final VoidCallback onTap;
 
   const _Chip({
     required this.text,
     required this.icon,
     required this.active,
+    this.compact = false,
     required this.onTap,
   });
 
@@ -203,7 +229,10 @@ class _Chip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 18 : 12,
+          vertical: compact ? 12 : 16,
+        ),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: const BorderRadius.only(
@@ -213,12 +242,19 @@ class _Chip extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Text(text, style: TextStyle(color: textColor, fontSize: 18)),
+            Text(
+              text,
+              style: TextStyle(
+                color: textColor,
+                fontSize: compact ? 16 : 18,
+                fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
             const SizedBox(width: 6),
             SvgPicture.asset(
               icon,
-              width: 24,
-              height: 24,
+              width: compact ? 20 : 24,
+              height: compact ? 20 : 24,
               colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
             ),
           ],
@@ -228,8 +264,48 @@ class _Chip extends StatelessWidget {
   }
 }
 
-class _StatusDot extends StatelessWidget {
+class _StatusDot extends StatefulWidget {
   const _StatusDot({super.key});
+
+  @override
+  State<_StatusDot> createState() => _StatusDotState();
+}
+
+class _StatusDotState extends State<_StatusDot> {
+  bool _online = true;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshOnline();
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      _refreshOnline();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshOnline() async {
+    final online = await _hasInternet();
+    if (!mounted || online == _online) return;
+    setState(() => _online = online);
+  }
+
+  Future<bool> _hasInternet() async {
+    if (kIsWeb) return true;
+    try {
+      final result = await InternetAddress.lookup('example.com')
+          .timeout(const Duration(milliseconds: 900));
+      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -264,8 +340,8 @@ class _StatusDot extends StatelessWidget {
         Container(
           width: 10,
           height: 10,
-          decoration: const BoxDecoration(
-            color: Colors.green,
+          decoration: BoxDecoration(
+            color: _online ? const Color(0xFF22C55E) : const Color(0xFFDC2626),
             shape: BoxShape.circle,
           ),
         ),
