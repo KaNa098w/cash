@@ -769,16 +769,48 @@ Future<void> _pickReceiptPaperSize(BuildContext context) async {
                   Row(
                     children: [
                       Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.of(ctx).pop(),
-                          child: const Text('Отмена'),
+                        child: SizedBox(
+                          height: 46,
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(ctx).pop(),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF0F172A),
+                              side: const BorderSide(color: Color(0xFFCBD5E1)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text(
+                              'Отмена',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: FilledButton(
-                          onPressed: () => Navigator.of(ctx).pop(selected),
-                          child: const Text('Сохранить'),
+                        child: SizedBox(
+                          height: 46,
+                          child: FilledButton(
+                            onPressed: () => Navigator.of(ctx).pop(selected),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF2563EB),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text(
+                              'Сохранить',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ],
