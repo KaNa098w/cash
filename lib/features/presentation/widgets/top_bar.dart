@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 
 import 'show_pos_action_dialog.dart';
@@ -17,13 +18,13 @@ class TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
-      builder: (context, c) {
-        final compact = c.maxWidth <= 1100;
-        final barHeight = compact ? 80.0 : 85.0;
-        final topPad = compact ? 14.0 : 30.0;
-        final sidePad = compact ? 12.0 : 20.0;
+      builder: (context, _) {
+        final compact = MediaQuery.sizeOf(context).width <= 900;
+        final barHeight = compact ? 56.0 : 64.0;
+        final topPad = compact ? 4.0 : 10.0;
+        final sidePad = compact ? 10.0 : 20.0;
         final tabGap = compact ? 8.0 : 5.0;
-        final holdFont = compact ? 16.0 : 18.0;
+        final holdFont = compact ? 15.0 : 16.0;
 
         return Container(
           color: const Color(0xFF262B35),
@@ -56,57 +57,27 @@ class TopBar extends StatelessWidget {
                             SizedBox(width: tabGap),
                             for (final t in state.tickets) ...[
                               _TicketTab(
-                                text: '№${t.id} | ${t.items.length} тов',
+                                text: '${t.items.length} товар',
                                 active: !state.isHistoryMode &&
                                     t.id == state.activeTicketId,
                                 compact: compact,
                                 onTap: () => cubit.switchTicket(t.id),
-                                showClose: !compact && canCloseTickets,
+                                showClose: canCloseTickets,
                                 onClose: canCloseTickets
-                                    ? () async {
-                                        final ok = await _showTopBarConfirm(
-                                          context,
-                                          title: 'Закрыть отложку?',
-                                          subtitle:
-                                              'Текущая вкладка будет закрыта.',
-                                          confirmText: 'Закрыть',
-                                          confirmColor:
-                                              const Color(0xFFD15850),
-                                        );
-                                        if (ok != true) return;
-                                        cubit.closeTicket(t.id);
-                                      }
+                                    ? () => cubit.closeTicket(t.id)
                                     : null,
                               ),
                               SizedBox(width: tabGap),
                             ],
-                            InkWell(
-                              borderRadius: BorderRadius.circular(10),
-                              onTap: () async {
-                                final ok = await _showTopBarConfirm(
-                                  context,
-                                  title: 'Создать отложку?',
-                                  subtitle:
-                                      'Будет создан новый отложенный чек.',
-                                  confirmText: 'Создать',
-                                  confirmColor: const Color(0xFF33CC99),
-                                );
-                                if (ok != true) return;
-                                cubit.createHoldTicket();
-                              },
-                              child: Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: compact ? 10 : 12,
-                                  vertical: compact ? 12 : 16,
-                                ),
-                                child: Text(
-                                  '+ ОТЛОЖКА',
-                                  style: TextStyle(
-                                    color: const Color(0xFFFFFFFF),
-                                    fontSize: holdFont,
-                                    fontWeight: FontWeight.w500,
-                                    letterSpacing: 0.2,
-                                  ),
+                            TextButton(
+                              onPressed: cubit.createHoldTicket,
+                              child: Text(
+                                '+ ОТЛОЖКА',
+                                style: TextStyle(
+                                  color: const Color(0xFFFFFFFF),
+                                  fontSize: holdFont,
+                                  fontWeight: FontWeight.w500,
+                                  letterSpacing: 0.2,
                                 ),
                               ),
                             ),
@@ -115,37 +86,37 @@ class TopBar extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _divider(compact: compact),
-                        IconButton(
-                          onPressed: () {},
-                          icon: SvgPicture.asset(
-                            'assets/svg/bag.svg',
-                            width: compact ? 20 : 24,
-                            height: compact ? 20 : 24,
-                            color: Colors.white70,
+                    if (!compact)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            onPressed: () {},
+                            icon: SvgPicture.asset(
+                              'assets/svg/bag.svg',
+                              width: 24,
+                              height: 24,
+                              color: Colors.white70,
+                            ),
+                            tooltip: '',
                           ),
-                          tooltip: '',
-                        ),
-                        _divider(compact: compact),
-                        IconButton(
-                          onPressed: () => showPosActionsDialog(context),
-                          icon: SvgPicture.asset(
-                            'assets/svg/elements.svg',
-                            width: compact ? 20 : 24,
-                            height: compact ? 20 : 24,
-                            color: Colors.white70,
+                          _divider(),
+                          IconButton(
+                            onPressed: () => showPosActionsDialog(context),
+                            icon: SvgPicture.asset(
+                              'assets/svg/elements.svg',
+                              width: 24,
+                              height: 24,
+                              color: Colors.white70,
+                            ),
+                            tooltip: '',
                           ),
-                          tooltip: '',
-                        ),
-                        _divider(compact: compact),
-                        SizedBox(width: compact ? 2 : 5),
-                        _StatusDot(compact: compact),
-                        const SizedBox(width: 12),
-                      ],
-                    ),
+                          _divider(),
+                          const SizedBox(width: 5),
+                          const _StatusDot(),
+                          const SizedBox(width: 12),
+                        ],
+                      ),
                   ],
                 );
               },
@@ -156,9 +127,9 @@ class TopBar extends StatelessWidget {
     );
   }
 
-  Widget _divider({required bool compact}) => Container(
+  Widget _divider() => Container(
         width: 1,
-        height: compact ? 68 : 62,
+        height: 62,
         color: Colors.black45,
         margin: const EdgeInsets.symmetric(horizontal: 8),
       );
@@ -190,12 +161,9 @@ class _TicketTab extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        constraints: compact
-            ? const BoxConstraints(minWidth: 194)
-            : const BoxConstraints(),
         padding: EdgeInsets.symmetric(
           horizontal: compact ? 18 : 16,
-          vertical: compact ? 13 : 16,
+          vertical: compact ? 12 : 16,
         ),
         decoration: BoxDecoration(
           color: bg,
@@ -211,8 +179,8 @@ class _TicketTab extends StatelessWidget {
               text,
               style: TextStyle(
                 color: textColor,
-                fontSize: compact ? 16 : 18,
-                fontWeight: compact ? FontWeight.w600 : FontWeight.w500,
+                fontSize: compact ? 15 : 16,
+                fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
               ),
               overflow: TextOverflow.ellipsis,
             ),
@@ -262,12 +230,9 @@ class _Chip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        constraints: compact
-            ? const BoxConstraints(minWidth: 168)
-            : const BoxConstraints(),
         padding: EdgeInsets.symmetric(
           horizontal: compact ? 18 : 12,
-          vertical: compact ? 13 : 16,
+          vertical: compact ? 12 : 16,
         ),
         decoration: BoxDecoration(
           color: bg,
@@ -282,15 +247,15 @@ class _Chip extends StatelessWidget {
               text,
               style: TextStyle(
                 color: textColor,
-                fontSize: compact ? 16 : 18,
-                fontWeight: compact ? FontWeight.w600 : FontWeight.w500,
+                fontSize: compact ? 15 : 16,
+                fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
             const SizedBox(width: 6),
             SvgPicture.asset(
               icon,
-              width: compact ? 24 : 24,
-              height: compact ? 24 : 24,
+              width: compact ? 20 : 24,
+              height: compact ? 20 : 24,
               colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
             ),
           ],
@@ -301,8 +266,7 @@ class _Chip extends StatelessWidget {
 }
 
 class _StatusDot extends StatefulWidget {
-  const _StatusDot({super.key, this.compact = false});
-  final bool compact;
+  const _StatusDot({super.key});
 
   @override
   State<_StatusDot> createState() => _StatusDotState();
@@ -348,41 +312,38 @@ class _StatusDotState extends State<_StatusDot> {
   Widget build(BuildContext context) {
     final tokenProvider = context.read<AuthTokenProvider>();
     final cachierName = tokenProvider.activeUserName ?? 'Гость';
-    final nameSize = widget.compact ? 16.0 : 16.0;
-    final roleSize = widget.compact ? 12.0 : 12.0;
-    final iconSize = widget.compact ? 20.0 : 24.0;
-    final dividerHeight = widget.compact ? 68.0 : 62.0;
-    final dotSize = widget.compact ? 9.0 : 10.0;
 
     return Row(
       children: [
         Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(cachierName,
-                style: TextStyle(color: Colors.white70, fontSize: nameSize)),
+                style: TextStyle(color: Colors.white70, fontSize: 16)),
             Text('Кассир',
-                style: TextStyle(color: Colors.white70, fontSize: roleSize)),
+                style: TextStyle(color: Colors.white70, fontSize: 12)),
           ],
         ),
-        SizedBox(width: widget.compact ? 10 : 14),
-        SvgPicture.asset(
-          'assets/svg/lock.svg',
-          width: iconSize,
-          height: iconSize,
-          color: Colors.white70,
+        const SizedBox(width: 14),
+        GestureDetector(
+          onTap: () => context.read<AuthCubit>().lockToCashiers(),
+          child: SvgPicture.asset(
+            'assets/svg/lock.svg',
+            width: 24,
+            height: 24,
+            color: Colors.white70,
+          ),
         ),
-        SizedBox(width: widget.compact ? 10 : 14),
+        const SizedBox(width: 14),
         Container(
           width: 1,
-          height: dividerHeight,
+          height: 62,
           color: Colors.black45,
           margin: const EdgeInsets.symmetric(horizontal: 8),
         ),
-        SizedBox(width: widget.compact ? 10 : 14),
+        const SizedBox(width: 14),
         Container(
-          width: dotSize,
-          height: dotSize,
+          width: 10,
+          height: 10,
           decoration: BoxDecoration(
             color: _online ? const Color(0xFF22C55E) : const Color(0xFFDC2626),
             shape: BoxShape.circle,
@@ -391,95 +352,4 @@ class _StatusDotState extends State<_StatusDot> {
       ],
     );
   }
-}
-
-Future<bool?> _showTopBarConfirm(
-  BuildContext context, {
-  required String title,
-  required String subtitle,
-  required String confirmText,
-  required Color confirmColor,
-}) {
-  return showDialog<bool>(
-    context: context,
-    builder: (ctx) {
-      final maxW = MediaQuery.sizeOf(ctx).width - 48;
-      final dialogW = maxW.clamp(360.0, 620.0).toDouble();
-      return Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: SizedBox(
-          width: dialogW,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 44,
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.of(ctx).pop(false),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Color(0xFFCBD5E1)),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text(
-                            'Отмена',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: SizedBox(
-                        height: 44,
-                        child: FilledButton(
-                          onPressed: () => Navigator.of(ctx).pop(true),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: confirmColor,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: Text(
-                            confirmText,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    },
-  );
 }

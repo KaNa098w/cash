@@ -8,6 +8,7 @@ abstract class ProductRepository {
     int page = 1,
     int perPage = 50,
     bool forceRefresh = false,
+    void Function(int currentPage, int lastPage)? onPageProgress,
   });
 
   Future<PaginatedProducts> getPopularProducts({
@@ -15,6 +16,7 @@ abstract class ProductRepository {
     int page = 1,
     int perPage = 50,
     bool forceRefresh = false,
+    void Function(int currentPage, int lastPage)? onPageProgress,
   });
 
   Future<void> clearProductsCache();

@@ -14,6 +14,7 @@ import 'package:leemon_app/features/domain/repositories/session_repository.dart'
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'core/di/api/app_config.dart';
@@ -29,13 +30,21 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
   await initializeDateFormatting('ru');
-
   final isDesktop =
       !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
+  final prefs = await SharedPreferences.getInstance();
+  final savedEnv = prefs.getString('app_environment');
+  final defaultEnv = isDesktop ? AppEnvironment.prod : AppEnvironment.dev;
+  final initialEnv = switch (savedEnv) {
+    'dev' => AppEnvironment.dev,
+    'prod' => AppEnvironment.prod,
+    _ => defaultEnv,
+  };
+
   if (isDesktop) {
     await windowManager.ensureInitialized();
-    AppConfig.init(env: AppEnvironment.dev);
+    AppConfig.init(env: initialEnv);
 
     const options = WindowOptions(backgroundColor: Colors.transparent);
 
@@ -49,23 +58,24 @@ Future<void> main() async {
 
       await windowManager.show();
       await windowManager.focus();
-      await windowManager.setFullScreen(true);
       await windowManager.setResizable(false);
       await windowManager.setMaximizable(false);
       await windowManager.setMinimizable(true);
     });
 
     await initDependencies();
-    windowManager.addListener(_KioskWindowListener());
+    final kioskListener = _KioskWindowListener();
+    windowManager.addListener(kioskListener);
+    unawaited(kioskListener.ensureKioskMode());
   } else {
-    AppConfig.init(env: AppEnvironment.dev);
+    AppConfig.init(env: initialEnv);
     await initDependencies();
   }
 
   final authProvider = AuthTokenProvider();
   await authProvider.init();
   sl<DeviceIdStore>().deviceId = authProvider.deviceId;
- 
+
   runApp(
     MultiProvider(
       providers: [
@@ -91,13 +101,23 @@ Future<void> main() async {
 
 class _KioskWindowListener with WindowListener {
   bool _restoring = false;
+  DateTime? _lastRunAt;
 
-  Future<void> _ensureKiosk() async {
+  Future<void> ensureKioskMode() async {
     if (kIsWeb ||
         !(Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       return;
     }
     if (_restoring) return;
+
+    final now = DateTime.now();
+    final lastRunAt = _lastRunAt;
+    if (lastRunAt != null &&
+        now.difference(lastRunAt) < const Duration(milliseconds: 350)) {
+      return;
+    }
+    _lastRunAt = now;
+
     _restoring = true;
 
     try {
@@ -107,12 +127,16 @@ class _KioskWindowListener with WindowListener {
       await windowManager.focus();
 
       if (!await windowManager.isFullScreen()) {
-        await windowManager.setFullScreen(true);
+        await windowManager
+            .setFullScreen(true)
+            .timeout(const Duration(seconds: 2));
       }
 
       await windowManager.setResizable(false);
       await windowManager.setMaximizable(false);
       await windowManager.setMinimizable(true);
+    } catch (_) {
+      // Avoid freezing startup if fullscreen transition gets stuck on OS side.
     } finally {
       _restoring = false;
     }
@@ -120,27 +144,12 @@ class _KioskWindowListener with WindowListener {
 
   @override
   void onWindowRestore() {
-    _ensureKiosk();
-  }
-
-  @override
-  void onWindowFocus() {
-    _ensureKiosk();
-  }
-
-  @override
-  void onWindowMaximize() {
-    _ensureKiosk();
-  }
-
-  @override
-  void onWindowEnterFullScreen() {
-    _ensureKiosk();
+    unawaited(ensureKioskMode());
   }
 
   @override
   void onWindowLeaveFullScreen() {
-    _ensureKiosk();
+    unawaited(ensureKioskMode());
   }
 }
 

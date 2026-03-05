@@ -24,6 +24,7 @@ class CashierLoginStep extends StatefulWidget {
     this.partnerLogo,
     this.siteText = 'Сайт: leemon.kz',
     this.contactsText = 'Контакты менеджера: +7 702 136 70 77',
+    this.onWipeAllData,
   });
 
   final PosProvisionResponse provision;
@@ -49,6 +50,7 @@ class CashierLoginStep extends StatefulWidget {
 
   final String siteText;
   final String contactsText;
+  final Future<void> Function()? onWipeAllData;
 
   @override
   State<CashierLoginStep> createState() => _CashierLoginStepState();
@@ -58,6 +60,9 @@ class _CashierLoginStepState extends State<CashierLoginStep> {
   late PosUser? _selected;
   String _pin = '';
   String? _localError;
+  int _secretTapCount = 0;
+  DateTime? _lastSecretTapAt;
+  bool _wipingData = false;
 
   @override
   void initState() {
@@ -127,90 +132,161 @@ class _CashierLoginStepState extends State<CashierLoginStep> {
     widget.onSubmitPin(u, pin);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return ColoredBox(
-      color: widget.backgroundColor,
-      child: LayoutBuilder(
-        builder: (context, c) {
-          final isWide = c.maxWidth >= 900;
+  Future<void> _handleSecretTap() async {
+    final now = DateTime.now();
+    final last = _lastSecretTapAt;
+    _lastSecretTapAt = now;
 
-          if (!isWide) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: _LoginCard(
-                  users: widget.provision.users,
-                  selected: _selected,
-                  onUserChanged: (u) {
-                    setState(() {
-                      _selected = u;
-                      _pin = '';
-                      _localError = null;
-                    });
-                    widget.onSelectUser(u);
-                  },
-                  pin: _pin,
-                  pinLength: widget.pinLength,
-                  errorText: widget.errorText ?? _localError,
-                  onDigit: _digit,
-                  onBackspace: _backspace,
-                  onCancel: _cancel,
-                  onOk: _ok,
-                ),
+    if (last == null || now.difference(last).inSeconds > 2) {
+      _secretTapCount = 1;
+    } else {
+      _secretTapCount += 1;
+    }
+
+    if (_secretTapCount < 10) return;
+    _secretTapCount = 0;
+
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Удалить все данные?'),
+            content: const Text(
+              'Это действие удалит все локальные данные кассы с устройства. Продолжить?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Отмена'),
               ),
-            );
-          }
-
-          // ✅ как на фото: широкая левая зона и карточка справа с отступом
-          const leftPaneWidth = 760.0;
-          const rightCardOffset = 56.0;
-
-          return Stack(
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: SizedBox(
-                  width: leftPaneWidth,
-                  height: double.infinity,
-                  child: _BrandPane(
-                    brandLogo: widget.brandLogo,
-                    partnerLogo: widget.partnerLogo,
-                    siteText: widget.siteText,
-                    contactsText: widget.contactsText,
-                  ),
-                ),
-              ),
-              Positioned(
-                right: rightCardOffset,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: _LoginCard(
-                    users: widget.provision.users,
-                    selected: _selected,
-                    onUserChanged: (u) {
-                      setState(() {
-                        _selected = u;
-                        _pin = '';
-                        _localError = null;
-                      });
-                      widget.onSelectUser(u);
-                    },
-                    pin: _pin,
-                    pinLength: widget.pinLength,
-                    errorText: widget.errorText ?? _localError,
-                    onDigit: _digit,
-                    onBackspace: _backspace,
-                    onCancel: _cancel,
-                    onOk: _ok,
-                  ),
-                ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Удалить'),
               ),
             ],
-          );
-        },
-      ),
+          ),
+        ) ??
+        false;
+
+    if (!confirmed || widget.onWipeAllData == null || _wipingData) return;
+    setState(() => _wipingData = true);
+    try {
+      await widget.onWipeAllData!.call();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Данные успешно удалены')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось удалить данные: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _wipingData = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        ColoredBox(
+          color: widget.backgroundColor,
+          child: LayoutBuilder(
+            builder: (context, c) {
+              final isWide = c.maxWidth >= 900;
+
+              if (!isWide) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: _LoginCard(
+                      users: widget.provision.users,
+                      selected: _selected,
+                      onUserChanged: (u) {
+                        setState(() {
+                          _selected = u;
+                          _pin = '';
+                          _localError = null;
+                        });
+                        widget.onSelectUser(u);
+                      },
+                      pin: _pin,
+                      pinLength: widget.pinLength,
+                      errorText: widget.errorText ?? _localError,
+                      onDigit: _digit,
+                      onBackspace: _backspace,
+                      onCancel: _cancel,
+                      onOk: _ok,
+                    ),
+                  ),
+                );
+              }
+
+              // ✅ как на фото: широкая левая зона и карточка справа с отступом
+              const loginCardWidth = 317.0;
+              const rightCardOffset = 56.0;
+              final leftPaneWidth =
+                  (c.maxWidth - rightCardOffset - loginCardWidth)
+                      .clamp(420.0, c.maxWidth);
+
+              return Stack(
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: SizedBox(
+                      width: leftPaneWidth,
+                      height: double.infinity,
+                      child: _BrandPane(
+                        brandLogo: widget.brandLogo,
+                        partnerLogo: widget.partnerLogo,
+                        siteText: widget.siteText,
+                        contactsText: widget.contactsText,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: rightCardOffset,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: _LoginCard(
+                        users: widget.provision.users,
+                        selected: _selected,
+                        onUserChanged: (u) {
+                          setState(() {
+                            _selected = u;
+                            _pin = '';
+                            _localError = null;
+                          });
+                          widget.onSelectUser(u);
+                        },
+                        pin: _pin,
+                        pinLength: widget.pinLength,
+                        errorText: widget.errorText ?? _localError,
+                        onDigit: _digit,
+                        onBackspace: _backspace,
+                        onCancel: _cancel,
+                        onOk: _ok,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          width: 56,
+          height: 56,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _wipingData ? null : _handleSecretTap,
+            child: const SizedBox.expand(),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -252,7 +328,8 @@ class _BrandPane extends StatelessWidget {
               left: 28,
               bottom: 18,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -417,7 +494,7 @@ class _LoginCard extends StatelessWidget {
           _PinKeypad(
             onDigit: onDigit,
             onBackspace: onBackspace,
-            onDot: (){},
+            onDot: () {},
           ),
           const SizedBox(height: 12),
           Padding(
@@ -440,10 +517,9 @@ class _LoginCard extends StatelessWidget {
                     child: const Text(
                       'ОТМЕНА',
                       style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.3,
-                        color: Colors.white
-                      ),
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.3,
+                          color: Colors.white),
                     ),
                   ),
                 ),
@@ -463,10 +539,9 @@ class _LoginCard extends StatelessWidget {
                     child: const Text(
                       'OK',
                       style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.3,
-                        color: Colors.white
-                      ),
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.3,
+                          color: Colors.white),
                     ),
                   ),
                 ),
@@ -494,7 +569,6 @@ class _BlueFieldShell extends StatelessWidget {
     );
   }
 }
-
 
 class _PinKeypad extends StatelessWidget {
   const _PinKeypad({
@@ -576,14 +650,14 @@ class _PinKeypad extends StatelessWidget {
             const SizedBox(width: gap),
             _digitKey(context, '0'),
             const SizedBox(width: gap),
-            _key(const Icon(Icons.backspace_outlined, size: 22), onTap: onBackspace),
+            _key(const Icon(Icons.backspace_outlined, size: 22),
+                onTap: onBackspace),
           ],
         ),
       ],
     );
   }
 }
-
 
 class _KeyButton extends StatelessWidget {
   const _KeyButton({required this.child, this.onTap});

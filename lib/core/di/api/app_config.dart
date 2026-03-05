@@ -8,7 +8,7 @@ class AppConfig {
     required this.environment,
   });
 
-  static late final AppConfig _instance;
+  static late AppConfig _instance;
 
   /// Текущий инстанс конфига
   static AppConfig get I => _instance;
@@ -24,7 +24,8 @@ class AppConfig {
         break;
       case AppEnvironment.prod:
         _instance = AppConfig._internal(
-          baseUrl: 'https://leemon.kz/api', // потом поменяешь, если будет другой
+          baseUrl:
+              'https://leemon.kz/api', // потом поменяешь, если будет другой
           environment: env,
         );
         break;

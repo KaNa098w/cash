@@ -69,17 +69,42 @@ class _LoginPageState extends State<LoginPage> {
     try {
       final cubit = context.read<ProductsCubit>();
       setState(() {
-        _syncProgress = 0.35;
+        _syncProgress = 0.10;
         _syncStage = 'Загружаем товары...';
       });
-      await cubit.loadFirstPage(key: key, forceRefresh: forceRefresh);
+      await cubit.loadFirstPage(
+        key: key,
+        forceRefresh: forceRefresh,
+        onPageProgress: (currentPage, lastPage) {
+          if (!mounted) return;
+          final safeLast = lastPage <= 0 ? 1 : lastPage;
+          final ratio = (currentPage / safeLast).clamp(0.0, 1.0);
+          setState(() {
+            _syncProgress = 0.10 + (ratio * 0.64);
+            _syncStage = 'Загружаем товары... ($currentPage/$safeLast)';
+          });
+        },
+      );
 
       if (!mounted) return;
       setState(() {
-        _syncProgress = 0.78;
+        _syncProgress = 0.76;
         _syncStage = 'Загружаем быстрые товары...';
       });
-      await cubit.loadPopularFirstPage(key: key, forceRefresh: forceRefresh);
+      await cubit.loadPopularFirstPage(
+        key: key,
+        forceRefresh: forceRefresh,
+        onPageProgress: (currentPage, lastPage) {
+          if (!mounted) return;
+          final safeLast = lastPage <= 0 ? 1 : lastPage;
+          final ratio = (currentPage / safeLast).clamp(0.0, 1.0);
+          setState(() {
+            _syncProgress = 0.76 + (ratio * 0.22);
+            _syncStage =
+                'Загружаем быстрые товары... ($currentPage/$safeLast)';
+          });
+        },
+      );
 
       if (!mounted) return;
       setState(() {

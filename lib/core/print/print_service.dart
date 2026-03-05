@@ -21,8 +21,9 @@ class PrintService {
   }
 
   Future<void> print80mmSilently(
-    Future<pw.Document> Function() buildDoc,
-  ) async {
+    Future<pw.Document> Function() buildDoc, {
+    PdfPageFormat format = PdfPageFormat.roll80,
+  }) async {
     final printer = await _ensureDefault();
     if (printer == null) return;
 
@@ -30,6 +31,9 @@ class PrintService {
 
     await Printing.directPrintPdf(
       printer: printer,
+      format: format,
+      usePrinterSettings: true,
+      dynamicLayout: false,
       onLayout: (PdfPageFormat _) async => doc.save(),
     );
   }
@@ -41,6 +45,8 @@ class PrintService {
 
     await Printing.directPrintPdf(
       printer: printer,
+      usePrinterSettings: true,
+      dynamicLayout: false,
       onLayout: (PdfPageFormat _) async => pdfBytes,
     );
   }

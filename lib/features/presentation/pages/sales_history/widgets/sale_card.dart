@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 
 import '../models/refund_pick.dart';
@@ -13,10 +13,12 @@ class SaleCard extends StatelessWidget {
   const SaleCard({
     super.key,
     required this.sale,
+    required this.cashierName,
     required this.expanded,
     required this.onToggle,
     required this.refundLoading,
     required this.onSubmitRefund,
+    required this.onPrintReceipt,
     required this.selectedCount,
     required this.selectedTotal,
     required this.picks,
@@ -27,11 +29,13 @@ class SaleCard extends StatelessWidget {
   });
 
   final SaleModel sale;
+  final String cashierName;
   final bool expanded;
   final VoidCallback onToggle;
 
   final bool refundLoading;
   final VoidCallback onSubmitRefund;
+  final VoidCallback onPrintReceipt;
 
   final int selectedCount;
   final num selectedTotal;
@@ -53,12 +57,17 @@ class SaleCard extends StatelessWidget {
       isReturned ? const Color(0xFFFFE6D6) : const Color(0xFFCBE9C5);
   Color get statusFg =>
       isReturned ? const Color(0xFFB54708) : const Color(0xFF258808);
+  String get cashierDisplayName {
+    final name = cashierName.trim();
+    if (name.isNotEmpty) return name;
+    return cashierLabel(sale);
+  }
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < 1024;
+        final compact = constraints.maxWidth < 900;
         final desktopNarrow = !compact && constraints.maxWidth < 1180;
         final actionWidth = (constraints.maxWidth - 36).clamp(180.0, 520.0);
         final saleNumberWidth = desktopNarrow ? 150.0 : 205.0;
@@ -122,7 +131,7 @@ class SaleCard extends StatelessWidget {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  cashierLabel(sale),
+                                  cashierDisplayName,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
@@ -168,7 +177,7 @@ class SaleCard extends StatelessWidget {
                           ),
                           SizedBox(
                               width: cashierWidth,
-                              child: Text(cashierLabel(sale),
+                              child: Text(cashierDisplayName,
                                   overflow: TextOverflow.ellipsis)),
                           const Spacer(),
                           SizedBox(
@@ -217,9 +226,8 @@ class SaleCard extends StatelessWidget {
                       RefundSummary(count: selectedCount, total: selectedTotal),
                       const SizedBox(height: 12),
                       BottomActionButton(
-                        label: selectedCount == 0
-                            ? 'Выбери товары'
-                            : 'Оформить возврат',
+                        label:
+                            selectedCount == 0 ? 'Возврат' : 'Оформить возврат',
                         width: actionWidth,
                         bg: selectedCount == 0
                             ? const Color(0xFFB0B0B0)
@@ -241,7 +249,7 @@ class SaleCard extends StatelessWidget {
                         label: 'Распечатать чек',
                         width: actionWidth,
                         bg: const Color(0xFF21B3C0),
-                        onTap: () {},
+                        onTap: onPrintReceipt,
                       ),
                     ] else
                       Row(
@@ -252,7 +260,7 @@ class SaleCard extends StatelessWidget {
                           const SizedBox(width: 12),
                           BottomActionButton(
                             label: selectedCount == 0
-                                ? 'Выбери товары'
+                                ? 'Возврат'
                                 : 'Оформить возврат',
                             width: refundBtnWidth,
                             bg: selectedCount == 0
@@ -274,7 +282,7 @@ class SaleCard extends StatelessWidget {
                               label: 'Распечатать чек',
                               width: printBtnWidth,
                               bg: const Color(0xFF21B3C0),
-                              onTap: () {}),
+                              onTap: onPrintReceipt),
                         ],
                       ),
                   ],

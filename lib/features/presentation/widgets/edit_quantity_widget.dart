@@ -6,9 +6,6 @@ import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 import 'package:leemon_app/features/presentation/widgets/dialog_primary_button.dart';
 
-// У тебя уже есть AmountKeypad в проекте
-// import 'package:leemon_app/features/pos/presentation/widgets/amount_keypad.dart';
-
 Future<void> editSelectedQty(BuildContext context) async {
   final cubit = context.read<PosCubit>();
   final state = cubit.state;
@@ -273,10 +270,12 @@ class _QtyDisplayCard extends StatelessWidget {
                       .textTheme
                       .headlineSmall
                       ?.copyWith(fontWeight: FontWeight.w800),
+                  textAlign: TextAlign.center,
                   decoration: InputDecoration(
                     isDense: true,
                     border: InputBorder.none,
                     hintText: '0',
+                    hintTextDirection: TextDirection.ltr,
                     hintStyle:
                         Theme.of(context).textTheme.headlineSmall?.copyWith(
                               fontWeight: FontWeight.w800,

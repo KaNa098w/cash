@@ -24,14 +24,16 @@ class ProductRepositoryImpl implements ProductRepository {
   @override
   Future<PaginatedProducts> getProducts({
     required String key,
-    int page = 1, // не используем, но пусть будет
+    int page = 1,
     int perPage = 50,
     bool forceRefresh = false,
+    void Function(int currentPage, int lastPage)? onPageProgress,
   }) async {
     if (!forceRefresh) {
       final cached = await local.loadProducts();
       if (cached.isNotEmpty) {
         final total = cached.length;
+        onPageProgress?.call(1, 1);
         return PaginatedProducts(
           items: cached,
           currentPage: 1,
@@ -45,6 +47,7 @@ class ProductRepositoryImpl implements ProductRepository {
     final allRemote = await remote.getAllProducts(
       key: key,
       perPage: perPage,
+      onPageProgress: onPageProgress,
     );
 
     await local.saveProducts(allRemote);
@@ -66,11 +69,13 @@ class ProductRepositoryImpl implements ProductRepository {
     int page = 1,
     int perPage = 50,
     bool forceRefresh = false,
+    void Function(int currentPage, int lastPage)? onPageProgress,
   }) async {
     if (!forceRefresh) {
       final cached = await popularLocal.loadPopularProducts();
       if (cached.isNotEmpty) {
         final total = cached.length;
+        onPageProgress?.call(1, 1);
         return PaginatedProducts(
           items: cached,
           currentPage: 1,
@@ -84,6 +89,7 @@ class ProductRepositoryImpl implements ProductRepository {
     final allRemote = await popularRemote.getAllPopularProducts(
       key: key,
       perPage: perPage,
+      onPageProgress: onPageProgress,
     );
 
     await popularLocal.savePopularProducts(allRemote);

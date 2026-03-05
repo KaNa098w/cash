@@ -34,6 +34,7 @@ class _SearchBarState extends State<SearchBar> {
   final _fieldKey = GlobalKey();
   bool _keyboardOpen = false;
   Timer? _scanDebounce;
+  Timer? _typingDebounce;
   OverlayEntry? _chooserEntry;
 
   @override
@@ -85,15 +86,21 @@ class _SearchBarState extends State<SearchBar> {
 
     final q = raw.trim();
     if (q.isEmpty) {
+      _typingDebounce?.cancel();
       _removeChooser();
       return;
     }
 
     // если похоже на штрихкод — делаем быстрый автосабмит
     if (RegExp(r'^\d{8,}$').hasMatch(q)) {
+      _typingDebounce?.cancel();
       _scanDebounce?.cancel();
       _scanDebounce = Timer(const Duration(milliseconds: 80), _doSearch);
+      return;
     }
+
+    _typingDebounce?.cancel();
+    _typingDebounce = Timer(const Duration(milliseconds: 220), _doSearch);
   }
 
   @override
@@ -103,6 +110,7 @@ class _SearchBarState extends State<SearchBar> {
     _removeChooser();
     super.dispose();
     _scanDebounce?.cancel();
+    _typingDebounce?.cancel();
   }
 
   Future<T?> _runWithDialogFocus<T>(Future<T?> Function() open) async {
@@ -317,7 +325,7 @@ class _SearchBarState extends State<SearchBar> {
             CompositedTransformFollower(
               link: _layerLink,
               showWhenUnlinked: false,
-              offset: Offset(0, fieldHeight + 4),
+              offset: Offset(0, fieldHeight + 6),
               child: Material(
                 color: Colors.transparent,
                 borderRadius: BorderRadius.circular(12),
@@ -325,7 +333,7 @@ class _SearchBarState extends State<SearchBar> {
                 child: Container(
                   width: fieldWidth,
                   constraints: BoxConstraints(
-                    maxHeight: size.height * 0.5,
+                    maxHeight: size.height * 0.6,
                   ),
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -333,8 +341,8 @@ class _SearchBarState extends State<SearchBar> {
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.15),
-                        blurRadius: 18,
-                        offset: const Offset(0, 8),
+                        blurRadius: 5,
+                        offset: const Offset(0, 2),
                       ),
                     ],
                   ),
@@ -346,7 +354,8 @@ class _SearchBarState extends State<SearchBar> {
                           shrinkWrap: true,
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           itemCount: products.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          separatorBuilder: (_, __) =>
+                              const Divider(height: 0.1),
                           itemBuilder: (_, index) {
                             final p = products[index];
                             return ListTile(
@@ -358,14 +367,14 @@ class _SearchBarState extends State<SearchBar> {
                               subtitle: Text(
                                 [
                                   if (p.barcode != null) 'ШК: ${p.barcode}',
-                                  if (p.localBarcode != null)
-                                    'Код: ${p.localBarcode}',
-                                  'Ед.: ${p.measurementUnit}',
+                                  // if (p.localBarcode != null)
+                                  //   'Код: ${p.localBarcode}',
+                                  // 'Ед.: ${p.measurementUnit}',
                                 ].where((e) => e.isNotEmpty).join(' • '),
                                 style: const TextStyle(fontSize: 11),
                               ),
                               trailing: Text(
-                                p.sellingPrice.toStringAsFixed(2),
+                                '${p.sellingPrice.toStringAsFixed(2)} т',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 14,
@@ -574,7 +583,7 @@ class _SearchBarState extends State<SearchBar> {
             style: TextStyle(fontSize: buyerBtnFontSize),
           ),
         ),
-        SizedBox(width: customerGapWidth),
+        SizedBox(width: 200),
         BlocBuilder<PosCubit, PosState>(
           buildWhen: (prev, next) =>
               prev.activeTicket.customer != next.activeTicket.customer,

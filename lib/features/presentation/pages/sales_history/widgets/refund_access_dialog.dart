@@ -177,7 +177,7 @@ class _RefundAccessDialogState extends State<RefundAccessDialog> {
                     Text(
                       _checking
                           ? 'Отправляем запрос в сервер.'
-                          : 'После скана код сразу уходит в create/update возврата. Ручной ввод запрещён.',
+                          : 'Ручной ввод запрещён.',
                       style:
                           const TextStyle(fontSize: 13, color: Colors.black54),
                     ),

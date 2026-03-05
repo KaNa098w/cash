@@ -14,7 +14,7 @@ class PosPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
+      backgroundColor: const Color(0xFFF3F4F6),
       body: Column(
         children: [
           const TopBar(),

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -51,13 +51,11 @@ class _PaymentPanelState extends State<PaymentPanel> {
   }
 
   Future<void> _pickCustomer() async {
+    final posCubit = context.read<PosCubit>();
     final auth = context.read<AuthTokenProvider>();
     final posKey = auth.posKey?.trim() ?? '';
 
     if (posKey.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('posKey пустой')),
-      );
       return;
     }
 
@@ -83,20 +81,15 @@ class _PaymentPanelState extends State<PaymentPanel> {
       );
 
       if (selected == null) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Выбран: ${selected.name} (${selected.phone})'),
-          behavior: SnackBarBehavior.floating,
+      posCubit.setCustomerForActiveTicket(
+        PosCustomer(
+          id: selected.id,
+          name: selected.name,
+          phone: selected.phone,
         ),
       );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Не удалось загрузить клиентов: $e'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    } catch (_) {
+      // intentionally no snackbar in payment panel
     }
   }
 
@@ -116,14 +109,14 @@ class _PaymentPanelState extends State<PaymentPanel> {
     required PaymentKind paymentKind,
   }) async {
     final methodLabel = switch (paymentKind) {
-      PaymentKind.cash => 'Наличные',
-      PaymentKind.card => 'Безналичный',
-      PaymentKind.credit => 'В долг',
+      PaymentKind.cash => 'РќР°Р»РёС‡РЅС‹Рµ',
+      PaymentKind.card => 'Р‘РµР·РЅР°Р»РёС‡РЅС‹Р№',
+      PaymentKind.credit => 'Р’ РґРѕР»Рі',
     };
     final subtitle = switch (result) {
-      CreateSaleResult.sent => 'Оплата проведена и отправлена на сервер',
-      CreateSaleResult.queued => 'Оплата принята. Продажа сохранена в очереди',
-      CreateSaleResult.rejected => 'Оплата отклонена',
+      CreateSaleResult.sent => 'РћРїР»Р°С‚Р° РїСЂРѕРІРµРґРµРЅР° Рё РѕС‚РїСЂР°РІР»РµРЅР° РЅР° СЃРµСЂРІРµСЂ',
+      CreateSaleResult.queued => 'РћРїР»Р°С‚Р° РїСЂРёРЅСЏС‚Р°. РџСЂРѕРґР°Р¶Р° СЃРѕС…СЂР°РЅРµРЅР° РІ РѕС‡РµСЂРµРґРё',
+      CreateSaleResult.rejected => 'РћРїР»Р°С‚Р° РѕС‚РєР»РѕРЅРµРЅР°',
     };
 
     await showGeneralDialog<void>(
@@ -178,7 +171,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      'Оплата прошла успешно',
+                      'РћРїР»Р°С‚Р° РїСЂРѕС€Р»Р° СѓСЃРїРµС€РЅРѕ',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.inter(
                         fontSize: 22,
@@ -212,7 +205,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '$methodLabel • $subtitle',
+                            '$methodLabel вЂў $subtitle',
                             textAlign: TextAlign.center,
                             style: GoogleFonts.inter(
                               fontSize: 13,
@@ -238,7 +231,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           ),
                         ),
                         child: Text(
-                          'Готово',
+                          'Р“РѕС‚РѕРІРѕ',
                           style: GoogleFonts.inter(
                             fontSize: 15,
                             fontWeight: FontWeight.w900,
@@ -266,6 +259,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
   Future<pw.Document> _buildReceipt(
     PosCubit cubit, {
     required PdfPageFormat pageFormat,
+    required String storeName,
   }) async {
     final items = cubit.state.items;
     final total = cubit.total;
@@ -307,11 +301,11 @@ class _PaymentPanelState extends State<PaymentPanel> {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.stretch,
             children: [
-              pw.Text('ЧЕК (ТЕСТ)',
+              pw.Text(storeName,
                   style: pw.TextStyle(font: bold, fontSize: 10),
                   textAlign: pw.TextAlign.center),
               pw.SizedBox(height: 2),
-              pw.Text('Дата: ${DateTime.now().toLocal()}',
+              pw.Text('Р”Р°С‚Р°: ${DateTime.now().toLocal()}',
                   style: pw.TextStyle(font: base, fontSize: 7)),
               divider(),
               for (final it in items) ...[
@@ -333,22 +327,22 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 pw.SizedBox(height: 2),
               ],
               divider(),
-              rowKV('Без скидок', money(total + discountSum)),
-              rowKV('Скидка', money(discountSum)),
-              rowKV('ИТОГО', money(total), strong: true),
+              rowKV('Р‘РµР· СЃРєРёРґРѕРє', money(total + discountSum)),
+              rowKV('РЎРєРёРґРєР°', money(discountSum)),
+              rowKV('РРўРћР“Рћ', money(total), strong: true),
               pw.SizedBox(height: 3),
-              rowKV('Получено', money(received)),
-              rowKV('Сдача', money(change), strong: true),
+              rowKV('РџРѕР»СѓС‡РµРЅРѕ', money(received)),
+              rowKV('РЎРґР°С‡Р°', money(change), strong: true),
               pw.SizedBox(height: 4),
               rowKV(
-                  'Метод',
+                  'РњРµС‚РѕРґ',
                   switch (cubit.state.paymentKind) {
-                    PaymentKind.cash => 'Наличные',
-                    PaymentKind.card => 'Безнал',
-                    PaymentKind.credit => 'В долг',
+                    PaymentKind.cash => 'РќР°Р»РёС‡РЅС‹Рµ',
+                    PaymentKind.card => 'Р‘РµР·РЅР°Р»',
+                    PaymentKind.credit => 'Р’ РґРѕР»Рі',
                   }),
               pw.SizedBox(height: 6),
-              pw.Text('Спасибо за покупку!',
+              pw.Text('РЎРїР°СЃРёР±Рѕ Р·Р° РїРѕРєСѓРїРєСѓ!',
                   style: pw.TextStyle(font: base, fontSize: 8),
                   textAlign: pw.TextAlign.center),
               pw.SizedBox(height: 35 * PdfPageFormat.mm),
@@ -391,7 +385,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
             void appendToken(String token) {
               var t = _cashCtrl.text;
 
-              if (token == '⌫') {
+              if (token == 'вЊ«') {
                 if (t.isNotEmpty) t = t.substring(0, t.length - 1);
                 setReceivedText(t);
                 return;
@@ -418,6 +412,12 @@ class _PaymentPanelState extends State<PaymentPanel> {
               setReceivedText(_fmt(next));
             }
 
+            final customerName = state.activeCustomer?.name.trim();
+            final customerButtonText =
+                (customerName != null && customerName.isNotEmpty)
+                    ? customerName
+                    : 'РџРћРљРЈРџРђРўР•Р›Р¬';
+
             return Container(
               decoration: BoxDecoration(
                 color: const Color(0xFFE5E7EB),
@@ -439,7 +439,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           SizedBox(
                             width: 210,
                             child: _TopAmountBox(
-                              label: 'К оплате',
+                              label: 'Рљ РѕРїР»Р°С‚Рµ',
                               value: money(total),
                               selected: false,
                             ),
@@ -448,7 +448,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           SizedBox(
                             width: 175,
                             child: _TopAmountBox(
-                              label: 'Сдача',
+                              label: 'РЎРґР°С‡Р°',
                               value: money(change),
                               selected: false,
                             ),
@@ -475,7 +475,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           width: 174,
                           height: 41,
                           child: _WhiteButton(
-                            text: 'ПОКУПАТЕЛЬ',
+                            text: customerButtonText,
                             onTap: _pickCustomer,
                           ),
                         ),
@@ -506,7 +506,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                   children: [
                                     Expanded(
                                       child: _GreyButton(
-                                        text: 'Счета на\nоплату',
+                                        text: 'РЎС‡РµС‚Р° РЅР°\nРѕРїР»Р°С‚Сѓ',
                                         height: 46,
                                         selected: false,
                                         onTap: () {},
@@ -515,7 +515,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                     const SizedBox(width: 10),
                                     Expanded(
                                       child: _GreyButton(
-                                        text: 'В долг',
+                                        text: 'Р’ РґРѕР»Рі',
                                         height: 46,
                                         selected: state.paymentKind ==
                                             PaymentKind.credit,
@@ -527,7 +527,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                 ),
                                 const SizedBox(height: 10),
                                 _OrangePayTag(
-                                  text: 'Безналичный',
+                                  text: 'Р‘РµР·РЅР°Р»РёС‡РЅС‹Р№',
                                   selected:
                                       state.paymentKind == PaymentKind.card,
                                   onTap: () =>
@@ -549,7 +549,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                         SizedBox(
                           width: 100,
                           child: _BottomButton(
-                            text: 'ОТМЕНА',
+                            text: 'РћРўРњР•РќРђ',
                             bg: const Color(0xFFD9534F),
                             fg: Colors.white,
                             onTap: () {
@@ -561,7 +561,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                         SizedBox(
                           width: 100,
                           child: _BottomButton(
-                            text: 'БЕЗ СДАЧИ',
+                            text: 'Р‘Р•Р— РЎР”РђР§Р',
                             bg: const Color(0xFF9CA3AF),
                             fg: Colors.white,
                             onTap: () {
@@ -574,7 +574,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                         SizedBox(
                           width: 175,
                           child: _BottomButton(
-                            text: 'ОПЛАТА',
+                            text: 'РћРџР›РђРўРђ',
                             bg: const Color(0xFF35C28A),
                             fg: Colors.white,
                             loading: _paying,
@@ -597,7 +597,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                           .showSnackBar(
                                         const SnackBar(
                                             content:
-                                                Text('Нет ключа POS (posKey)')),
+                                                Text('РќРµС‚ РєР»СЋС‡Р° POS (posKey)')),
                                       );
                                       return;
                                     }
@@ -605,7 +605,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
                                         const SnackBar(
-                                            content: Text('Нет deviceId')),
+                                            content: Text('РќРµС‚ deviceId')),
                                       );
                                       return;
                                     }
@@ -613,7 +613,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
                                         const SnackBar(
-                                            content: Text('Нет storeId')),
+                                            content: Text('РќРµС‚ storeId')),
                                       );
                                       return;
                                     }
@@ -622,7 +622,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                           .showSnackBar(
                                         const SnackBar(
                                             content:
-                                                Text('Нет posId (accountId)')),
+                                                Text('РќРµС‚ posId (accountId)')),
                                       );
                                       return;
                                     }
@@ -630,7 +630,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
                                         const SnackBar(
-                                            content: Text('Корзина пустая')),
+                                            content: Text('РљРѕСЂР·РёРЅР° РїСѓСЃС‚Р°СЏ')),
                                       );
                                       return;
                                     }
@@ -643,7 +643,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                           .showSnackBar(
                                         const SnackBar(
                                             content: Text(
-                                                'Недостаточно внесено наличных')),
+                                                'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РІРЅРµСЃРµРЅРѕ РЅР°Р»РёС‡РЅС‹С…')),
                                       );
                                       return;
                                     }
@@ -655,7 +655,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                             .showSnackBar(
                                           SnackBar(
                                               content: Text(
-                                                  'Дробное количество не поддерживается: ${it.product.name}')),
+                                                  'Р”СЂРѕР±РЅРѕРµ РєРѕР»РёС‡РµСЃС‚РІРѕ РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ: ${it.product.name}')),
                                         );
                                         return;
                                       }
@@ -724,6 +724,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                         () => _buildReceipt(
                                           posCubit,
                                           pageFormat: pageFormat,
+                                          storeName: (() { final name = (auth.storeName ?? '').trim(); return name.isEmpty ? 'РќР°РёРјРµРЅРѕРІР°РЅРёРµ РјР°РіР°Р·РёРЅР°' : name; })(),
+
                                         ),
                                       );
 
@@ -733,7 +735,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                             .showSnackBar(
                                           const SnackBar(
                                             content: Text(
-                                                'Продажа отклонена сервером'),
+                                                'РџСЂРѕРґР°Р¶Р° РѕС‚РєР»РѕРЅРµРЅР° СЃРµСЂРІРµСЂРѕРј'),
                                           ),
                                         );
                                         return;
@@ -755,7 +757,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
                                         SnackBar(
-                                            content: Text('Ошибка оплаты: $e')),
+                                            content: Text('РћС€РёР±РєР° РѕРїР»Р°С‚С‹: $e')),
                                       );
                                     } finally {
                                       if (mounted)
@@ -931,6 +933,9 @@ class _WhiteButton extends StatelessWidget {
       ),
       child: Text(
         text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
       ),
     );
@@ -945,7 +950,7 @@ class _Keypad3x4 extends StatelessWidget {
     ['7', '8', '9'],
     ['4', '5', '6'],
     ['1', '2', '3'],
-    ['.', '0', '⌫'],
+    ['.', '0', 'вЊ«'],
   ];
 
   @override

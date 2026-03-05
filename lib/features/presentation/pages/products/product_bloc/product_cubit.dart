@@ -14,6 +14,7 @@ class ProductsCubit extends Cubit<ProductsState> {
   Future<List<ProductModel>> loadFirstPage({
     required String key,
     bool forceRefresh = false,
+    void Function(int currentPage, int lastPage)? onPageProgress,
   }) async {
     try {
       emit(const ProductsLoading());
@@ -23,6 +24,7 @@ class ProductsCubit extends Cubit<ProductsState> {
         page: 1,
         perPage: _perPage,
         forceRefresh: forceRefresh,
+        onPageProgress: onPageProgress,
       );
 
       emit(
@@ -43,8 +45,11 @@ class ProductsCubit extends Cubit<ProductsState> {
   Future<List<ProductModel>> loadPopularFirstPage({
     required String key,
     bool forceRefresh = false,
+    void Function(int currentPage, int lastPage)? onPageProgress,
   }) async {
     try {
+      final currentProducts =
+          state is ProductsLoaded ? (state as ProductsLoaded).products : <ProductModel>[];
       emit(const ProductsLoading());
 
       final result = await repo.getPopularProducts(
@@ -52,11 +57,29 @@ class ProductsCubit extends Cubit<ProductsState> {
         page: 1,
         perPage: _perPage,
         forceRefresh: forceRefresh,
+        onPageProgress: onPageProgress,
       );
+
+      final merged = <ProductModel>[];
+      final seen = <String>{};
+
+      String dedupeKey(ProductModel p) {
+        final id = (p.id ?? '').trim();
+        if (id.isNotEmpty) return 'id:$id';
+        final barcode = (p.barcode ?? '').trim();
+        final localBarcode = (p.localBarcode ?? '').trim();
+        final name = p.name.trim().toLowerCase();
+        return 'alt:$barcode|$localBarcode|$name';
+      }
+
+      for (final p in [...currentProducts, ...result.items]) {
+        final key = dedupeKey(p);
+        if (seen.add(key)) merged.add(p);
+      }
 
       emit(
         ProductsLoaded(
-          products: result.items,
+          products: merged,
           page: 1,
           hasMore: false,
         ),

@@ -131,10 +131,10 @@ class CartList extends StatelessWidget {
                                             : Colors.transparent,
                                         borderRadius: BorderRadius.circular(10),
                                       ),
-                                      alignment: Alignment.centerRight,
+                                      alignment: Alignment.center,
                                       child: Text(
                                         formatQty(it.qty),
-                                        textAlign: TextAlign.right,
+                                        textAlign: TextAlign.center,
                                         style:
                                             const TextStyle(fontSize: kCartFs),
                                       ),
@@ -353,9 +353,10 @@ Future<void> _showQtyDialog(
                           ),
                         ),
                         child: Align(
-                          alignment: Alignment.centerRight,
+                          alignment: Alignment.center,
                           child: Text(
                             controller.text.isEmpty ? '0' : controller.text,
+                            textAlign: TextAlign.center,
                             style: const TextStyle(
                               fontSize: kCartFs,
                               fontWeight: FontWeight.w600,

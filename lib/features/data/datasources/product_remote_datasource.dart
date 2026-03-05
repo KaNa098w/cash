@@ -77,6 +77,7 @@ class ProductRemoteDataSource {
   Future<List<ProductModel>> getAllProducts({
     required String key,
     int perPage = 50,
+    void Function(int currentPage, int lastPage)? onPageProgress,
   }) async {
     var page = 1;
     final all = <ProductModel>[];
@@ -89,6 +90,7 @@ class ProductRemoteDataSource {
       );
 
       all.addAll(pageResult.items);
+      onPageProgress?.call(pageResult.currentPage, pageResult.lastPage);
 
       if (pageResult.currentPage >= pageResult.lastPage) break;
       page += 1;

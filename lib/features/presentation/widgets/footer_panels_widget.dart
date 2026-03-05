@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class FooterControlsOnly extends StatelessWidget {
   const FooterControlsOnly({
@@ -28,15 +29,16 @@ class FooterControlsOnly extends StatelessWidget {
   static const _btnRed = Color(0xFFCB5B52);
   static const _btnYellow = Color(0xFFF9B32C);
 
-  static const double _gap = 8;
+  static const double _gap = 10;
 
-  static const double _kSmallBtnW = 116;
-  static const double _kSmallBtnH = 70;
+  static const double _kSmallBtnW = 102;
+  static const double _kSmallBtnH = 66;
   static const double _r = 8;
 
-  static const double _totalW = 349;
-  static const double _totalH = 62;
-  static const double _designRowW = 597;
+  static const double _totalW = 338;
+  static const double _totalH = 58;
+  static const double _designRowW = _kSmallBtnW * 2 + _totalW + _gap * 2;
+  static const double _designContentH = _totalH + _gap + _kSmallBtnH;
   static const double _outerRightPad = 8;
 
   @override
@@ -46,9 +48,16 @@ class FooterControlsOnly extends StatelessWidget {
       builder: (context, constraints) {
         final maxWidth =
             constraints.maxWidth.isFinite ? constraints.maxWidth : _designRowW;
+        final maxHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : (_designContentH + 32 + bottomInset);
         final availableRowWidth =
             (maxWidth - _outerRightPad).clamp(0.0, maxWidth);
-        final scale = (availableRowWidth / _designRowW).clamp(0.74, 1.0);
+        final widthScale = (availableRowWidth / _designRowW).clamp(0.74, 1.0);
+        final safeHeight = (maxHeight - bottomInset).clamp(0.0, maxHeight);
+        final heightScale =
+            (safeHeight / (_designContentH + 8)).clamp(0.74, 1.0);
+        final scale = widthScale < heightScale ? widthScale : heightScale;
 
         double s(double value) => value * scale;
         final rowGap = s(_gap);
@@ -59,9 +68,16 @@ class FooterControlsOnly extends StatelessWidget {
         final payW = s(_PayBtn._w);
         final payH = smallBtnH;
         final radius = s(_r);
+        final contentHeight = totalH + rowGap + smallBtnH;
+        final verticalPad = ((safeHeight - contentHeight) / 2).clamp(4.0, 16.0);
 
         return Padding(
-          padding: EdgeInsets.fromLTRB(0, 16, _outerRightPad, 16 + bottomInset),
+          padding: EdgeInsets.fromLTRB(
+            0,
+            verticalPad,
+            _outerRightPad,
+            verticalPad + bottomInset,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -75,8 +91,8 @@ class FooterControlsOnly extends StatelessWidget {
                     background: _btnGrey,
                     onTap: onMinus,
                     child: Text(
-                      '−',
-                      style: TextStyle(
+                      '-',
+                      style: GoogleFonts.inter(
                         fontSize: s(22),
                         fontWeight: FontWeight.w700,
                         color: Colors.black,
@@ -92,7 +108,7 @@ class FooterControlsOnly extends StatelessWidget {
                     onTap: onPlus,
                     child: Text(
                       '+',
-                      style: TextStyle(
+                      style: GoogleFonts.inter(
                         fontSize: s(22),
                         fontWeight: FontWeight.w700,
                         color: Colors.black,
@@ -107,8 +123,8 @@ class FooterControlsOnly extends StatelessWidget {
                       smallText: smallAmountText,
                       bigText: bigAmountText,
                       radius: radius,
-                      smallFontSize: s(12),
-                      bigFontSize: s(18),
+                      smallFontSize: s(15),
+                      bigFontSize: s(24),
                     ),
                   ),
                 ],
@@ -123,14 +139,18 @@ class FooterControlsOnly extends StatelessWidget {
                     radius: radius,
                     background: _btnGrey,
                     onTap: onQuick,
-                    child: Text(
-                      'Быстрые\nтовары',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: s(12),
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black87,
-                        height: 1.05,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '\u0411\u044b\u0441\u0442\u0440\u044b\u0435\n\u0442\u043e\u0432\u0430\u0440\u044b',
+                        maxLines: 2,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: s(14),
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87,
+                          height: 1.05,
+                        ),
                       ),
                     ),
                   ),
@@ -144,11 +164,11 @@ class FooterControlsOnly extends StatelessWidget {
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        'ОТМЕНА',
+                        '\u041e\u0422\u041c\u0415\u041d\u0410',
                         maxLines: 1,
                         softWrap: false,
                         textAlign: TextAlign.center,
-                        style: TextStyle(
+                        style: GoogleFonts.inter(
                           fontSize: s(13),
                           fontWeight: FontWeight.w800,
                           color: Colors.white,
@@ -257,7 +277,7 @@ class _TotalBox extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(
                 smallText,
-                style: TextStyle(
+                style: GoogleFonts.inter(
                   fontSize: smallFontSize,
                   fontWeight: FontWeight.w500,
                   color: const Color(0xFF7A7A7A),
@@ -269,9 +289,9 @@ class _TotalBox extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: Text(
               bigText,
-              style: TextStyle(
+              style: GoogleFonts.inter(
                 fontSize: bigFontSize,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w700,
                 color: Colors.black,
               ),
             ),
@@ -299,7 +319,9 @@ class _PayBtn extends StatelessWidget {
 
   static const _btnGreen = Color(0xFF4BCA9B);
 
-  static const double _w = 225;
+  static const double _w = FooterControlsOnly._totalW -
+      FooterControlsOnly._kSmallBtnW -
+      FooterControlsOnly._gap;
 
   @override
   Widget build(BuildContext context) {
@@ -316,8 +338,8 @@ class _PayBtn extends StatelessWidget {
           ),
         ),
         child: Text(
-          'ОПЛАТА',
-          style: TextStyle(
+          '\u041e\u041f\u041b\u0410\u0422\u0410',
+          style: GoogleFonts.inter(
             fontSize: fontSize,
             fontWeight: FontWeight.w800,
             color: Colors.white,

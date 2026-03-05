@@ -2,13 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_svg/svg.dart';
 import 'package:get_it/get_it.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
+import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
 import 'package:leemon_app/features/data/datasources/refunds_remote_datasource.dart';
+import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/error_bloc.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/refund_access_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sales_history_controller.dart';
@@ -149,6 +153,287 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
+  String _storeName(AuthTokenProvider auth) {
+    final raw = auth.storeName?.trim() ?? '';
+    return raw.isEmpty ? 'Наименование магазина' : raw;
+  }
+
+  String _paymentLabel(String value) {
+    switch (value.trim().toLowerCase()) {
+      case 'cash':
+        return 'Наличные';
+      case 'card':
+        return 'Безнал';
+      case 'credit':
+        return 'В долг';
+      default:
+        return value.trim().isEmpty ? '-' : value.trim();
+    }
+  }
+
+  Future<pw.Document> _buildSaleReceipt(
+    SaleModel sale, {
+    required PdfPageFormat pageFormat,
+    required String storeName,
+    required String cashierName,
+  }) async {
+    final base = await PdfGoogleFonts.robotoRegular();
+    final bold = await PdfGoogleFonts.robotoBold();
+    final mono = await PdfGoogleFonts.robotoMonoRegular();
+    final doc = pw.Document();
+
+    pw.Widget rowKV(String k, String v, {bool strong = false, double fs = 8}) {
+      return pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Expanded(
+            child: pw.Text(
+              k,
+              style: pw.TextStyle(font: strong ? bold : base, fontSize: fs),
+            ),
+          ),
+          pw.Text(
+            v,
+            style: pw.TextStyle(font: strong ? bold : base, fontSize: fs),
+          ),
+        ],
+      );
+    }
+
+    pw.Widget divider() => pw.Container(
+          margin: const pw.EdgeInsets.symmetric(vertical: 3),
+          child: pw.Divider(height: 1, thickness: 1),
+        );
+
+    final receiptNumber =
+        sale.number.trim().isNotEmpty ? sale.number.trim() : sale.localId;
+
+    doc.addPage(
+      pw.Page(
+        pageFormat: pageFormat,
+        orientation: pw.PageOrientation.portrait,
+        margin: const pw.EdgeInsets.only(right: 18, top: 12, bottom: 12),
+        build: (_) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              pw.Text(
+                storeName,
+                style: pw.TextStyle(font: bold, fontSize: 10),
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.SizedBox(height: 2),
+              pw.Text(
+                'Дата: ${sale.date.toLocal()}',
+                style: pw.TextStyle(font: base, fontSize: 7),
+              ),
+              rowKV('Кассир', cashierName),
+              rowKV('Чек #', receiptNumber),
+              divider(),
+              for (final it in sale.items) ...[
+                pw.Text(
+                  (it.product?.name ?? '').trim().isEmpty
+                      ? 'Товар ${it.productId}'
+                      : it.product!.name,
+                  style: pw.TextStyle(font: base, fontSize: 8),
+                ),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      '${it.quantity} x ${money(it.price.toDouble())}',
+                      style: pw.TextStyle(font: mono, fontSize: 8),
+                    ),
+                    pw.SizedBox(width: 10),
+                    pw.Text(
+                      money(it.totalPrice.toDouble()),
+                      style: pw.TextStyle(font: mono, fontSize: 8),
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 2),
+              ],
+              divider(),
+              rowKV('ИТОГО', money(sale.totalAmount.toDouble()), strong: true),
+              pw.SizedBox(height: 4),
+              rowKV('Метод', _paymentLabel(sale.paymentMethod)),
+              pw.SizedBox(height: 6),
+              pw.Text(
+                'Спасибо за покупку!',
+                style: pw.TextStyle(font: base, fontSize: 8),
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.SizedBox(height: 35 * PdfPageFormat.mm),
+            ],
+          );
+        },
+      ),
+    );
+
+    return doc;
+  }
+
+  Future<void> _printSaleReceipt(SaleModel sale) async {
+    final auth = context.read<AuthTokenProvider>();
+    final printer = PrintService();
+    final pageFormat =
+        auth.receiptPaperMm == 57 ? PdfPageFormat.roll57 : PdfPageFormat.roll80;
+    final cashierName = (auth.activeUserName ?? '').trim().isEmpty
+        ? (sale.userId.trim().isEmpty ? '-' : sale.userId.trim())
+        : auth.activeUserName!.trim();
+
+    try {
+      await printer.print80mmSilently(
+        () => _buildSaleReceipt(
+          sale,
+          pageFormat: pageFormat,
+          storeName: _storeName(auth),
+          cashierName: cashierName,
+        ),
+        format: pageFormat,
+      );
+      if (!mounted) return;
+      _snack('Чек отправлен на печать');
+    } catch (e) {
+      if (!mounted) return;
+      _snack('Ошибка печати: $e');
+    }
+  }
+
+  Future<void> _showRefundSuccessDialog({
+    required bool updated,
+    required int itemsCount,
+    required num totalAmount,
+  }) async {
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'refund-success',
+      barrierColor: Colors.black.withOpacity(0.45),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (ctx, _, __) {
+        return SafeArea(
+          child: Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: 420,
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.14),
+                      blurRadius: 22,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Icon(
+                        Icons.check_circle_rounded,
+                        color: Color(0xFF16A34A),
+                        size: 36,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      updated
+                          ? 'Возврат успешно обновлён'
+                          : 'Возврат успешно оформлен',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF9FAFB),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            'Позиции: $itemsCount',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF374151),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Сумма: ${money(totalAmount.toDouble())}',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF111827),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        style: ElevatedButton.styleFrom(
+                          elevation: 0,
+                          backgroundColor: const Color(0xFF16A34A),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'Готово',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (_, anim, __, child) {
+        final curved =
+            CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
   void _applySaleSearch() {
     setState(() {
       _saleQuery = _saleSearchCtrl.text.trim();
@@ -225,6 +510,10 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
     final refundsRemote = GetIt.I<RefundsRemoteDatasource>();
     final refundId = (sale.refund?.id ?? '').trim();
+    var effectiveRefundId = refundId;
+    final pickedBySaleItemId = <String, int>{
+      for (final p in picks) p.saleItemId: p.quantity,
+    };
 
     _controller.setRefundLoading(saleId, true, () => setState(() {}));
 
@@ -241,7 +530,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
               try {
                 if (refundId.isNotEmpty) {
                   // ✅ ВАЖНО: добавь в updateRefundV2 параметр returnAccessKey и прокинь в запрос
-                  await refundsRemote.updateRefundV2(
+                  effectiveRefundId = await refundsRemote.updateRefundV2(
                     key: key,
                     refundId: refundId,
                     saleId: saleId,
@@ -252,7 +541,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                     returnAccessKey: accessKey, // <— добавить в datasource
                   );
                 } else {
-                  await refundsRemote.createRefundV2(
+                  effectiveRefundId = await refundsRemote.createRefundV2(
                     key: key,
                     saleId: saleId,
                     customerId: sale.customerId,
@@ -276,7 +565,16 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       if (ok != true) return; // отмена/закрытие/нет доступа
 
       if (!mounted) return;
-      _snack(refundId.isNotEmpty ? 'Возврат обновлён' : 'Возврат создан');
+      _cubit.applyRefundOptimistic(
+        saleId: saleId,
+        refundId: effectiveRefundId,
+        pickedBySaleItemId: pickedBySaleItemId,
+      );
+      await _showRefundSuccessDialog(
+        updated: refundId.isNotEmpty,
+        itemsCount: picks.length,
+        totalAmount: totalAmount,
+      );
 
       _controller.clearPicksForSale(saleId, () => setState(() {}));
       await _cubit.refreshSaleById(key: key, saleId: saleId);
@@ -299,6 +597,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
           builder: (context, state) {
             final visibleSales = filterSales(state.sales, _saleQuery);
             final showLoadMoreTile = state.loadingMore && _saleQuery.isEmpty;
+            final savedCashierName =
+                context.read<AuthTokenProvider>().activeUserName ?? '';
 
             return Column(
               children: [
@@ -365,6 +665,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
                                     return SaleCard(
                                       sale: sale,
+                                      cashierName: savedCashierName,
                                       expanded: expanded,
                                       refundLoading:
                                           _controller.isRefundLoading(saleId),
@@ -374,6 +675,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                                           _controller.selectedTotal(saleId),
                                       onSubmitRefund: () =>
                                           _submitRefund(context, sale),
+                                      onPrintReceipt: () =>
+                                          _printSaleReceipt(sale),
                                       onToggle: () => setState(() {
                                         _expandedSaleId =
                                             expanded ? null : sale.localId;
