@@ -7,7 +7,7 @@ class SaleRemoteDataSource {
   SaleRemoteDataSource(this._dio);
   final Dio _dio;
 
-  Future<void> createSale({
+  Future<SaleModel?> createSale({
     required String key,
     required String deviceId,
     required SaleModel sale,
@@ -15,13 +15,26 @@ class SaleRemoteDataSource {
     final safeKey = key.trim();
     if (safeKey.isEmpty) throw Exception('pos key is empty');
 
-    await _dio.post(
+    final response = await _dio.post(
       '/organizations/pos/$safeKey/sales',
       queryParameters: {
         'device_id': deviceId,
       },
       data: sale.toApiJson(),
     );
+
+    final body = response.data;
+    try {
+      if (body is Map<String, dynamic>) {
+        final data = body['data'];
+        if (data is Map<String, dynamic>) {
+          return SaleModel.fromApiJson(Map<String, dynamic>.from(data));
+        }
+      }
+    } catch (_) {
+      // ignore parse errors and fallback to caller-provided sale model
+    }
+    return null;
   }
 
   Future<PaginatedSales> getSales({

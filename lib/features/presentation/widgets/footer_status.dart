@@ -1,12 +1,12 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:leemon_app/core/models/sale_model.dart'
     show SaleItemModel, SaleModel;
 import 'package:leemon_app/core/print/print_service.dart';
+import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
@@ -18,7 +18,6 @@ import 'package:leemon_app/features/presentation/widgets/footer_panels_widget.da
 import 'package:leemon_app/features/presentation/widgets/live_data_text.dart';
 import 'package:leemon_app/features/presentation/widgets/payment_panel.dart';
 import 'package:leemon_app/features/presentation/widgets/quit_products_screen.dart';
-import 'package:printing/printing.dart';
 import 'package:uuid/uuid.dart';
 
 class FooterStatus extends StatelessWidget {
@@ -40,103 +39,6 @@ class FooterStatus extends StatelessWidget {
 class _FooterDesktop extends StatelessWidget {
   const _FooterDesktop();
 
-  Future<pw.Document> _buildReceipt(
-    PosCubit cubit, {
-    required PdfPageFormat pageFormat,
-  }) async {
-    final items = cubit.state.items;
-    final total = cubit.total;
-    final discountSum = cubit.discountSum;
-    final received = cubit.state.received;
-    final change = cubit.change.clamp(0, double.infinity);
-
-    final base = await PdfGoogleFonts.robotoRegular();
-    final bold = await PdfGoogleFonts.robotoBold();
-    final mono = await PdfGoogleFonts.robotoMonoRegular();
-
-    final doc = pw.Document();
-
-    pw.Widget rowKV(String k, String v, {bool strong = false, double fs = 8}) {
-      return pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [
-          pw.Expanded(
-              child: pw.Text(k,
-                  style:
-                      pw.TextStyle(font: strong ? bold : base, fontSize: fs))),
-          pw.Text(v,
-              style: pw.TextStyle(font: strong ? bold : base, fontSize: fs)),
-        ],
-      );
-    }
-
-    pw.Widget divider() => pw.Container(
-          margin: const pw.EdgeInsets.symmetric(vertical: 3),
-          child: pw.Divider(height: 1, thickness: 1),
-        );
-
-    doc.addPage(
-      pw.Page(
-        pageFormat: pageFormat,
-        orientation: pw.PageOrientation.portrait, // книжная
-        margin: const pw.EdgeInsets.only(right: 18, top: 12, bottom: 12),
-        build: (ctx) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-            children: [
-              pw.Text('ЧЕК (ТЕСТ)',
-                  style: pw.TextStyle(font: bold, fontSize: 10),
-                  textAlign: pw.TextAlign.center),
-              pw.SizedBox(height: 2),
-              pw.Text('Дата: ${DateTime.now().toLocal()}',
-                  style: pw.TextStyle(font: base, fontSize: 7)),
-              divider(),
-              for (final it in items) ...[
-                pw.Text(it.product.name,
-                    style: pw.TextStyle(font: base, fontSize: 8)),
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Text(
-                      '${it.qty} x ${money(it.product.price)}'
-                      '${it.discount > 0 ? '  (-${it.discount.toStringAsFixed(0)}%)' : ''}',
-                      style: pw.TextStyle(font: mono, fontSize: 8),
-                    ),
-                    pw.SizedBox(width: 10),
-                    pw.Text(money(it.sum),
-                        style: pw.TextStyle(font: mono, fontSize: 8)),
-                  ],
-                ),
-                pw.SizedBox(height: 2),
-              ],
-              divider(),
-              rowKV('Без скидок', money(total + discountSum)),
-              rowKV('Скидка', money(discountSum)),
-              rowKV('ИТОГО', money(total), strong: true),
-              pw.SizedBox(height: 3),
-              rowKV('Получено', money(received)),
-              rowKV('Сдача', money(change), strong: true),
-              pw.SizedBox(height: 4),
-              rowKV(
-                  'Метод',
-                  switch (cubit.state.paymentKind) {
-                    PaymentKind.cash => 'Наличные',
-                    PaymentKind.card => 'Безнал',
-                    PaymentKind.credit => 'В долг',
-                  }),
-              pw.SizedBox(height: 6),
-              pw.Text('Спасибо за покупку!',
-                  style: pw.TextStyle(font: base, fontSize: 8),
-                  textAlign: pw.TextAlign.center),
-              pw.SizedBox(height: 35 * PdfPageFormat.mm),
-            ],
-          );
-        },
-      ),
-    );
-
-    return doc;
-  }
 
   Future<void> _payByCardWithPrint(BuildContext context) async {
     final posCubit = context.read<PosCubit>();
@@ -234,8 +136,10 @@ class _FooterDesktop extends StatelessWidget {
       );
 
       final repo = GetIt.I<SaleRepository>();
-      final result =
+      final outcome =
           await repo.createSale(key: key, deviceId: deviceId, sale: sale);
+      final result = outcome.result;
+      final printedSale = outcome.sale;
 
       if (!context.mounted) return;
       Navigator.of(context).pop(); // закрыть лоадер
@@ -262,7 +166,44 @@ class _FooterDesktop extends StatelessWidget {
       final printer = PrintService();
 
       await printer.print80mmSilently(
-        () => _buildReceipt(posCubit, pageFormat: pageFormat),
+        () => buildReceiptPdf(
+          ReceiptPdfData(
+            pageFormat: pageFormat,
+            money: money,
+            receiptDate: printedSale.date,
+            receiptNumber:
+                printedSale.number.trim().isEmpty
+                    ? printedSale.localId
+                    : printedSale.number.trim(),
+            cashierName: (auth.activeUserName ?? '').trim().isEmpty
+                ? userId
+                : auth.activeUserName!.trim(),
+            storeName: (() {
+              final name = (auth.storeName ?? '').trim();
+              if (name.isNotEmpty) return name;
+              final posName = (auth.posName ?? '').trim();
+              if (posName.isNotEmpty) return posName;
+              return 'Магазин';
+            })(),
+            items: posCubit.state.items
+                .map(
+                  (it) => ReceiptPdfItem(
+                    name: it.product.name,
+                    quantity: it.qty,
+                    unitPrice: it.product.price,
+                    lineTotal: it.sum,
+                    discountPercent: it.discount,
+                  ),
+                )
+                .toList(),
+            total: posCubit.total,
+            discountSum: posCubit.discountSum,
+            paymentMethodLabel: 'Безналичный',
+            isCashPayment: false,
+            received: posCubit.state.received,
+            change: posCubit.change,
+          ),
+        ),
       );
 
       await showDialog<void>(
@@ -648,7 +589,8 @@ class _FooterDesktop extends StatelessWidget {
 
                                 if (!context.mounted) return;
 
-                                Navigator.of(context, rootNavigator: true).pop();
+                                Navigator.of(context, rootNavigator: true)
+                                    .pop();
 
                                 final picked = await showQuickProductsDialog(
                                   context,

@@ -3,10 +3,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/print/print_service.dart';
+import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart'
     show AuthTokenProvider;
 import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
@@ -15,7 +15,6 @@ import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_page.dart';
-import 'package:printing/printing.dart';
 import 'package:uuid/uuid.dart';
 import '../../data/utils/money.dart';
 import '../../domain/entities/payment.dart';
@@ -109,14 +108,14 @@ class _PaymentPanelState extends State<PaymentPanel> {
     required PaymentKind paymentKind,
   }) async {
     final methodLabel = switch (paymentKind) {
-      PaymentKind.cash => 'РќР°Р»РёС‡РЅС‹Рµ',
-      PaymentKind.card => 'Р‘РµР·РЅР°Р»РёС‡РЅС‹Р№',
-      PaymentKind.credit => 'Р’ РґРѕР»Рі',
+      PaymentKind.cash => 'Наличные',
+      PaymentKind.card => 'Безналичный',
+      PaymentKind.credit => 'В долг',
     };
     final subtitle = switch (result) {
-      CreateSaleResult.sent => 'РћРїР»Р°С‚Р° РїСЂРѕРІРµРґРµРЅР° Рё РѕС‚РїСЂР°РІР»РµРЅР° РЅР° СЃРµСЂРІРµСЂ',
-      CreateSaleResult.queued => 'РћРїР»Р°С‚Р° РїСЂРёРЅСЏС‚Р°. РџСЂРѕРґР°Р¶Р° СЃРѕС…СЂР°РЅРµРЅР° РІ РѕС‡РµСЂРµРґРё',
-      CreateSaleResult.rejected => 'РћРїР»Р°С‚Р° РѕС‚РєР»РѕРЅРµРЅР°',
+      CreateSaleResult.sent => 'Оплата проведена и отправлена на сервер',
+      CreateSaleResult.queued => 'Оплата принята. Продажа сохранена в очереди',
+      CreateSaleResult.rejected => 'Оплата отклонена',
     };
 
     await showGeneralDialog<void>(
@@ -171,7 +170,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      'РћРїР»Р°С‚Р° РїСЂРѕС€Р»Р° СѓСЃРїРµС€РЅРѕ',
+                      'Оплата прошла успешно',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.inter(
                         fontSize: 22,
@@ -205,7 +204,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '$methodLabel вЂў $subtitle',
+                            '$methodLabel • $subtitle',
                             textAlign: TextAlign.center,
                             style: GoogleFonts.inter(
                               fontSize: 13,
@@ -231,7 +230,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           ),
                         ),
                         child: Text(
-                          'Р“РѕС‚РѕРІРѕ',
+                          'Готово',
                           style: GoogleFonts.inter(
                             fontSize: 15,
                             fontWeight: FontWeight.w900,
@@ -256,104 +255,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
     );
   }
 
-  Future<pw.Document> _buildReceipt(
-    PosCubit cubit, {
-    required PdfPageFormat pageFormat,
-    required String storeName,
-  }) async {
-    final items = cubit.state.items;
-    final total = cubit.total;
-    final discountSum = cubit.discountSum;
-    final received = cubit.state.received;
-    final change = cubit.change.clamp(0, double.infinity);
 
-    final base = await PdfGoogleFonts.robotoRegular();
-    final bold = await PdfGoogleFonts.robotoBold();
-    final mono = await PdfGoogleFonts.robotoMonoRegular();
 
-    final doc = pw.Document();
 
-    pw.Widget rowKV(String k, String v, {bool strong = false, double fs = 8}) {
-      return pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [
-          pw.Expanded(
-              child: pw.Text(k,
-                  style:
-                      pw.TextStyle(font: strong ? bold : base, fontSize: fs))),
-          pw.Text(v,
-              style: pw.TextStyle(font: strong ? bold : base, fontSize: fs)),
-        ],
-      );
-    }
-
-    pw.Widget divider() => pw.Container(
-          margin: const pw.EdgeInsets.symmetric(vertical: 3),
-          child: pw.Divider(height: 1, thickness: 1),
-        );
-
-    doc.addPage(
-      pw.Page(
-        pageFormat: pageFormat,
-        orientation: pw.PageOrientation.portrait,
-        margin: const pw.EdgeInsets.only(right: 18, top: 12, bottom: 12),
-        build: (ctx) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-            children: [
-              pw.Text(storeName,
-                  style: pw.TextStyle(font: bold, fontSize: 10),
-                  textAlign: pw.TextAlign.center),
-              pw.SizedBox(height: 2),
-              pw.Text('Р”Р°С‚Р°: ${DateTime.now().toLocal()}',
-                  style: pw.TextStyle(font: base, fontSize: 7)),
-              divider(),
-              for (final it in items) ...[
-                pw.Text(it.product.name,
-                    style: pw.TextStyle(font: base, fontSize: 8)),
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Text(
-                      '${it.qty} x ${money(it.product.price)}'
-                      '${it.discount > 0 ? '  (-${it.discount.toStringAsFixed(0)}%)' : ''}',
-                      style: pw.TextStyle(font: mono, fontSize: 8),
-                    ),
-                    pw.SizedBox(width: 10),
-                    pw.Text(money(it.sum),
-                        style: pw.TextStyle(font: mono, fontSize: 8)),
-                  ],
-                ),
-                pw.SizedBox(height: 2),
-              ],
-              divider(),
-              rowKV('Р‘РµР· СЃРєРёРґРѕРє', money(total + discountSum)),
-              rowKV('РЎРєРёРґРєР°', money(discountSum)),
-              rowKV('РРўРћР“Рћ', money(total), strong: true),
-              pw.SizedBox(height: 3),
-              rowKV('РџРѕР»СѓС‡РµРЅРѕ', money(received)),
-              rowKV('РЎРґР°С‡Р°', money(change), strong: true),
-              pw.SizedBox(height: 4),
-              rowKV(
-                  'РњРµС‚РѕРґ',
-                  switch (cubit.state.paymentKind) {
-                    PaymentKind.cash => 'РќР°Р»РёС‡РЅС‹Рµ',
-                    PaymentKind.card => 'Р‘РµР·РЅР°Р»',
-                    PaymentKind.credit => 'Р’ РґРѕР»Рі',
-                  }),
-              pw.SizedBox(height: 6),
-              pw.Text('РЎРїР°СЃРёР±Рѕ Р·Р° РїРѕРєСѓРїРєСѓ!',
-                  style: pw.TextStyle(font: base, fontSize: 8),
-                  textAlign: pw.TextAlign.center),
-              pw.SizedBox(height: 35 * PdfPageFormat.mm),
-            ],
-          );
-        },
-      ),
-    );
-
-    return doc;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -385,7 +289,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
             void appendToken(String token) {
               var t = _cashCtrl.text;
 
-              if (token == 'вЊ«') {
+              if (token == '⌫') {
                 if (t.isNotEmpty) t = t.substring(0, t.length - 1);
                 setReceivedText(t);
                 return;
@@ -416,7 +320,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
             final customerButtonText =
                 (customerName != null && customerName.isNotEmpty)
                     ? customerName
-                    : 'РџРћРљРЈРџРђРўР•Р›Р¬';
+                    : 'ПОКУПАТЕЛЬ';
 
             return Container(
               decoration: BoxDecoration(
@@ -439,7 +343,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           SizedBox(
                             width: 210,
                             child: _TopAmountBox(
-                              label: 'Рљ РѕРїР»Р°С‚Рµ',
+                              label: 'К оплате',
                               value: money(total),
                               selected: false,
                             ),
@@ -448,7 +352,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           SizedBox(
                             width: 175,
                             child: _TopAmountBox(
-                              label: 'РЎРґР°С‡Р°',
+                              label: 'Сдача',
                               value: money(change),
                               selected: false,
                             ),
@@ -506,7 +410,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                   children: [
                                     Expanded(
                                       child: _GreyButton(
-                                        text: 'РЎС‡РµС‚Р° РЅР°\nРѕРїР»Р°С‚Сѓ',
+                                        text: 'Счета на\nоплату',
                                         height: 46,
                                         selected: false,
                                         onTap: () {},
@@ -515,7 +419,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                     const SizedBox(width: 10),
                                     Expanded(
                                       child: _GreyButton(
-                                        text: 'Р’ РґРѕР»Рі',
+                                        text: 'В долг',
                                         height: 46,
                                         selected: state.paymentKind ==
                                             PaymentKind.credit,
@@ -527,7 +431,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                 ),
                                 const SizedBox(height: 10),
                                 _OrangePayTag(
-                                  text: 'Р‘РµР·РЅР°Р»РёС‡РЅС‹Р№',
+                                  text: 'Безналичный',
                                   selected:
                                       state.paymentKind == PaymentKind.card,
                                   onTap: () =>
@@ -549,7 +453,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                         SizedBox(
                           width: 100,
                           child: _BottomButton(
-                            text: 'РћРўРњР•РќРђ',
+                            text: 'ОТМЕНА',
                             bg: const Color(0xFFD9534F),
                             fg: Colors.white,
                             onTap: () {
@@ -561,7 +465,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                         SizedBox(
                           width: 100,
                           child: _BottomButton(
-                            text: 'Р‘Р•Р— РЎР”РђР§Р',
+                            text: 'БЕЗ СДАЧИ',
                             bg: const Color(0xFF9CA3AF),
                             fg: Colors.white,
                             onTap: () {
@@ -574,7 +478,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                         SizedBox(
                           width: 175,
                           child: _BottomButton(
-                            text: 'РћРџР›РђРўРђ',
+                            text: 'ОПЛАТА',
                             bg: const Color(0xFF35C28A),
                             fg: Colors.white,
                             loading: _paying,
@@ -597,7 +501,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                           .showSnackBar(
                                         const SnackBar(
                                             content:
-                                                Text('РќРµС‚ РєР»СЋС‡Р° POS (posKey)')),
+                                                Text('Нет ключа POS (posKey)')),
                                       );
                                       return;
                                     }
@@ -605,7 +509,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
                                         const SnackBar(
-                                            content: Text('РќРµС‚ deviceId')),
+                                            content: Text('Нет deviceId')),
                                       );
                                       return;
                                     }
@@ -613,7 +517,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
                                         const SnackBar(
-                                            content: Text('РќРµС‚ storeId')),
+                                            content: Text('Нет storeId')),
                                       );
                                       return;
                                     }
@@ -622,7 +526,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                           .showSnackBar(
                                         const SnackBar(
                                             content:
-                                                Text('РќРµС‚ posId (accountId)')),
+                                                Text('Нет posId (accountId)')),
                                       );
                                       return;
                                     }
@@ -630,7 +534,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
                                         const SnackBar(
-                                            content: Text('РљРѕСЂР·РёРЅР° РїСѓСЃС‚Р°СЏ')),
+                                            content: Text('Корзина пустая')),
                                       );
                                       return;
                                     }
@@ -643,7 +547,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                           .showSnackBar(
                                         const SnackBar(
                                             content: Text(
-                                                'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РІРЅРµСЃРµРЅРѕ РЅР°Р»РёС‡РЅС‹С…')),
+                                                'Недостаточно внесено наличных')),
                                       );
                                       return;
                                     }
@@ -655,7 +559,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                             .showSnackBar(
                                           SnackBar(
                                               content: Text(
-                                                  'Р”СЂРѕР±РЅРѕРµ РєРѕР»РёС‡РµСЃС‚РІРѕ РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ: ${it.product.name}')),
+                                                  'Дробное количество не поддерживается: ${it.product.name}')),
                                         );
                                         return;
                                       }
@@ -714,18 +618,60 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       final totalPaid = posCubit.total;
                                       final paymentKind =
                                           posCubit.state.paymentKind;
-                                      final result = await repo.createSale(
+                                      final outcome = await repo.createSale(
                                         key: key,
                                         deviceId: deviceId,
                                         sale: sale,
                                       );
+                                      final result = outcome.result;
+                                      final printedSale = outcome.sale;
 
                                       await _printService.print80mmSilently(
-                                        () => _buildReceipt(
-                                          posCubit,
-                                          pageFormat: pageFormat,
-                                          storeName: (() { final name = (auth.storeName ?? '').trim(); return name.isEmpty ? 'РќР°РёРјРµРЅРѕРІР°РЅРёРµ РјР°РіР°Р·РёРЅР°' : name; })(),
-
+                                        () => buildReceiptPdf(
+                                          ReceiptPdfData(
+                                            pageFormat: pageFormat,
+                                            money: money,
+                                            receiptDate: printedSale.date,
+                                            receiptNumber: printedSale.number
+                                                    .trim()
+                                                    .isEmpty
+                                                ? printedSale.localId
+                                                : printedSale.number.trim(),
+                                            cashierName:
+                                                (auth.activeUserName ?? '').trim().isEmpty
+                                                    ? userId
+                                                    : auth.activeUserName!.trim(),
+                                            storeName: (() {
+                                              final name = (auth.storeName ?? '').trim();
+                                              if (name.isNotEmpty) return name;
+                                              final posName = (auth.posName ?? '').trim();
+                                              if (posName.isNotEmpty) return posName;
+                                              return 'Магазин';
+                                            })(),
+                                            items: posCubit.state.items
+                                                .map(
+                                                  (it) => ReceiptPdfItem(
+                                                    name: it.product.name,
+                                                    quantity: it.qty,
+                                                    unitPrice: it.product.price,
+                                                    lineTotal: it.sum,
+                                                    discountPercent: it.discount,
+                                                  ),
+                                                )
+                                                .toList(),
+                                            total: posCubit.total,
+                                            discountSum: posCubit.discountSum,
+                                            paymentMethodLabel:
+                                                switch (paymentKind) {
+                                              PaymentKind.cash => 'Наличные',
+                                              PaymentKind.card => 'Безналичный',
+                                              PaymentKind.credit => 'В долг',
+                                            },
+                                            isCashPayment:
+                                                paymentKind == PaymentKind.cash,
+                                            received: posCubit.state.received,
+                                            change: posCubit.change,
+                                          ),
                                         ),
                                       );
 
@@ -735,7 +681,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                             .showSnackBar(
                                           const SnackBar(
                                             content: Text(
-                                                'РџСЂРѕРґР°Р¶Р° РѕС‚РєР»РѕРЅРµРЅР° СЃРµСЂРІРµСЂРѕРј'),
+                                                'Продажа отклонена сервером'),
                                           ),
                                         );
                                         return;
@@ -757,7 +703,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
                                         SnackBar(
-                                            content: Text('РћС€РёР±РєР° РѕРїР»Р°С‚С‹: $e')),
+                                            content: Text('Ошибка оплаты: $e')),
                                       );
                                     } finally {
                                       if (mounted)
@@ -950,7 +896,7 @@ class _Keypad3x4 extends StatelessWidget {
     ['7', '8', '9'],
     ['4', '5', '6'],
     ['1', '2', '3'],
-    ['.', '0', 'вЊ«'],
+    ['.', '0', '⌫'],
   ];
 
   @override

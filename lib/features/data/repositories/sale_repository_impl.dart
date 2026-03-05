@@ -16,7 +16,7 @@ class SaleRepositoryImpl implements SaleRepository {
   final SaleLocalDataSource _local;
 
   @override
-  Future<CreateSaleResult> createSale({
+  Future<CreateSaleOutcome> createSale({
     required String key,
     required String deviceId,
     required SaleModel sale,
@@ -24,20 +24,27 @@ class SaleRepositoryImpl implements SaleRepository {
     // Если сети нет, не тратим время на попытку запроса: сразу в локальную очередь.
     if (!await _hasInternet()) {
       await _local.enqueue(sale);
-      return CreateSaleResult.queued;
+      return CreateSaleOutcome(result: CreateSaleResult.queued, sale: sale);
     }
 
     try {
-      await _remote.createSale(key: key, deviceId: deviceId, sale: sale);
-      return CreateSaleResult.sent;
+      final created = await _remote.createSale(
+        key: key,
+        deviceId: deviceId,
+        sale: sale,
+      );
+      return CreateSaleOutcome(
+        result: CreateSaleResult.sent,
+        sale: created ?? sale,
+      );
     } on DioException catch (e) {
       if (shouldQueueOnDioError(e)) {
         await _local.enqueue(sale);
-        return CreateSaleResult.queued;
+        return CreateSaleOutcome(result: CreateSaleResult.queued, sale: sale);
       }
-      return CreateSaleResult.rejected;
+      return CreateSaleOutcome(result: CreateSaleResult.rejected, sale: sale);
     } catch (_) {
-      return CreateSaleResult.rejected;
+      return CreateSaleOutcome(result: CreateSaleResult.rejected, sale: sale);
     }
   }
 

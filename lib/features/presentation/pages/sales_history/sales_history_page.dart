@@ -4,10 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
 import 'package:leemon_app/core/print/print_service.dart';
+import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
@@ -155,123 +154,12 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
   String _storeName(AuthTokenProvider auth) {
     final raw = auth.storeName?.trim() ?? '';
-    return raw.isEmpty ? 'Наименование магазина' : raw;
+    if (raw.isNotEmpty) return raw;
+    final posName = auth.posName?.trim() ?? '';
+    if (posName.isNotEmpty) return posName;
+    return 'Магазин';
   }
 
-  String _paymentLabel(String value) {
-    switch (value.trim().toLowerCase()) {
-      case 'cash':
-        return 'Наличные';
-      case 'card':
-        return 'Безнал';
-      case 'credit':
-        return 'В долг';
-      default:
-        return value.trim().isEmpty ? '-' : value.trim();
-    }
-  }
-
-  Future<pw.Document> _buildSaleReceipt(
-    SaleModel sale, {
-    required PdfPageFormat pageFormat,
-    required String storeName,
-    required String cashierName,
-  }) async {
-    final base = await PdfGoogleFonts.robotoRegular();
-    final bold = await PdfGoogleFonts.robotoBold();
-    final mono = await PdfGoogleFonts.robotoMonoRegular();
-    final doc = pw.Document();
-
-    pw.Widget rowKV(String k, String v, {bool strong = false, double fs = 8}) {
-      return pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [
-          pw.Expanded(
-            child: pw.Text(
-              k,
-              style: pw.TextStyle(font: strong ? bold : base, fontSize: fs),
-            ),
-          ),
-          pw.Text(
-            v,
-            style: pw.TextStyle(font: strong ? bold : base, fontSize: fs),
-          ),
-        ],
-      );
-    }
-
-    pw.Widget divider() => pw.Container(
-          margin: const pw.EdgeInsets.symmetric(vertical: 3),
-          child: pw.Divider(height: 1, thickness: 1),
-        );
-
-    final receiptNumber =
-        sale.number.trim().isNotEmpty ? sale.number.trim() : sale.localId;
-
-    doc.addPage(
-      pw.Page(
-        pageFormat: pageFormat,
-        orientation: pw.PageOrientation.portrait,
-        margin: const pw.EdgeInsets.only(right: 18, top: 12, bottom: 12),
-        build: (_) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-            children: [
-              pw.Text(
-                storeName,
-                style: pw.TextStyle(font: bold, fontSize: 10),
-                textAlign: pw.TextAlign.center,
-              ),
-              pw.SizedBox(height: 2),
-              pw.Text(
-                'Дата: ${sale.date.toLocal()}',
-                style: pw.TextStyle(font: base, fontSize: 7),
-              ),
-              rowKV('Кассир', cashierName),
-              rowKV('Чек #', receiptNumber),
-              divider(),
-              for (final it in sale.items) ...[
-                pw.Text(
-                  (it.product?.name ?? '').trim().isEmpty
-                      ? 'Товар ${it.productId}'
-                      : it.product!.name,
-                  style: pw.TextStyle(font: base, fontSize: 8),
-                ),
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Text(
-                      '${it.quantity} x ${money(it.price.toDouble())}',
-                      style: pw.TextStyle(font: mono, fontSize: 8),
-                    ),
-                    pw.SizedBox(width: 10),
-                    pw.Text(
-                      money(it.totalPrice.toDouble()),
-                      style: pw.TextStyle(font: mono, fontSize: 8),
-                    ),
-                  ],
-                ),
-                pw.SizedBox(height: 2),
-              ],
-              divider(),
-              rowKV('ИТОГО', money(sale.totalAmount.toDouble()), strong: true),
-              pw.SizedBox(height: 4),
-              rowKV('Метод', _paymentLabel(sale.paymentMethod)),
-              pw.SizedBox(height: 6),
-              pw.Text(
-                'Спасибо за покупку!',
-                style: pw.TextStyle(font: base, fontSize: 8),
-                textAlign: pw.TextAlign.center,
-              ),
-              pw.SizedBox(height: 35 * PdfPageFormat.mm),
-            ],
-          );
-        },
-      ),
-    );
-
-    return doc;
-  }
 
   Future<void> _printSaleReceipt(SaleModel sale) async {
     final auth = context.read<AuthTokenProvider>();
@@ -284,11 +172,37 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
     try {
       await printer.print80mmSilently(
-        () => _buildSaleReceipt(
-          sale,
-          pageFormat: pageFormat,
-          storeName: _storeName(auth),
-          cashierName: cashierName,
+        () => buildReceiptPdf(
+          ReceiptPdfData(
+            pageFormat: pageFormat,
+            money: money,
+            receiptDate: sale.date,
+            receiptNumber:
+                sale.number.trim().isEmpty ? sale.localId : sale.number.trim(),
+            cashierName: cashierName,
+            storeName: _storeName(auth),
+            items: sale.items
+                .map(
+                  (it) => ReceiptPdfItem(
+                    name: (it.product?.name ?? '').trim().isEmpty
+                        ? 'Товар ${it.productId}'
+                        : it.product!.name,
+                    quantity: it.quantity,
+                    unitPrice: it.price,
+                    lineTotal: it.totalPrice,
+                  ),
+                )
+                .toList(),
+            total: sale.totalAmount,
+            discountSum: 0,
+            paymentMethodLabel: switch (sale.paymentMethod.trim().toLowerCase()) {
+              'cash' => 'Наличные',
+              'card' => 'Безналичный',
+              'credit' => 'В долг',
+              _ => sale.paymentMethod.trim().isEmpty ? '-' : sale.paymentMethod.trim(),
+            },
+            isCashPayment: sale.paymentMethod.trim().toLowerCase() == 'cash',
+          ),
         ),
         format: pageFormat,
       );

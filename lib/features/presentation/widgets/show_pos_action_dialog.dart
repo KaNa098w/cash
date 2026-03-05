@@ -1,13 +1,13 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/print/print_service.dart';
+import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/datasources/product_local_datasource.dart';
 import 'package:leemon_app/features/data/datasources/sale_local_datasource.dart';
@@ -19,7 +19,6 @@ import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/widgets/close_shift_bottom.dart';
 import 'package:leemon_app/features/presentation/widgets/deposit_to_cash_sheel.dart';
-import 'package:printing/printing.dart';
 
 import 'package:window_manager/window_manager.dart';
 
@@ -209,7 +208,8 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                   Container(
                     width: 10,
                     height: 10,
-                    decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+                    decoration:
+                        BoxDecoration(color: dot, shape: BoxShape.circle),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -276,7 +276,8 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                                 ? const SizedBox(
                                     width: 14,
                                     height: 14,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
                                   )
                                 : const Icon(Icons.sync_rounded),
                             label: const Text('Отправить сейчас'),
@@ -297,7 +298,8 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                         children: [
                           for (final sale in pending) ...[
                             queueTile(
-                              title: 'Чек: ${sale.number.isEmpty ? sale.localId : sale.number}',
+                              title:
+                                  'Чек: ${sale.number.isEmpty ? sale.localId : sale.number}',
                               subtitle: 'Ждёт интернет',
                               dot: const Color(0xFFDC2626),
                             ),
@@ -347,79 +349,243 @@ Future<void> _runSyncWithProgress(BuildContext context) async {
     return;
   }
 
-  final progress = ValueNotifier<double>(0.06);
+  final progress = ValueNotifier<double>(0.08);
   final stage = ValueNotifier<String>('Подготавливаем синхронизацию...');
+  final stopRequested = ValueNotifier<bool>(false);
+
+  bool dialogClosed = false;
+
+  void closeDialogSafe() {
+    if (dialogClosed) return;
+    dialogClosed = true;
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).maybePop();
+  }
 
   showDialog<void>(
     context: context,
-    barrierDismissible: false,
+    barrierDismissible: true,
     builder: (_) {
-      return PopScope(
-        canPop: false,
-        child: Dialog(
-          backgroundColor: Colors.white,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      return Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 480),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.10),
+                blurRadius: 24,
+                offset: const Offset(0, 10),
+              ),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
             child: ValueListenableBuilder<double>(
               valueListenable: progress,
               builder: (_, p, __) {
                 return ValueListenableBuilder<String>(
                   valueListenable: stage,
                   builder: (_, s, __) {
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
+                    return ValueListenableBuilder<bool>(
+                      valueListenable: stopRequested,
+                      builder: (_, stopping, __) {
+                        final percent = (p.clamp(0.0, 1.0) * 100).round();
+
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.sync_rounded,
-                                color: Color(0xFF2563EB), size: 24),
-                            SizedBox(width: 8),
-                            Text(
-                              'Синхронизация',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: Color(0xFF0F172A),
+                            // Header
+                            Row(
+                              children: [
+                                Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF2563EB)
+                                        .withOpacity(0.10),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(
+                                    Icons.sync_rounded,
+                                    color: Color(0xFF2563EB),
+                                    size: 22,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Text(
+                                    'Синхронизация',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: const Color(0xFFE2E8F0),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '$percent%',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            // Stage text
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              child: Text(
+                                s,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  height: 1.3,
+                                  color: Color(0xFF475569),
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ),
+
+                            const SizedBox(height: 12),
+
+                            // Progress bar
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(999),
+                              child: LinearProgressIndicator(
+                                value: p.clamp(0.0, 1.0),
+                                minHeight: 10,
+                                backgroundColor: const Color(0xFFE5E7EB),
+                                valueColor: const AlwaysStoppedAnimation(
+                                  Color(0xFF2563EB),
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 14),
+
+                            // Buttons
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 46,
+                                    child: OutlinedButton.icon(
+                                      onPressed: stopping
+                                          ? null
+                                          : () {
+                                              stopRequested.value = true;
+                                              stage.value =
+                                                  'Останавливаем синхронизацию...';
+                                            },
+                                      icon: stopping
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : const Icon(Icons
+                                              .pause_circle_outline_rounded),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor:
+                                            const Color(0xFF0F172A),
+                                        side: BorderSide(
+                                          color: stopping
+                                              ? const Color(0xFFE2E8F0)
+                                              : const Color(0xFFCBD5E1),
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        backgroundColor: Colors.white,
+                                      ),
+                                      label: Text(
+                                        stopping
+                                            ? 'Останавливается...'
+                                            : 'Остановить',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 46,
+                                    child: FilledButton.icon(
+                                      onPressed: () {
+                                        stopRequested.value = true;
+                                        closeDialogSafe();
+                                      },
+                                      icon: const Icon(Icons.close_rounded),
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor:
+                                            const Color(0xFF0F172A),
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        elevation: 0,
+                                      ),
+                                      label: const Text(
+                                        'Закрыть',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.2,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          s,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFF475569),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
-                            value: p.clamp(0.0, 1.0),
-                            minHeight: 10,
-                            backgroundColor: const Color(0xFFE5E7EB),
-                            valueColor: const AlwaysStoppedAnimation(
-                              Color(0xFF2563EB),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            '${(p * 100).round()}%',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF0F172A),
-                            ),
-                          ),
-                        ),
-                      ],
+                        );
+                      },
                     );
                   },
                 );
@@ -432,32 +598,52 @@ Future<void> _runSyncWithProgress(BuildContext context) async {
   );
 
   try {
-    stage.value = 'Очистка локальных данных...';
-    progress.value = 0.2;
+    if (stopRequested.value) return;
+
+    stage.value = 'Очищаем локальные данные...';
+    progress.value = 0.20;
     final local = sl<ProductLocalDataSource>();
     await local.clear();
 
-    if (!context.mounted) return;
-    stage.value = 'Загрузка товаров...';
-    progress.value = 0.52;
+    if (!context.mounted || stopRequested.value) return;
+    stage.value = 'Загружаем товары...';
+    progress.value = 0.10;
+
     await context.read<ProductsCubit>().loadFirstPage(
           key: key,
           forceRefresh: true,
+          onPageProgress: (currentPage, lastPage) {
+            if (stopRequested.value) return;
+            final safeLast = lastPage <= 0 ? 1 : lastPage;
+            final ratio = (currentPage / safeLast).clamp(0.0, 1.0);
+            progress.value = 0.10 + (ratio * 0.64);
+            stage.value = 'Загружаем товары... ($currentPage/$safeLast)';
+          },
         );
 
-    if (!context.mounted) return;
-    stage.value = 'Загрузка быстрых товаров...';
-    progress.value = 0.84;
-    await context
-        .read<ProductsCubit>()
-        .loadPopularFirstPage(key: key, forceRefresh: true);
+    if (!context.mounted || stopRequested.value) return;
+    stage.value = 'Загружаем быстрые товары...';
+    progress.value = 0.76;
 
-    if (!context.mounted) return;
+    await context.read<ProductsCubit>().loadPopularFirstPage(
+          key: key,
+          forceRefresh: true,
+          onPageProgress: (currentPage, lastPage) {
+            if (stopRequested.value) return;
+            final safeLast = lastPage <= 0 ? 1 : lastPage;
+            final ratio = (currentPage / safeLast).clamp(0.0, 1.0);
+            progress.value = 0.76 + (ratio * 0.22);
+            stage.value =
+                'Загружаем быстрые товары... ($currentPage/$safeLast)';
+          },
+        );
+
+    if (!context.mounted || stopRequested.value) return;
     stage.value = 'Синхронизация завершена';
     progress.value = 1.0;
     await Future.delayed(const Duration(milliseconds: 260));
   } catch (e) {
-    if (context.mounted) {
+    if (context.mounted && !stopRequested.value) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка синхронизации: $e')),
       );
@@ -465,118 +651,9 @@ Future<void> _runSyncWithProgress(BuildContext context) async {
   } finally {
     progress.dispose();
     stage.dispose();
-    if (context.mounted) {
-      Navigator.of(context, rootNavigator: true).maybePop();
-    }
+    stopRequested.dispose();
+    closeDialogSafe();
   }
-}
-
-Future<pw.Document> _buildReceiptFromSale(
-  SaleModel sale, {
-  required PdfPageFormat pageFormat,
-}) async {
-  final base = await PdfGoogleFonts.robotoRegular();
-  final bold = await PdfGoogleFonts.robotoBold();
-  final mono = await PdfGoogleFonts.robotoMonoRegular();
-
-  final doc = pw.Document();
-
-  pw.Widget rowKV(String k, String v, {bool strong = false, double fs = 8}) {
-    return pw.Row(
-      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-      children: [
-        pw.Expanded(
-          child: pw.Text(
-            k,
-            style: pw.TextStyle(font: strong ? bold : base, fontSize: fs),
-          ),
-        ),
-        pw.Text(
-          v,
-          style: pw.TextStyle(font: strong ? bold : base, fontSize: fs),
-        ),
-      ],
-    );
-  }
-
-  pw.Widget divider() => pw.Container(
-        margin: const pw.EdgeInsets.symmetric(vertical: 3),
-        child: pw.Divider(height: 1, thickness: 1),
-      );
-
-  final paymentLabel = switch (sale.paymentMethod.toLowerCase()) {
-    'cash' => 'Наличные',
-    'card' => 'Безнал',
-    'credit' => 'В долг',
-    _ => sale.paymentMethod,
-  };
-
-  doc.addPage(
-    pw.Page(
-      pageFormat: pageFormat,
-      orientation: pw.PageOrientation.portrait,
-      margin: const pw.EdgeInsets.only(right: 18, top: 12, bottom: 12),
-      build: (_) {
-        return pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-          children: [
-            pw.Text(
-              'ЧЕК',
-              style: pw.TextStyle(font: bold, fontSize: 10),
-              textAlign: pw.TextAlign.center,
-            ),
-            pw.SizedBox(height: 2),
-            pw.Text(
-              'Дата: ${sale.date.toLocal()}',
-              style: pw.TextStyle(font: base, fontSize: 7),
-            ),
-            if (sale.number.trim().isNotEmpty)
-              pw.Text(
-                '№ ${sale.number.trim()}',
-                style: pw.TextStyle(font: base, fontSize: 7),
-              ),
-            divider(),
-            for (final it in sale.items) ...[
-              pw.Text(
-                (it.product?.name ?? '').trim().isEmpty
-                    ? 'Товар ${it.productId}'
-                    : it.product!.name,
-                style: pw.TextStyle(font: base, fontSize: 8),
-              ),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text(
-                    '${it.quantity} x ${money(it.price)}',
-                    style: pw.TextStyle(font: mono, fontSize: 8),
-                  ),
-                  pw.SizedBox(width: 10),
-                  pw.Text(
-                    money(it.totalPrice),
-                    style: pw.TextStyle(font: mono, fontSize: 8),
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 2),
-            ],
-            divider(),
-            rowKV('ИТОГО', money(sale.totalAmount), strong: true),
-            pw.SizedBox(height: 4),
-            rowKV('Метод', paymentLabel),
-            pw.SizedBox(height: 6),
-            pw.Text(
-              'Спасибо за покупку!',
-              style: pw.TextStyle(font: base, fontSize: 8),
-              textAlign: pw.TextAlign.center,
-            ),
-            pw.SizedBox(height: 35 * PdfPageFormat.mm),
-          ],
-        );
-      },
-    ),
-  );
-
-  return doc;
 }
 
 Future<void> _printLastSaleReceipt(BuildContext context) async {
@@ -610,8 +687,51 @@ Future<void> _printLastSaleReceipt(BuildContext context) async {
     }
 
     final printer = PrintService();
+    final auth = context.read<AuthTokenProvider>();
+    final cashierName = (auth.activeUserName ?? '').trim().isEmpty
+        ? (sale.userId.trim().isEmpty ? '-' : sale.userId.trim())
+        : auth.activeUserName!.trim();
+    final storeName = (() {
+      final name = (auth.storeName ?? '').trim();
+      if (name.isNotEmpty) return name;
+      final posName = (auth.posName ?? '').trim();
+      if (posName.isNotEmpty) return posName;
+      return 'Магазин';
+    })();
+
     await printer.print80mmSilently(
-      () => _buildReceiptFromSale(sale, pageFormat: pageFormat),
+      () => buildReceiptPdf(
+        ReceiptPdfData(
+          pageFormat: pageFormat,
+          money: money,
+          receiptDate: sale.date,
+          receiptNumber:
+              sale.number.trim().isEmpty ? sale.localId : sale.number.trim(),
+          cashierName: cashierName,
+          storeName: storeName,
+          items: sale.items
+              .map(
+                (it) => ReceiptPdfItem(
+                  name: (it.product?.name ?? '').trim().isEmpty
+                      ? 'Товар ${it.productId}'
+                      : it.product!.name,
+                  quantity: it.quantity,
+                  unitPrice: it.price,
+                  lineTotal: it.totalPrice,
+                ),
+              )
+              .toList(),
+          total: sale.totalAmount,
+          discountSum: 0,
+          paymentMethodLabel: switch (sale.paymentMethod.toLowerCase()) {
+            'cash' => 'Наличные',
+            'card' => 'Безналичный',
+            'credit' => 'В долг',
+            _ => sale.paymentMethod,
+          },
+          isCashPayment: sale.paymentMethod.toLowerCase() == 'cash',
+        ),
+      ),
     );
 
     if (!context.mounted) return;
@@ -883,8 +1003,6 @@ Future<void> exitAppFully() async {
     exit(0);
   }
 }
-
- 
 
 class _PosAction {
   final String title;

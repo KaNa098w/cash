@@ -51,6 +51,7 @@ class _SearchBarState extends State<SearchBar> {
   @override
   void initState() {
     super.initState();
+    _controller.addListener(_onControllerTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_disableSearchFieldForIpad && !_focusNode.hasFocus) {
         _focusNode.requestFocus();
@@ -70,6 +71,10 @@ class _SearchBarState extends State<SearchBar> {
         });
       }
     });
+  }
+
+  void _onControllerTextChanged() {
+    _onQueryChanged('');
   }
 
   void _onQueryChanged(String _) {
@@ -105,6 +110,7 @@ class _SearchBarState extends State<SearchBar> {
 
   @override
   void dispose() {
+    _controller.removeListener(_onControllerTextChanged);
     _controller.dispose();
     _focusNode.dispose();
     _removeChooser();
@@ -439,7 +445,6 @@ class _SearchBarState extends State<SearchBar> {
                   showCursor: !_disableSearchFieldForIpad,
                   enableInteractiveSelection: !_disableSearchFieldForIpad,
                   onSubmitted: (_) => _doSearch(),
-                  onChanged: _onQueryChanged,
                   textInputAction: TextInputAction.search,
                   style: const TextStyle(fontSize: 18),
                   decoration: InputDecoration(
