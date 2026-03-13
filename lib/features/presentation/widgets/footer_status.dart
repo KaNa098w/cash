@@ -2,6 +2,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:leemon_app/features/presentation/widgets/quit_products_screen.dart';
 import 'package:pdf/pdf.dart';
 import 'package:leemon_app/core/models/sale_model.dart'
     show SaleItemModel, SaleModel;
@@ -17,7 +18,6 @@ import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.
 import 'package:leemon_app/features/presentation/widgets/footer_panels_widget.dart';
 import 'package:leemon_app/features/presentation/widgets/live_data_text.dart';
 import 'package:leemon_app/features/presentation/widgets/payment_panel.dart';
-import 'package:leemon_app/features/presentation/widgets/quit_products_screen.dart';
 import 'package:uuid/uuid.dart';
 
 class FooterStatus extends StatelessWidget {
