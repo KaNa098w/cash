@@ -10,6 +10,7 @@ class ProductModel {
   final double arrivalCost;
   final double sellingPrice;
   final double wholesalePrice;
+  final double quantity;
 
   final String? categoryId;
   final String? globalProductId;
@@ -21,6 +22,7 @@ class ProductModel {
     required this.arrivalCost,
     required this.sellingPrice,
     required this.wholesalePrice,
+    this.quantity = 0.0,
     this.barcode,
     this.localBarcode,
     this.categoryId,
@@ -39,6 +41,15 @@ class ProductModel {
     return double.tryParse(v.toString()) ?? 0.0;
   }
 
+  static double _asQuantity(dynamic v) {
+    if (v == null) return 0.0;
+    if (v is num) return v.toDouble();
+    final s = v.toString().trim();
+    if (s.isEmpty) return 0.0;
+    final n = num.tryParse(s.replaceAll(',', '.'));
+    return n?.toDouble() ?? 0.0;
+  }
+
   factory ProductModel.fromJson(Map<String, dynamic> json) {
     return ProductModel(
       id: (json['id'] != null) ? _asString(json['id']) : null,
@@ -49,6 +60,7 @@ class ProductModel {
       arrivalCost: _asDouble(json['arrival_cost']),
       sellingPrice: _asDouble(json['selling_price']),
       wholesalePrice: _asDouble(json['wholesale_price']),
+      quantity: _asQuantity(json['quantity']),
       categoryId: _asString(json['category_id']),
       globalProductId: _asString(json['global_product_id']),
     );
@@ -64,6 +76,7 @@ class ProductModel {
       'arrival_cost': arrivalCost,
       'selling_price': sellingPrice,
       'wholesale_price': wholesalePrice,
+      'quantity': quantity,
       'category_id': categoryId,
       'global_product_id': globalProductId,
     };

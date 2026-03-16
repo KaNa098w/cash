@@ -1,0 +1,2 @@
+D:\Programs\pos_cash\cash\updater\bin\Release\net8.0-windows\win-x64\publish\Leemon.Updater.pdb
+D:\Programs\pos_cash\cash\updater\bin\Release\net8.0-windows\win-x64\publish\Leemon.Updater.exe

@@ -25,7 +25,7 @@ class ProductRemoteDataSource {
         '/organizations/pos/$key/products',
         queryParameters: {
           'page': page,
-          'per_page': perPage, // если параметр другой — поменяй
+          'perPage': perPage, // если параметр другой — поменяй
         },
       );
 

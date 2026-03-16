@@ -32,6 +32,7 @@ Future<void> main() async {
   await initializeDateFormatting('ru');
   final isDesktop =
       !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+  _KioskWindowListener? kioskListener;
 
   final prefs = await SharedPreferences.getInstance();
   final savedEnv = prefs.getString('app_environment');
@@ -64,9 +65,8 @@ Future<void> main() async {
     });
 
     await initDependencies();
-    final kioskListener = _KioskWindowListener();
+    kioskListener = _KioskWindowListener();
     windowManager.addListener(kioskListener);
-    unawaited(kioskListener.ensureKioskMode());
   } else {
     AppConfig.init(env: initialEnv);
     await initDependencies();
@@ -97,6 +97,18 @@ Future<void> main() async {
       child: const PosApp(),
     ),
   );
+
+  if (isDesktop && kioskListener != null) {
+    unawaited(_stabilizeDesktopWindow(kioskListener));
+  }
+}
+
+Future<void> _stabilizeDesktopWindow(_KioskWindowListener kioskListener) async {
+  // Let the native window and first Flutter frame settle before toggling
+  // fullscreen. This avoids a first-launch race on Windows where the taskbar
+  // icon can disappear and the window may appear to close.
+  await Future.delayed(const Duration(milliseconds: 700));
+  await kioskListener.ensureKioskMode();
 }
 
 class _KioskWindowListener with WindowListener {

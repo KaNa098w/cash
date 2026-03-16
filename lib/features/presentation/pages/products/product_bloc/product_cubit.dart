@@ -95,4 +95,8 @@ class ProductsCubit extends Cubit<ProductsState> {
   Future<void> loadNextPage() async {
     // no-op
   }
+
+  Future<void> reset() async {
+    emit(const ProductsInitial());
+  }
 }

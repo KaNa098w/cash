@@ -367,7 +367,7 @@ class _SearchBarState extends State<SearchBar> {
                             return ListTile(
                               dense: true,
                               title: Text(
-                                p.name,
+                                '${p.name} (${p.quantity})',
                                 style: const TextStyle(fontSize: 14),
                               ),
                               subtitle: Text(

@@ -79,7 +79,7 @@ class ProductChooserTileState extends State<ProductChooserTile> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      p.name,
+                      '${p.name} (${p.quantity})',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyMedium?.copyWith(

@@ -44,7 +44,7 @@ Future<ProductModel?> showQuickProductsDialog(
                         itemBuilder: (context, i) {
                           final p = products[i];
                           return _QuickProductTile(
-                            title: p.name,
+                            title: '${p.name} (${p.quantity})',
                             price: p.sellingPrice,
                             onTap: () => Navigator.of(ctx).pop(p),
                           );

@@ -215,6 +215,7 @@ class AuthTokenProvider extends ChangeNotifier {
 
     _shiftId = null;
     _activeUserId = null;
+    _activeUserName = null;
     _receiptPaperMm = 80;
 
     if (!keepDeviceId) _deviceId = null;
@@ -230,6 +231,7 @@ class AuthTokenProvider extends ChangeNotifier {
 
     await prefs.remove(_kShiftId);
     await prefs.remove(_kActiveUserId);
+    await prefs.remove(_kActiveUserName);
     await prefs.remove(_kReceiptPaperMm);
 
     if (!keepDeviceId) {

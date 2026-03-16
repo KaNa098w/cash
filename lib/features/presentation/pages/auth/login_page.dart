@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/features/data/datasources/popular_products_local.dart';
+import 'package:leemon_app/features/data/datasources/product_local_datasource.dart';
+import 'package:leemon_app/features/data/datasources/sale_local_datasource.dart';
 import 'package:leemon_app/features/presentation/pages/auth/widgets/cachier_login_page_widget.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
@@ -52,6 +56,27 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _retryProductsLoad() async {
     await _syncProducts(forceRefresh: true);
+  }
+
+  Future<void> _wipeAllLocalData() async {
+    await sl<ProductLocalDataSource>().clear();
+    await sl<PopularProductsLocalDataSource>().clear();
+    await sl<SaleLocalDataSource>().clear();
+
+    await context.read<ProductsCubit>().reset();
+    await context.read<AuthCubit>().resetAll();
+
+    if (!mounted) return;
+
+    setState(() {
+      _keyController.clear();
+      _keySubmitted = false;
+      _syncingProducts = false;
+      _syncProgress = 0;
+      _syncStage = 'Подготовка синхронизации...';
+    });
+
+    context.go('/login');
   }
 
   Future<void> _syncProducts({required bool forceRefresh}) async {
@@ -210,6 +235,7 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                 onCancel: () =>
                     context.read<AuthCubit>().backToUsers(provision),
+                onWipeAllData: _wipeAllLocalData,
               );
             }
             return DecoratedBox(

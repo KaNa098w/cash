@@ -24,7 +24,7 @@ class PopularProductsRemoteDataSource {
         '/organizations/pos/$key/popular-products',
         queryParameters: {
           'page': page,
-          'per_page': perPage,
+          'perPage': perPage,
         },
       );
 

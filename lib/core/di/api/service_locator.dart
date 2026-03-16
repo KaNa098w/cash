@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
 import 'package:leemon_app/features/data/datasources/payment_remote_datasource.dart';
+import 'package:leemon_app/features/data/datasources/app_update_remote_datasource.dart';
 import 'package:leemon_app/features/data/datasources/popular_products_local.dart';
 import 'package:leemon_app/features/data/datasources/popular_products_remote.dart';
 import 'package:leemon_app/features/data/datasources/refunds_remote_datasource.dart';
@@ -115,6 +116,12 @@ Future<void> initDependencies() async {
   if (!sl.isRegistered<PopularProductsRemoteDataSource>()) {
     sl.registerLazySingleton<PopularProductsRemoteDataSource>(
       () => PopularProductsRemoteDataSource(sl<Dio>()),
+    );
+  }
+
+  if (!sl.isRegistered<AppUpdateRemoteDataSource>()) {
+    sl.registerLazySingleton<AppUpdateRemoteDataSource>(
+      () => AppUpdateRemoteDataSource(sl<Dio>()),
     );
   }
 

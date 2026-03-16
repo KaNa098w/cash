@@ -1,14 +1,18 @@
 ﻿import 'dart:async';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pdf/pdf.dart';
+import 'package:leemon_app/core/models/app_update_response.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/data/datasources/app_update_remote_datasource.dart';
 import 'package:leemon_app/features/data/datasources/product_local_datasource.dart';
 import 'package:leemon_app/features/data/datasources/sale_local_datasource.dart';
 import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
@@ -19,8 +23,18 @@ import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/widgets/close_shift_bottom.dart';
 import 'package:leemon_app/features/presentation/widgets/deposit_to_cash_sheel.dart';
+import 'package:path/path.dart' as path;
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:window_manager/window_manager.dart';
+
+const String _appUpdateChannel =
+    String.fromEnvironment('APP_UPDATE_CHANNEL', defaultValue: 'stable');
+const String _preferredUpdatePackageType =
+    String.fromEnvironment('APP_UPDATE_PACKAGE_TYPE', defaultValue: 'zip');
+const String _appExeName = 'Leemon.exe';
+const String _updaterExeName = 'Leemon.Updater.exe';
 
 Future<void> showPosActionsDialog(BuildContext context) {
   final actions = <_PosAction>[
@@ -71,7 +85,10 @@ Future<void> showPosActionsDialog(BuildContext context) {
 
       await windowManager.minimize();
     }),
-    _PosAction('ПРОВЕРИТЬ ОБНОВЛЕНИЕ', () {/* TODO */}),
+    _PosAction('ПРОВЕРИТЬ ОБНОВЛЕНИЕ', () async {
+      Navigator.of(context, rootNavigator: true).pop();
+      await _runDesktopUpdateCheck(context);
+    }),
     _PosAction('ВЗНОС В КАССУ', () async {
       Navigator.of(context, rootNavigator: true).pop();
       await showDepositToCashSheet(context, true);
@@ -975,6 +992,330 @@ Future<void> openWindowsPrintersSettings(BuildContext context) async {
   if (context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Открываю настройки принтера…')),
+    );
+  }
+}
+
+Future<void> _runDesktopUpdateCheck(BuildContext context) async {
+  if (kIsWeb || !(Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+          content: Text('Обновления доступны только на desktop-клиенте.')),
+    );
+    return;
+  }
+
+  final stage = ValueNotifier<String>('Проверяем доступность обновления...');
+  final progress = ValueNotifier<double>(0);
+
+  if (context.mounted) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _UpdateProgressDialog(
+        stageNotifier: stage,
+        progressNotifier: progress,
+      ),
+    );
+  }
+
+  bool dialogClosed = false;
+
+  void closeDialog() {
+    if (dialogClosed) return;
+    dialogClosed = true;
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).maybePop();
+    }
+  }
+
+  try {
+    final installedVersion = await _getInstalledAppVersion();
+    final updateApi = sl<AppUpdateRemoteDataSource>();
+    final latest = await updateApi.fetchLatest(
+      channel: _appUpdateChannel,
+      currentVersion: installedVersion,
+      packageType: _preferredUpdatePackageType,
+    );
+
+    if (context.mounted) {
+      if (latest.updateAvailable == false ||
+          _compareVersionStrings(latest.latestVersion, installedVersion) <= 0) {
+        closeDialog();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Обновление не требуется: версия актуальна.')),
+        );
+        return;
+      }
+    }
+
+    if (context.mounted) {
+      stage.value =
+          'Найдена версия ${latest.latestVersion}. Скачиваем обновление...';
+    }
+    final downloadedFile = await _downloadUpdatePackage(latest, progress);
+
+    if (context.mounted) {
+      stage.value = 'Применяем обновление...';
+      progress.value = 0.9;
+    }
+
+    await _installAndRestartApp(downloadedFile, latest, context);
+  } catch (e) {
+    closeDialog();
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка обновления: $e')),
+      );
+    }
+  } finally {
+    closeDialog();
+    stage.dispose();
+    progress.dispose();
+  }
+}
+
+Future<File> _downloadUpdatePackage(
+  AppUpdateResponse latest,
+  ValueNotifier<double> progress,
+) async {
+  final dio = sl<Dio>();
+  final directory = await getTemporaryDirectory();
+  final safeVersion =
+      latest.latestVersion.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+  final packageType = latest.packageType.trim().toLowerCase();
+  final extension = switch (packageType) {
+    'zip' => 'zip',
+    'exe' => 'exe',
+    _ => packageType.isEmpty ? 'bin' : packageType,
+  };
+  final targetPath = path.join(
+    directory.path,
+    'leemon_update_$safeVersion.$extension',
+  );
+  final target = File(targetPath);
+
+  if (await target.exists()) {
+    await target.delete();
+  }
+
+  await dio.download(
+    latest.downloadUrl,
+    target.path,
+    onReceiveProgress: (received, total) {
+      if (total > 0) {
+        final ratio = received / total;
+        progress.value = 0.1 + (ratio.clamp(0.0, 1.0) * 0.75);
+      }
+    },
+  );
+
+  final actualSize = await target.length();
+  if (latest.fileSize > 0 && actualSize != latest.fileSize) {
+    throw Exception(
+        'Размер скачанного файла не совпадает с серверным значением.');
+  }
+
+  if (latest.checksumSha256.isNotEmpty) {
+    final bytes = await target.readAsBytes();
+    final actual = sha256.convert(bytes).toString().toLowerCase();
+    if (actual != latest.checksumSha256.toLowerCase()) {
+      throw Exception('Контрольная сумма файла обновления не совпала.');
+    }
+  }
+
+  return target;
+}
+
+Future<void> _installAndRestartApp(
+  File file,
+  AppUpdateResponse latest,
+  BuildContext context,
+) async {
+  if (!file.existsSync()) {
+    throw Exception('Файл обновления не найден на диске.');
+  }
+
+  if (!Platform.isWindows) {
+    throw Exception('Обновление пока не поддерживается для этой ОС.');
+  }
+
+  final packageType = latest.packageType.trim().toLowerCase();
+
+  if (packageType == 'zip') {
+    await _runZipUpdater(file, context);
+    return;
+  }
+
+  if (packageType == 'exe') {
+    await _runSilentInstaller(file, context);
+    return;
+  }
+
+  throw Exception(
+    'Неподдерживаемый тип пакета обновления: ${latest.packageType}',
+  );
+}
+
+Future<void> _runZipUpdater(File packageFile, BuildContext context) async {
+  if (kDebugMode) {
+    throw Exception(
+      'Updater нельзя корректно проверить через flutter run в debug. '
+      'Проверь обновление из установленной release-сборки.',
+    );
+  }
+
+  final updaterFile = _resolveUpdaterExecutable();
+  if (!await updaterFile.exists()) {
+    throw Exception(
+      'Updater не найден: ${updaterFile.path}. Сначала установите сборку с helper updater.',
+    );
+  }
+
+  final targetDir = File(Platform.resolvedExecutable).parent.path;
+  await Process.start(
+    updaterFile.path,
+    [
+      '--zip',
+      packageFile.path,
+      '--target-dir',
+      targetDir,
+      '--app-exe',
+      _appExeName,
+    ],
+    mode: ProcessStartMode.detached,
+    workingDirectory: updaterFile.parent.path,
+  );
+
+  await Future.delayed(const Duration(milliseconds: 400));
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Завершаю приложение и запускаю updater...'),
+      ),
+    );
+  }
+  await exitAppFully();
+}
+
+Future<void> _runSilentInstaller(File installerFile, BuildContext context) async {
+  await Process.start(
+    installerFile.path,
+    const [
+      '/SP-',
+      '/VERYSILENT',
+      '/SUPPRESSMSGBOXES',
+      '/NORESTART',
+      '/CLOSEAPPLICATIONS',
+    ],
+    mode: ProcessStartMode.detached,
+  );
+
+  await Future.delayed(const Duration(milliseconds: 500));
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Запускаю тихое обновление и перезапускаю приложение...'),
+      ),
+    );
+  }
+  await exitAppFully();
+}
+
+File _resolveUpdaterExecutable() {
+  final appDir = File(Platform.resolvedExecutable).parent.path;
+  return File(path.join(appDir, 'updater', _updaterExeName));
+}
+
+Future<String> _getInstalledAppVersion() async {
+  final packageInfo = await PackageInfo.fromPlatform();
+  return packageInfo.version.trim();
+}
+
+int _compareVersionStrings(String newest, String installed) {
+  final newParts = _normalizeVersion(newest);
+  final installedParts = _normalizeVersion(installed);
+
+  final len = newParts.length > installedParts.length
+      ? newParts.length
+      : installedParts.length;
+
+  for (int i = 0; i < len; i++) {
+    final n = i < newParts.length ? newParts[i] : 0;
+    final c = i < installedParts.length ? installedParts[i] : 0;
+
+    if (n > c) return 1;
+    if (n < c) return -1;
+  }
+
+  return 0;
+}
+
+List<int> _normalizeVersion(String value) {
+  final base = value.split('+').first;
+  final parts = base.split('.');
+  final normalized = <int>[];
+
+  for (final part in parts) {
+    normalized.add(int.tryParse(part.replaceAll(RegExp(r'\D'), '')) ?? 0);
+  }
+
+  return normalized;
+}
+
+class _UpdateProgressDialog extends StatelessWidget {
+  final ValueNotifier<String> stageNotifier;
+  final ValueNotifier<double> progressNotifier;
+
+  const _UpdateProgressDialog({
+    required this.stageNotifier,
+    required this.progressNotifier,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Обновление',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 14),
+            ValueListenableBuilder<String>(
+              valueListenable: stageNotifier,
+              builder: (_, value, __) => Text(value),
+            ),
+            const SizedBox(height: 12),
+            ValueListenableBuilder<double>(
+              valueListenable: progressNotifier,
+              builder: (_, value, __) => LinearProgressIndicator(
+                value: value,
+                minHeight: 8,
+              ),
+            ),
+            const SizedBox(height: 6),
+            ValueListenableBuilder<double>(
+              valueListenable: progressNotifier,
+              builder: (_, value, __) => Text(
+                '${(value * 100).clamp(0, 100).round()}%',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
