@@ -36,12 +36,31 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> lockToCashiers() async {
+    final cached = _tokenProvider.cachedProvision;
+    final activeUserId = _tokenProvider.activeUserId?.trim() ?? '';
+
     // ✅ блокировка = забыли текущего кассира, но смену НЕ закрываем
     await _tokenProvider.clearActiveUserId();
 
-    final cached = _tokenProvider.cachedProvision;
     if (cached != null) {
-      emit(AuthProvisioned(cached));
+      final lockedUsers = activeUserId.isEmpty
+          ? cached.users
+          : cached.users.where((user) => user.id == activeUserId).toList();
+
+      emit(AuthProvisioned(
+        PosProvisionResponse(
+          id: cached.id,
+          name: cached.name,
+          key: cached.key,
+          accountId: cached.accountId,
+          storeId: cached.storeId,
+          storeName: cached.storeName,
+          organizationId: cached.organizationId,
+          users: lockedUsers.isNotEmpty ? lockedUsers : cached.users,
+          createdAt: cached.createdAt,
+          updatedAt: cached.updatedAt,
+        ),
+      ));
     } else {
       emit(const AuthInitial());
     }
