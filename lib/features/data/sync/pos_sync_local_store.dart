@@ -267,6 +267,18 @@ class PosSyncLocalStore {
     );
   }
 
+  /// Returns what the NEXT receipt number will be (current + 1), without incrementing.
+  Future<int> peekNextLocalSaleNumber() async {
+    final db = await _database;
+    final row = _firstRow(
+      db.select(
+        'SELECT value FROM local_counters WHERE name = ? LIMIT 1',
+        ['sale_local_number'],
+      ),
+    );
+    return _asInt(row?['value']) + 1;
+  }
+
   Future<int> nextLocalSaleNumber() async {
     final db = await _database;
     return _inTransaction<int>(db, () {

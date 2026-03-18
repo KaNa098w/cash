@@ -89,6 +89,10 @@ class PosSyncService {
     return _localStore.loadQueueItems();
   }
 
+  Future<int> peekNextLocalSaleNumber() {
+    return _localStore.peekNextLocalSaleNumber();
+  }
+
   Future<void> upsertSalesHistory(List<SaleModel> sales) {
     return _localStore.upsertSalesHistory(sales);
   }

@@ -61,6 +61,7 @@ class TopBar extends StatelessWidget {
                             for (final t in state.tickets) ...[
                               _TicketTab(
                                 text: '${t.items.length} товар',
+                                receiptLabel: const _ReceiptLabel(),
                                 active: !state.isHistoryMode &&
                                     t.id == state.activeTicketId,
                                 compact: compact,
@@ -140,6 +141,7 @@ class TopBar extends StatelessWidget {
 
 class _TicketTab extends StatelessWidget {
   final String text;
+  final Widget? receiptLabel;
   final bool active;
   final bool compact;
   final VoidCallback? onTap;
@@ -149,6 +151,8 @@ class _TicketTab extends StatelessWidget {
 
   const _TicketTab({
     required this.text,
+    this.receiptLabel,
+
     this.active = false,
     this.compact = false,
     this.onTap,
@@ -166,7 +170,7 @@ class _TicketTab extends StatelessWidget {
       child: Container(
         padding: EdgeInsets.symmetric(
           horizontal: compact ? 18 : 16,
-          vertical: compact ? 12 : 16,
+          vertical: compact ? 8 : 10,
         ),
         decoration: BoxDecoration(
           color: bg,
@@ -178,23 +182,27 @@ class _TicketTab extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              text,
-              style: TextStyle(
-                color: textColor,
-                fontSize: compact ? 15 : 16,
-                fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
-              ),
-              overflow: TextOverflow.ellipsis,
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (receiptLabel != null) receiptLabel!,
+                Text(
+                  text,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: compact ? 15 : 16,
+                    fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
             if (showClose && onClose != null) ...[
               const SizedBox(width: 8),
               GestureDetector(
                 behavior: HitTestBehavior.translucent,
-                onTap: () {
-                  // чтобы клик по X не триггерил onTap вкладки
-                  onClose?.call();
-                },
+                onTap: () => onClose?.call(),
                 child: Icon(
                   Icons.close,
                   size: compact ? 16 : 18,
@@ -205,6 +213,45 @@ class _TicketTab extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ReceiptLabel extends StatefulWidget {
+  const _ReceiptLabel();
+
+  @override
+  State<_ReceiptLabel> createState() => _ReceiptLabelState();
+}
+
+class _ReceiptLabelState extends State<_ReceiptLabel> {
+  int _nextNumber = 0;
+  StreamSubscription<int>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _sub = GetIt.I<PosSyncService>().onOperationsSynced.listen((_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final n = await GetIt.I<PosSyncService>().peekNextLocalSaleNumber();
+    if (mounted) setState(() => _nextNumber = n);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_nextNumber == 0) return const SizedBox.shrink();
+    return Text(
+      '#$_nextNumber',
+      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
     );
   }
 }
