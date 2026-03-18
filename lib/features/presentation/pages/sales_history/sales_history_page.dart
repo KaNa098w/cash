@@ -5,12 +5,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:pdf/pdf.dart';
 
+import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
-import 'package:leemon_app/features/data/datasources/refunds_remote_datasource.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/error_bloc.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/refund_access_dialog.dart';
@@ -385,14 +387,10 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     final auth = context.read<AuthTokenProvider>();
 
     final key = auth.posKey?.trim() ?? '';
-    final posId = auth.posId?.trim() ?? '';
-    final storeId = auth.storeId?.trim() ?? '';
-    final accountId = auth.users.isNotEmpty ? (auth.users.first.id ?? '') : '';
+    final deviceId = auth.deviceId?.trim() ?? '';
 
     if (key.isEmpty) return _snack('Нет posKey');
-    if (posId.isEmpty) return _snack('Нет posId');
-    if (storeId.isEmpty) return _snack('Нет storeId');
-    if (accountId.trim().isEmpty) return _snack('Нет accountId пользователя');
+    if (deviceId.isEmpty) return _snack('Нет deviceId');
 
     final saleId = sale.localId.trim();
     if (saleId.isEmpty) return _snack('saleId пустой (sale.localId)');
@@ -410,19 +408,23 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       if (e.productId.trim().isEmpty) {
         throw Exception('product_id пустой у sale_item_id=${e.saleItemId}');
       }
-      final q = (e.refundedQuantity + e.quantity).clamp(0, e.totalQuantity);
-      return RefundItemPayload(
-        productId: e.productId,
-        saleItemId: e.saleItemId,
-        quantity: q,
-        price: e.price,
-      );
+      return <String, dynamic>{
+        'product_id': e.productId,
+        'sale_item_id': e.saleItemId,
+        'quantity': e.quantity,
+        'price': e.price,
+      };
     }).toList();
 
-    final totalAmount =
-        items.fold<num>(0, (s, it) => s + it.price * it.quantity);
+    final totalAmount = items.fold<int>(
+      0,
+      (sum, it) =>
+          sum +
+          (((it['price'] as num?) ?? 0).round() *
+              ((it['quantity'] as num?) ?? 0).round()),
+    );
 
-    final refundsRemote = GetIt.I<RefundsRemoteDatasource>();
+    final sync = sl<PosSyncService>();
     final refundId = (sale.refund?.id ?? '').trim();
     var effectiveRefundId = refundId;
     final pickedBySaleItemId = <String, int>{
@@ -444,26 +446,39 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
               try {
                 if (refundId.isNotEmpty) {
                   // ✅ ВАЖНО: добавь в updateRefundV2 параметр returnAccessKey и прокинь в запрос
-                  effectiveRefundId = await refundsRemote.updateRefundV2(
+                  final result = await sync.createRefund(
                     key: key,
-                    refundId: refundId,
+                    deviceId: deviceId,
                     saleId: saleId,
-                    customerId: sale.customerId,
                     totalAmount: totalAmount,
                     items: items,
                     date: DateTime.now(),
                     returnAccessKey: accessKey, // <— добавить в datasource
                   );
+                  if (result.result == QueueSendResult.manual) {
+                    throw Exception(
+                      result.errorMessage ??
+                          'Р’РѕР·РІСЂР°С‚ С‚СЂРµР±СѓРµС‚ СЂСѓС‡РЅРѕР№ РѕР±СЂР°Р±РѕС‚РєРё',
+                    );
+                  }
+                  effectiveRefundId = result.clientId;
                 } else {
-                  effectiveRefundId = await refundsRemote.createRefundV2(
+                  final result = await sync.createRefund(
                     key: key,
+                    deviceId: deviceId,
                     saleId: saleId,
-                    customerId: sale.customerId,
                     totalAmount: totalAmount,
                     items: items,
                     date: DateTime.now(),
                     returnAccessKey: accessKey,
                   );
+                  if (result.result == QueueSendResult.manual) {
+                    throw Exception(
+                      result.errorMessage ??
+                          'Р’РѕР·РІСЂР°С‚ С‚СЂРµР±СѓРµС‚ СЂСѓС‡РЅРѕР№ РѕР±СЂР°Р±РѕС‚РєРё',
+                    );
+                  }
+                  effectiveRefundId = result.clientId;
                 }
                 return true; // 200 — доступ есть
               } catch (e) {

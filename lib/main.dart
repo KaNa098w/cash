@@ -11,6 +11,7 @@ import 'package:leemon_app/core/di/api/device_id_store.dart';
 import 'package:leemon_app/features/domain/repositories/auth_repository.dart';
 import 'package:leemon_app/features/domain/repositories/product_repository.dart';
 import 'package:leemon_app/features/domain/repositories/session_repository.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:provider/provider.dart';
@@ -75,6 +76,7 @@ Future<void> main() async {
   final authProvider = AuthTokenProvider();
   await authProvider.init();
   sl<DeviceIdStore>().deviceId = authProvider.deviceId;
+  await sl<PosSyncService>().initialize();
 
   runApp(
     MultiProvider(

@@ -1,46 +1,17 @@
-import 'package:hive/hive.dart';
+import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
-
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 
 class SaleLocalDataSource {
-  static const _boxName = 'sales_box';
-  static const _keyPending = 'pending_sales';
-
-  Future<List<SaleModel>> loadPending() async {
-    final box = await Hive.openBox(_boxName);
-
-    final raw = box.get(_keyPending);
-    if (raw is! List) return [];
-
-    final result = <SaleModel>[];
-    for (final e in raw) {
-      if (e is Map) {
-        result.add(SaleModel.fromJson(Map<String, dynamic>.from(e as Map)));
-      }
-    }
-    return result;
+  Future<List<SaleModel>> loadPending() {
+    return sl<PosSyncService>().loadPendingSales();
   }
 
-  Future<void> enqueue(SaleModel sale) async {
-    final box = await Hive.openBox(_boxName);
+  Future<void> enqueue(SaleModel sale) async {}
 
-    final current = await loadPending();
-    current.add(sale);
+  Future<void> removeFromQueueByLocalId(String localId) async {}
 
-    await box.put(_keyPending, current.map((e) => e.toJson()).toList());
-  }
-
-  Future<void> removeFromQueueByLocalId(String localId) async {
-    final box = await Hive.openBox(_boxName);
-
-    final current = await loadPending();
-    current.removeWhere((e) => e.localId == localId);
-
-    await box.put(_keyPending, current.map((e) => e.toJson()).toList());
-  }
-
-  Future<void> clear() async {
-    final box = await Hive.openBox(_boxName);
-    await box.clear();
+  Future<void> clear() {
+    return sl<PosSyncService>().clearAllLocalData();
   }
 }

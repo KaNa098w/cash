@@ -63,16 +63,14 @@ class AuthOpeningCashStep extends AuthState {
 class AuthOpeningSession extends AuthState {
   final PosProvisionResponse provision;
   final PosUser user;
-  final num openingCashAmount;
 
   const AuthOpeningSession({
     required this.provision,
     required this.user,
-    required this.openingCashAmount,
   });
 
   @override
-  List<Object?> get props => [provision, user, openingCashAmount];
+  List<Object?> get props => [provision, user];
 }
 
 /// ✅ Смена уже открыта, просто разблокировали кассира (без открытия смены)

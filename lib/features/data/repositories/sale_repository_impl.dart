@@ -1,19 +1,12 @@
-// lib/features/sales/data/repositories/sale_repository_impl.dart
-import 'dart:io';
-
-import 'package:dio/dio.dart';
-import 'package:leemon_app/core/di/utils/dio_error_utils.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
-import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 
-import '../datasources/sale_local_datasource.dart';
-
 class SaleRepositoryImpl implements SaleRepository {
-  SaleRepositoryImpl(this._remote, this._local);
+  SaleRepositoryImpl(Object _, Object __, this._syncService);
 
-  final SaleRemoteDataSource _remote;
-  final SaleLocalDataSource _local;
+  final PosSyncService _syncService;
 
   @override
   Future<CreateSaleOutcome> createSale({
@@ -21,28 +14,24 @@ class SaleRepositoryImpl implements SaleRepository {
     required String deviceId,
     required SaleModel sale,
   }) async {
-    // Если сети нет, не тратим время на попытку запроса: сразу в локальную очередь.
-    if (!await _hasInternet()) {
-      await _local.enqueue(sale);
-      return CreateSaleOutcome(result: CreateSaleResult.queued, sale: sale);
-    }
-
     try {
-      final created = await _remote.createSale(
+      final queueResult = await _syncService.createSale(
         key: key,
         deviceId: deviceId,
         sale: sale,
       );
+
+      final localNumber = queueResult.payload['local_number']?.toString() ?? '';
+      final printedSale = sale.copyWith(number: localNumber);
+
       return CreateSaleOutcome(
-        result: CreateSaleResult.sent,
-        sale: created ?? sale,
+        result: switch (queueResult.result) {
+          QueueSendResult.sent => CreateSaleResult.sent,
+          QueueSendResult.queued => CreateSaleResult.queued,
+          QueueSendResult.manual => CreateSaleResult.rejected,
+        },
+        sale: printedSale,
       );
-    } on DioException catch (e) {
-      if (shouldQueueOnDioError(e)) {
-        await _local.enqueue(sale);
-        return CreateSaleOutcome(result: CreateSaleResult.queued, sale: sale);
-      }
-      return CreateSaleOutcome(result: CreateSaleResult.rejected, sale: sale);
     } catch (_) {
       return CreateSaleOutcome(result: CreateSaleResult.rejected, sale: sale);
     }
@@ -56,30 +45,10 @@ class SaleRepositoryImpl implements SaleRepository {
     final safeKey = key.trim();
     if (safeKey.isEmpty) return;
 
-    final pending = await _local.loadPending();
-    if (pending.isEmpty) return;
-
-    for (final sale in pending) {
-      try {
-        await _remote.createSale(key: safeKey, deviceId: deviceId, sale: sale);
-        await _local.removeFromQueueByLocalId(sale.localId);
-      } on DioException catch (e) {
-        if (shouldQueueOnDioError(e)) break;
-        await _local.removeFromQueueByLocalId(sale.localId);
-        continue;
-      } catch (_) {
-        break;
-      }
-    }
-  }
-
-  Future<bool> _hasInternet() async {
-    try {
-      final result = await InternetAddress.lookup('example.com')
-          .timeout(const Duration(milliseconds: 900));
-      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
-    } catch (_) {
-      return false;
-    }
+    await _syncService.pushPending(
+      key: safeKey,
+      deviceId: deviceId,
+      limit: 10,
+    );
   }
 }

@@ -9,7 +9,7 @@ import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart'
     show AuthTokenProvider;
-import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
@@ -51,19 +51,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
   Future<void> _pickCustomer() async {
     final posCubit = context.read<PosCubit>();
-    final auth = context.read<AuthTokenProvider>();
-    final posKey = auth.posKey?.trim() ?? '';
-
-    if (posKey.isEmpty) {
-      return;
-    }
 
     try {
-      final ds = sl<CustomersRemoteDataSource>();
-
-      final dtos = await ds.listCustomers(key: posKey);
-
-      final customers = dtos
+      final customers = (await sl<PosSyncService>().loadCustomers())
           .map(
             (e) => CustomerLite(
               id: e.id,
@@ -494,7 +484,10 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                         auth.deviceId?.trim() ?? '';
                                     final storeId = auth.storeId?.trim() ?? '';
                                     final posId = auth.posId?.trim() ?? '';
-                                    final userId = auth.users.first.id ?? '';
+                                    final userId =
+                                        auth.activeUserId?.trim() ?? '';
+                                    final accountId =
+                                        auth.accountId?.trim() ?? '';
 
                                     if (key.isEmpty) {
                                       ScaffoldMessenger.of(context)
@@ -527,6 +520,22 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                         const SnackBar(
                                             content:
                                                 Text('Нет posId (accountId)')),
+                                      );
+                                      return;
+                                    }
+                                    if (userId.isEmpty) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                            content: Text('Нет userId')),
+                                      );
+                                      return;
+                                    }
+                                    if (accountId.isEmpty) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                            content: Text('Нет accountId')),
                                       );
                                       return;
                                     }
@@ -602,7 +611,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       posId: posId,
                                       storeId: storeId,
                                       userId: userId,
-                                      accountId: userId,
+                                      accountId: accountId,
                                       customerId: customerId,
                                       items: saleItems,
                                     );

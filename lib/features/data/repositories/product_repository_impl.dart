@@ -1,25 +1,17 @@
 import 'package:leemon_app/core/models/product_response.dart';
-import 'package:leemon_app/features/data/datasources/popular_products_local.dart';
-import 'package:leemon_app/features/data/datasources/popular_products_remote.dart';
-
-import 'package:leemon_app/features/data/datasources/product_local_datasource.dart';
-import 'package:leemon_app/features/data/datasources/product_remote_datasource.dart';
-
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/domain/repositories/product_repository.dart';
 
 class ProductRepositoryImpl implements ProductRepository {
-  final ProductRemoteDataSource remote;
-  final ProductLocalDataSource local;
-
-  final PopularProductsRemoteDataSource popularRemote;
-  final PopularProductsLocalDataSource popularLocal;
-
   ProductRepositoryImpl(
-    this.remote,
-    this.local,
-    this.popularRemote,
-    this.popularLocal,
+    Object _,
+    Object __,
+    Object ___,
+    Object ____,
+    this._syncService,
   );
+
+  final PosSyncService _syncService;
 
   @override
   Future<PaginatedProducts> getProducts({
@@ -29,37 +21,14 @@ class ProductRepositoryImpl implements ProductRepository {
     bool forceRefresh = false,
     void Function(int currentPage, int lastPage)? onPageProgress,
   }) async {
-    if (!forceRefresh) {
-      final cached = await local.loadProducts();
-      if (cached.isNotEmpty) {
-        final total = cached.length;
-        onPageProgress?.call(1, 1);
-        return PaginatedProducts(
-          items: cached,
-          currentPage: 1,
-          lastPage: 1,
-          total: total,
-          perPage: total,
-        );
-      }
-    }
-
-    final allRemote = await remote.getAllProducts(
-      key: key,
-      perPage: perPage,
-      onPageProgress: onPageProgress,
-    );
-
-    await local.saveProducts(allRemote);
-
-    final total = allRemote.length;
-
+    final items = await _syncService.loadProducts();
+    onPageProgress?.call(1, 1);
     return PaginatedProducts(
-      items: allRemote,
+      items: items,
       currentPage: 1,
       lastPage: 1,
-      total: total,
-      perPage: total,
+      total: items.length,
+      perPage: items.length,
     );
   }
 
@@ -71,43 +40,20 @@ class ProductRepositoryImpl implements ProductRepository {
     bool forceRefresh = false,
     void Function(int currentPage, int lastPage)? onPageProgress,
   }) async {
-    if (!forceRefresh) {
-      final cached = await popularLocal.loadPopularProducts();
-      if (cached.isNotEmpty) {
-        final total = cached.length;
-        onPageProgress?.call(1, 1);
-        return PaginatedProducts(
-          items: cached,
-          currentPage: 1,
-          lastPage: 1,
-          total: total,
-          perPage: total,
-        );
-      }
-    }
-
-    final allRemote = await popularRemote.getAllPopularProducts(
-      key: key,
-      perPage: perPage,
-      onPageProgress: onPageProgress,
-    );
-
-    await popularLocal.savePopularProducts(allRemote);
-
-    final total = allRemote.length;
-
+    final items = await _syncService.loadFavoriteProducts();
+    onPageProgress?.call(1, 1);
     return PaginatedProducts(
-      items: allRemote,
+      items: items,
       currentPage: 1,
       lastPage: 1,
-      total: total,
-      perPage: total,
+      total: items.length,
+      perPage: items.length,
     );
   }
 
   @override
-  Future<void> clearProductsCache() => local.clear();
+  Future<void> clearProductsCache() => _syncService.clearAllLocalData();
 
   @override
-  Future<void> clearPopularProductsCache() => popularLocal.clear();
+  Future<void> clearPopularProductsCache() async {}
 }

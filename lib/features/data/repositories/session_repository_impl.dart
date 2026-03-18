@@ -1,36 +1,51 @@
-import 'package:leemon_app/features/data/datasources/session_remote_datasource.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/domain/repositories/session_repository.dart';
 
 class SessionRepositoryImpl implements SessionRepository {
-  SessionRepositoryImpl(this.remote);
+  SessionRepositoryImpl(Object _, this._syncService);
 
-  final SessionRemoteDataSource remote;
+  final PosSyncService _syncService;
 
   @override
   Future<String> openSession({
     required String key,
+    required String deviceId,
     required String userId,
-    required num openingCashAmount,
-  }) {
-    return remote.openSession(
+  }) async {
+    final result = await _syncService.openSession(
       key: key,
+      deviceId: deviceId,
       userId: userId,
-      openingCashAmount: openingCashAmount,
+      openedAt: DateTime.now(),
     );
+
+    if (result.result == QueueSendResult.manual) {
+      throw Exception(result.errorMessage ?? 'Не удалось открыть смену');
+    }
+
+    return result.clientId;
   }
 
   @override
   Future<void> closeSession({
     required String key,
+    required String deviceId,
     required String sessionId,
     required String userId,
     required num closingCashAmount,
-  }) {
-    return remote.closeSession(
+  }) async {
+    final result = await _syncService.closeSession(
       key: key,
-      sessionId: sessionId,
+      deviceId: deviceId,
+      clientSessionId: sessionId,
       userId: userId,
       closingCashAmount: closingCashAmount,
+      closedAt: DateTime.now(),
     );
+
+    if (result.result == QueueSendResult.manual) {
+      throw Exception(result.errorMessage ?? 'Не удалось закрыть смену');
+    }
   }
 }

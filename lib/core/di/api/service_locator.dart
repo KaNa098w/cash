@@ -8,6 +8,9 @@ import 'package:leemon_app/features/data/datasources/popular_products_local.dart
 import 'package:leemon_app/features/data/datasources/popular_products_remote.dart';
 import 'package:leemon_app/features/data/datasources/refunds_remote_datasource.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_local_store.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_remote_datasource.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 
 import 'package:leemon_app/core/di/api/app_config.dart';
 import 'package:leemon_app/core/di/api/device_id_interceptor.dart';
@@ -113,6 +116,25 @@ Future<void> initDependencies() async {
     );
   }
 
+  if (!sl.isRegistered<PosSyncLocalStore>()) {
+    sl.registerLazySingleton<PosSyncLocalStore>(() => PosSyncLocalStore());
+  }
+
+  if (!sl.isRegistered<PosSyncRemoteDataSource>()) {
+    sl.registerLazySingleton<PosSyncRemoteDataSource>(
+      () => PosSyncRemoteDataSource(sl<Dio>()),
+    );
+  }
+
+  if (!sl.isRegistered<PosSyncService>()) {
+    sl.registerLazySingleton<PosSyncService>(
+      () => PosSyncService(
+        sl<PosSyncLocalStore>(),
+        sl<PosSyncRemoteDataSource>(),
+      ),
+    );
+  }
+
   if (!sl.isRegistered<PopularProductsRemoteDataSource>()) {
     sl.registerLazySingleton<PopularProductsRemoteDataSource>(
       () => PopularProductsRemoteDataSource(sl<Dio>()),
@@ -159,7 +181,10 @@ Future<void> initDependencies() async {
   // ✅ SESSION repository
   if (!sl.isRegistered<SessionRepository>()) {
     sl.registerLazySingleton<SessionRepository>(
-      () => SessionRepositoryImpl(sl<SessionRemoteDataSource>()),
+      () => SessionRepositoryImpl(
+        sl<SessionRemoteDataSource>(),
+        sl<PosSyncService>(),
+      ),
     );
   }
   if (!sl.isRegistered<ProductRepository>()) {
@@ -169,6 +194,7 @@ Future<void> initDependencies() async {
         sl<ProductLocalDataSource>(),
         sl<PopularProductsRemoteDataSource>(),
         sl<PopularProductsLocalDataSource>(),
+        sl<PosSyncService>(),
       ),
     );
   }
@@ -187,6 +213,7 @@ Future<void> initDependencies() async {
       () => SaleRepositoryImpl(
         sl<SaleRemoteDataSource>(),
         sl<SaleLocalDataSource>(),
+        sl<PosSyncService>(),
       ),
     );
   }

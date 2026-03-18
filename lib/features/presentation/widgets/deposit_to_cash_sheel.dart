@@ -3,7 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
-import 'package:leemon_app/features/data/datasources/payment_remote_datasource.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 
 /// type: true = ВЗНОС, false = РАСХОД
@@ -55,17 +56,23 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
   }
 
   Future<void> _loadExpenseTypes() async {
-    final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
-    if (key.isEmpty) return;
-
     setState(() => _loadingTypes = true);
 
     try {
-      final payments = sl<PaymentsRemoteDataSource>();
-      final types = await payments.fetchExpenseTypes(key: key);
+      final types = await sl<PosSyncService>().loadExpenseTypes();
 
       if (!mounted) return;
-      setState(() => _expenseTypes = types);
+      setState(() {
+        _expenseTypes = types
+            .map(
+              (item) => <String, dynamic>{
+                'id': item.id,
+                'name': item.name,
+                ...item.rawJson,
+              },
+            )
+            .toList(growable: false);
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -288,16 +295,30 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
     setState(() => _loading = true);
 
     try {
-      final payments = sl<PaymentsRemoteDataSource>();
       final provider = context.read<AuthTokenProvider>();
+      final deviceId = provider.deviceId?.trim() ?? '';
+      final accountId = provider.accountId?.trim() ?? '';
+      if (deviceId.isEmpty) {
+        throw Exception('deviceId не найден');
+      }
+      if (accountId.isEmpty) {
+        throw Exception('accountId не найден');
+      }
 
-      await payments.createPayment(
+      final result = await sl<PosSyncService>().createPayment(
         key: key,
+        deviceId: deviceId,
+        accountId: accountId,
         isExpense: _isExpense, // ✅ type=false -> расход
         expenseTypeId: _isExpense ? _expenseTypeId : null,
         amount: amount,
-        createdById: provider.activeUserId?.trim() ?? '',
+        date: DateTime.now(),
+        userId: provider.activeUserId?.trim(),
       );
+
+      if (result.result == QueueSendResult.manual) {
+        throw Exception(result.errorMessage ?? 'Операция требует ручной обработки');
+      }
 
       if (!mounted) return;
       Navigator.of(context).pop(true);

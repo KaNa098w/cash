@@ -48,7 +48,8 @@ class _FooterDesktop extends StatelessWidget {
     final deviceId = auth.deviceId?.trim() ?? '';
     final storeId = auth.storeId?.trim() ?? '';
     final posId = auth.posId?.trim() ?? '';
-    final userId = auth.users.isNotEmpty ? (auth.users.first.id ?? '') : '';
+    final userId = auth.activeUserId?.trim() ?? '';
+    final accountId = auth.accountId?.trim() ?? '';
 
     if (key.isEmpty) {
       ScaffoldMessenger.of(context)
@@ -68,6 +69,11 @@ class _FooterDesktop extends StatelessWidget {
     if (posId.isEmpty) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Нет posId')));
+      return;
+    }
+    if (accountId.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Нет accountId')));
       return;
     }
     if (userId.trim().isEmpty) {
@@ -130,7 +136,7 @@ class _FooterDesktop extends StatelessWidget {
         posId: posId,
         storeId: storeId,
         userId: userId,
-        accountId: userId,
+        accountId: accountId,
         customerId: customerId,
         items: saleItems,
       );

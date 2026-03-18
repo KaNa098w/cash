@@ -11,6 +11,9 @@ class ProductModel {
   final double sellingPrice;
   final double wholesalePrice;
   final double quantity;
+  final bool isFavorite;
+  final String? sku;
+  final String? coverUrl;
 
   final String? categoryId;
   final String? globalProductId;
@@ -23,8 +26,11 @@ class ProductModel {
     required this.sellingPrice,
     required this.wholesalePrice,
     this.quantity = 0.0,
+    this.isFavorite = false,
     this.barcode,
     this.localBarcode,
+    this.sku,
+    this.coverUrl,
     this.categoryId,
     this.globalProductId,
   });
@@ -61,6 +67,11 @@ class ProductModel {
       sellingPrice: _asDouble(json['selling_price']),
       wholesalePrice: _asDouble(json['wholesale_price']),
       quantity: _asQuantity(json['quantity']),
+      isFavorite: json['is_favorite'] == true ||
+          json['is_favorite'] == 1 ||
+          json['is_favorite']?.toString().trim() == '1',
+      sku: _asString(json['sku']),
+      coverUrl: _asString(json['cover_url']),
       categoryId: _asString(json['category_id']),
       globalProductId: _asString(json['global_product_id']),
     );
@@ -77,6 +88,9 @@ class ProductModel {
       'selling_price': sellingPrice,
       'wholesale_price': wholesalePrice,
       'quantity': quantity,
+      'is_favorite': isFavorite ? 1 : 0,
+      'sku': sku,
+      'cover_url': coverUrl,
       'category_id': categoryId,
       'global_product_id': globalProductId,
     };

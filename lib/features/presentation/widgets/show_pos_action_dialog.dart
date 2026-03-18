@@ -8,17 +8,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pdf/pdf.dart';
 import 'package:leemon_app/core/models/app_update_response.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
-import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/datasources/app_update_remote_datasource.dart';
-import 'package:leemon_app/features/data/datasources/product_local_datasource.dart';
-import 'package:leemon_app/features/data/datasources/sale_local_datasource.dart';
 import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
-import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/widgets/close_shift_bottom.dart';
@@ -178,11 +176,9 @@ Future<void> showPosActionsDialog(BuildContext context) {
 Future<void> _showServicesQueueDialog(BuildContext context) async {
   final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
   final deviceId = context.read<AuthTokenProvider>().deviceId?.trim() ?? '';
-  final local = sl<SaleLocalDataSource>();
-  final repo = sl<SaleRepository>();
+  final sync = sl<PosSyncService>();
 
-  List<SaleModel> pending = await local.loadPending();
-  final sentIds = <String>{};
+  List<QueueListItem> queueItems = await sync.loadQueueItems();
   var syncing = false;
 
   if (!context.mounted) return;
@@ -195,15 +191,10 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
             if (syncing) return;
             if (key.isEmpty || deviceId.isEmpty) return;
             setState(() => syncing = true);
-            final beforeIds = pending.map((e) => e.localId).toSet();
-            await repo.syncPendingSales(key: key, deviceId: deviceId);
-            final next = await local.loadPending();
-            final afterIds = next.map((e) => e.localId).toSet();
-            final delivered =
-                beforeIds.where((id) => !afterIds.contains(id)).toSet();
-            sentIds.addAll(delivered);
+            await sync.pushPending(key: key, deviceId: deviceId, limit: 20);
+            final next = await sync.loadQueueItems();
             setState(() {
-              pending = next;
+              queueItems = next;
               syncing = false;
             });
           }
@@ -277,7 +268,7 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'В очереди: ${pending.length}  •  Отправлено: ${sentIds.length}',
+                      'В очереди: ${queueItems.length}',
                       style: const TextStyle(
                         fontSize: 12,
                         color: Color(0xFF64748B),
@@ -313,24 +304,20 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                     Expanded(
                       child: ListView(
                         children: [
-                          for (final sale in pending) ...[
+                          for (final item in queueItems) ...[
                             queueTile(
-                              title:
-                                  'Чек: ${sale.number.isEmpty ? sale.localId : sale.number}',
-                              subtitle: 'Ждёт интернет',
-                              dot: const Color(0xFFDC2626),
+                              title: item.title ?? item.type.label,
+                              subtitle: item.subtitle ??
+                                  (item.status == OutboxOperationStatus.manual
+                                      ? 'Требуется ручная обработка'
+                                      : 'Ждет отправки'),
+                              dot: item.status == OutboxOperationStatus.manual
+                                  ? const Color(0xFFF59E0B)
+                                  : const Color(0xFFDC2626),
                             ),
                             const SizedBox(height: 8),
                           ],
-                          for (final id in sentIds) ...[
-                            queueTile(
-                              title: 'Чек: $id',
-                              subtitle: 'Уже отправлено',
-                              dot: const Color(0xFF16A34A),
-                            ),
-                            const SizedBox(height: 8),
-                          ],
-                          if (pending.isEmpty && sentIds.isEmpty)
+                          if (queueItems.isEmpty)
                             const Center(
                               child: Padding(
                                 padding: EdgeInsets.only(top: 28),
@@ -617,42 +604,28 @@ Future<void> _runSyncWithProgress(BuildContext context) async {
   try {
     if (stopRequested.value) return;
 
-    stage.value = 'Очищаем локальные данные...';
-    progress.value = 0.20;
-    final local = sl<ProductLocalDataSource>();
-    await local.clear();
+    final deviceId =
+        context.read<AuthTokenProvider>().deviceId?.trim() ?? '';
+    if (deviceId.isEmpty) {
+      throw Exception('Нет deviceId');
+    }
+
+    await sl<PosSyncService>().bootstrap(
+      key: key,
+      deviceId: deviceId,
+      onProgress: (SyncProgress syncProgress) {
+        if (stopRequested.value) return;
+        progress.value = syncProgress.progress;
+        stage.value = syncProgress.detail == null
+            ? syncProgress.stage
+            : '${syncProgress.stage}: ${syncProgress.detail}';
+      },
+    );
 
     if (!context.mounted || stopRequested.value) return;
-    stage.value = 'Загружаем товары...';
-    progress.value = 0.10;
-
     await context.read<ProductsCubit>().loadFirstPage(
           key: key,
-          forceRefresh: true,
-          onPageProgress: (currentPage, lastPage) {
-            if (stopRequested.value) return;
-            final safeLast = lastPage <= 0 ? 1 : lastPage;
-            final ratio = (currentPage / safeLast).clamp(0.0, 1.0);
-            progress.value = 0.10 + (ratio * 0.64);
-            stage.value = 'Загружаем товары... ($currentPage/$safeLast)';
-          },
-        );
-
-    if (!context.mounted || stopRequested.value) return;
-    stage.value = 'Загружаем быстрые товары...';
-    progress.value = 0.76;
-
-    await context.read<ProductsCubit>().loadPopularFirstPage(
-          key: key,
-          forceRefresh: true,
-          onPageProgress: (currentPage, lastPage) {
-            if (stopRequested.value) return;
-            final safeLast = lastPage <= 0 ? 1 : lastPage;
-            final ratio = (currentPage / safeLast).clamp(0.0, 1.0);
-            progress.value = 0.76 + (ratio * 0.22);
-            stage.value =
-                'Загружаем быстрые товары... ($currentPage/$safeLast)';
-          },
+          forceRefresh: false,
         );
 
     if (!context.mounted || stopRequested.value) return;
