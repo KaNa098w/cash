@@ -166,7 +166,6 @@ class PosSyncRemoteDataSource {
   bool isManualErrorCode(String code) {
     switch (code.trim().toUpperCase()) {
       case 'VALIDATION_FAILED':
-      case 'IDEMPOTENCY_CONFLICT':
       case 'INSUFFICIENT_STOCK':
       case 'REFERENCE_NOT_FOUND':
       case 'ACCOUNT_NOT_ALLOWED':

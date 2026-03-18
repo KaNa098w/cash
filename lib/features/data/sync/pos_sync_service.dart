@@ -498,6 +498,17 @@ class PosSyncService {
       final errorCode = _remote.extractErrorCode(error);
       final errorMessage = _remote.extractErrorMessage(error);
 
+      // Duplicate key: the operation already exists on the server — treat as success.
+      if (errorCode == 'IDEMPOTENCY_CONFLICT') {
+        await _localStore.markOperationAcked(record.id);
+        return QueueOperationResult(
+          result: QueueSendResult.sent,
+          type: record.type,
+          clientId: record.clientId,
+          payload: record.payload,
+        );
+      }
+
       if (_remote.isRetryable(error) && record.retryCount < _maxRetryCount) {
         await _localStore.markOperationPending(
           operationId: record.id,
