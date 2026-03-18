@@ -18,17 +18,25 @@ class PosSyncService {
   final PosSyncRemoteDataSource _remote;
   final _uuid = const Uuid();
 
+  static const int _maxRetryCount = 50;
+
   Timer? _pullTimer;
   Timer? _pushTimer;
   Future<void>? _bootstrapFuture;
   Future<void>? _pullFuture;
   Future<void>? _pushFuture;
 
+  final _syncedController = StreamController<int>.broadcast();
+
+  /// Emits the number of operations successfully sent in each push batch.
+  Stream<int> get onOperationsSynced => _syncedController.stream;
+
   Future<void> initialize() => _localStore.initialize();
 
   Future<void> dispose() async {
     _pullTimer?.cancel();
     _pushTimer?.cancel();
+    await _syncedController.close();
     await _localStore.close();
   }
 
@@ -245,7 +253,7 @@ class PosSyncService {
     final records = await _localStore.claimPendingOperations(limit: limit);
     if (records.isEmpty) return;
 
-    var hadAcked = false;
+    var ackedCount = 0;
     for (final record in records) {
       final result = await _sendClaimedRecord(
         key: key,
@@ -253,14 +261,12 @@ class PosSyncService {
         record: record,
       );
       if (result.result == QueueSendResult.sent) {
-        hadAcked = true;
-      }
-      if (result.result == QueueSendResult.queued) {
-        break;
+        ackedCount++;
       }
     }
 
-    if (hadAcked) {
+    if (ackedCount > 0) {
+      _syncedController.add(ackedCount);
       await _localStore.touchLastPush(key);
       await pullOnce(key: key, deviceId: deviceId);
     }
@@ -492,7 +498,7 @@ class PosSyncService {
       final errorCode = _remote.extractErrorCode(error);
       final errorMessage = _remote.extractErrorMessage(error);
 
-      if (_remote.isRetryable(error)) {
+      if (_remote.isRetryable(error) && record.retryCount < _maxRetryCount) {
         await _localStore.markOperationPending(
           operationId: record.id,
           errorCode: errorCode,

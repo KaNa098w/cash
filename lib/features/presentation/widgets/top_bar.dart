@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get_it/get_it.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
@@ -277,6 +278,7 @@ class _StatusDot extends StatefulWidget {
 class _StatusDotState extends State<_StatusDot> {
   bool _online = true;
   Timer? _timer;
+  StreamSubscription<int>? _syncedSub;
 
   @override
   void initState() {
@@ -285,11 +287,21 @@ class _StatusDotState extends State<_StatusDot> {
     _timer = Timer.periodic(const Duration(seconds: 4), (_) {
       _refreshOnline();
     });
+    _syncedSub = GetIt.I<PosSyncService>().onOperationsSynced.listen((count) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Синхронизировано: $count оп.'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _syncedSub?.cancel();
     super.dispose();
   }
 
