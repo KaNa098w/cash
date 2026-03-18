@@ -6,7 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:get_it/get_it.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 
@@ -295,6 +297,16 @@ class _StatusDotState extends State<_StatusDot> {
     final online = await _hasInternet();
     if (!mounted || online == _online) return;
     setState(() => _online = online);
+    if (online) _autoSync();
+  }
+
+  Future<void> _autoSync() async {
+    final auth = context.read<AuthTokenProvider>();
+    final key = auth.posKey?.trim() ?? '';
+    final deviceId = auth.deviceId?.trim() ?? '';
+    if (key.isEmpty || deviceId.isEmpty) return;
+    final repo = GetIt.I<SaleRepository>();
+    await repo.syncPendingSales(key: key, deviceId: deviceId);
   }
 
   Future<bool> _hasInternet() async {

@@ -35,7 +35,6 @@ bool shouldQueueOnDioError(DioException e) {
       // иногда dio кидает unknown с SocketException выше; иначе — не гадать
       return underlying is SocketException;
     case DioExceptionType.badCertificate:
-      // TODO: Handle this case.
-      throw UnimplementedError();
+      return false;
   }
 }

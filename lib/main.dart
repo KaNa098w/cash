@@ -56,6 +56,9 @@ Future<void> main() async {
           TitleBarStyle.hidden,
           windowButtonVisibility: false,
         );
+        await windowManager.setSize(const Size(1024, 768));
+        await windowManager.setMinimumSize(const Size(1024, 768));
+        await windowManager.center();
       }
 
       await windowManager.show();
@@ -140,7 +143,7 @@ class _KioskWindowListener with WindowListener {
       await windowManager.show();
       await windowManager.focus();
 
-      if (!await windowManager.isFullScreen()) {
+      if (!Platform.isMacOS && !await windowManager.isFullScreen()) {
         await windowManager
             .setFullScreen(true)
             .timeout(const Duration(seconds: 2));
