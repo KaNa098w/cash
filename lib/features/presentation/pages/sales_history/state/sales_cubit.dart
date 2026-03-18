@@ -3,12 +3,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:leemon_app/core/models/refund_model.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/state/sales_state.dart';
 
 class SalesHistoryCubit extends Cubit<SalesHistoryState> {
-  SalesHistoryCubit(this._remote) : super(SalesHistoryState.initial());
+  SalesHistoryCubit(this._remote, this._sync) : super(SalesHistoryState.initial());
 
   final SaleRemoteDataSource _remote;
+  final PosSyncService _sync;
 
   void _safeEmit(SalesHistoryState s) {
     if (isClosed) return;
@@ -21,21 +23,38 @@ class SalesHistoryCubit extends Cubit<SalesHistoryState> {
   }
 
   Future<void> loadFirst({required String key, int perPage = 15}) async {
-    _safeEmit(SalesHistoryState.initial());
+    // 1. Show local data immediately — no spinner wait
+    final local = await _sync.loadSalesHistoryPage(page: 1, perPage: perPage);
+    final localLastPage = local.total <= 0
+        ? 1
+        : ((local.total + perPage - 1) ~/ perPage);
 
+    if (local.items.isNotEmpty) {
+      _safeEmit(SalesHistoryState.initial().copyWith(
+        loading: false,
+        sales: local.items,
+        page: 1,
+        lastPage: localLastPage,
+        error: null,
+      ));
+    }
+
+    // 2. Try remote in background — update and cache
     try {
       final res = await _remote.getSales(key: key, page: 1, perPage: perPage);
-      _safeEmit(
-        state.copyWith(
-          loading: false,
-          sales: res.items,
-          page: res.currentPage,
-          lastPage: res.lastPage,
-          error: null,
-        ),
-      );
+      await _sync.upsertSalesHistory(res.items);
+      _safeEmit(state.copyWith(
+        loading: false,
+        sales: res.items,
+        page: res.currentPage,
+        lastPage: res.lastPage,
+        error: null,
+      ));
     } catch (e) {
-      _safeEmit(state.copyWith(loading: false, error: e.toString()));
+      if (local.items.isEmpty) {
+        _safeEmit(state.copyWith(loading: false, error: e.toString()));
+      }
+      // If we already showed local data — keep it, don't show error
     }
   }
 
@@ -48,17 +67,32 @@ class SalesHistoryCubit extends Cubit<SalesHistoryState> {
     try {
       final res =
           await _remote.getSales(key: key, page: nextPage, perPage: perPage);
-      _safeEmit(
-        state.copyWith(
-          loadingMore: false,
-          sales: [...state.sales, ...res.items],
-          page: res.currentPage,
-          lastPage: res.lastPage,
-          error: null,
-        ),
-      );
-    } catch (e) {
-      _safeEmit(state.copyWith(loadingMore: false, error: e.toString()));
+      await _sync.upsertSalesHistory(res.items);
+      _safeEmit(state.copyWith(
+        loadingMore: false,
+        sales: [...state.sales, ...res.items],
+        page: res.currentPage,
+        lastPage: res.lastPage,
+        error: null,
+      ));
+    } catch (_) {
+      // Fallback to local next page
+      final local =
+          await _sync.loadSalesHistoryPage(page: nextPage, perPage: perPage);
+      if (local.items.isEmpty) {
+        _safeEmit(state.copyWith(loadingMore: false));
+        return;
+      }
+      final localLastPage = local.total <= 0
+          ? nextPage
+          : ((local.total + perPage - 1) ~/ perPage);
+      _safeEmit(state.copyWith(
+        loadingMore: false,
+        sales: [...state.sales, ...local.items],
+        page: nextPage,
+        lastPage: localLastPage,
+        error: null,
+      ));
     }
   }
 

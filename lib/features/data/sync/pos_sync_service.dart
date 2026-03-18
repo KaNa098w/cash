@@ -89,6 +89,17 @@ class PosSyncService {
     return _localStore.loadQueueItems();
   }
 
+  Future<void> upsertSalesHistory(List<SaleModel> sales) {
+    return _localStore.upsertSalesHistory(sales);
+  }
+
+  Future<({List<SaleModel> items, int total})> loadSalesHistoryPage({
+    int page = 1,
+    int perPage = 15,
+  }) {
+    return _localStore.loadSalesHistoryPage(page: page, perPage: perPage);
+  }
+
   Future<void> bootstrap({
     required String key,
     required String deviceId,
@@ -488,6 +499,9 @@ class PosSyncService {
         },
       );
       await _localStore.markOperationAcked(record.id);
+      if (record.type == OutboxOperationType.sale) {
+        unawaited(_localStore.upsertSaleFromOutboxPayload(record.payload));
+      }
       return QueueOperationResult(
         result: QueueSendResult.sent,
         type: record.type,
@@ -501,6 +515,9 @@ class PosSyncService {
       // Duplicate key: the operation already exists on the server — treat as success.
       if (errorCode == 'IDEMPOTENCY_CONFLICT') {
         await _localStore.markOperationAcked(record.id);
+        if (record.type == OutboxOperationType.sale) {
+          unawaited(_localStore.upsertSaleFromOutboxPayload(record.payload));
+        }
         return QueueOperationResult(
           result: QueueSendResult.sent,
           type: record.type,

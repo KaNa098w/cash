@@ -153,6 +153,20 @@ class PosSyncLocalStore {
     ''');
 
     db.execute('''
+      CREATE TABLE IF NOT EXISTS sales_history (
+        id TEXT PRIMARY KEY,
+        date TEXT NOT NULL,
+        raw_json TEXT NOT NULL,
+        updated_at_local TEXT NOT NULL
+      );
+    ''');
+
+    db.execute('''
+      CREATE INDEX IF NOT EXISTS sales_history_date_idx
+      ON sales_history (date DESC);
+    ''');
+
+    db.execute('''
       CREATE TABLE IF NOT EXISTS sync_errors (
         id TEXT PRIMARY KEY,
         operation_id TEXT NULL,
@@ -176,6 +190,7 @@ class PosSyncLocalStore {
         'customers',
         'outbox_operations',
         'sync_errors',
+        'sales_history',
       ]) {
         db.execute('DELETE FROM $table;');
       }
@@ -873,6 +888,63 @@ class PosSyncLocalStore {
       customerId: payload['customer_id']?.toString(),
       items: items,
     );
+  }
+
+  /// Upsert a batch of sales into local history (from API or after ack).
+  Future<void> upsertSalesHistory(List<SaleModel> sales) async {
+    if (sales.isEmpty) return;
+    final db = await _database;
+    final now = _nowIso();
+    _inTransaction(db, () {
+      for (final sale in sales) {
+        final id = sale.localId.trim();
+        if (id.isEmpty) continue;
+        db.execute(
+          '''
+          INSERT INTO sales_history (id, date, raw_json, updated_at_local)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            date = excluded.date,
+            raw_json = excluded.raw_json,
+            updated_at_local = excluded.updated_at_local
+          ''',
+          [id, sale.date.toIso8601String(), jsonEncode(sale.toJson()), now],
+        );
+      }
+    });
+  }
+
+  /// Save a sale from outbox payload (called after ack).
+  Future<void> upsertSaleFromOutboxPayload(Map<String, dynamic> payload) async {
+    final sale = _saleFromPayload(payload);
+    if (sale.localId.isEmpty) return;
+    await upsertSalesHistory([sale]);
+  }
+
+  /// Returns paginated sales from local history, newest first.
+  Future<({List<SaleModel> items, int total})> loadSalesHistoryPage({
+    int page = 1,
+    int perPage = 15,
+  }) async {
+    final db = await _database;
+    final countRow = _firstRow(db.select('SELECT COUNT(*) AS c FROM sales_history'));
+    final total = _asInt(countRow?['c']);
+
+    final offset = (page - 1) * perPage;
+    final rows = db.select(
+      'SELECT raw_json FROM sales_history ORDER BY date DESC LIMIT ? OFFSET ?',
+      [perPage, offset],
+    );
+
+    final items = rows.map((row) {
+      try {
+        return SaleModel.fromJson(decodeJsonMap((row['raw_json'] ?? '{}').toString()));
+      } catch (_) {
+        return null;
+      }
+    }).whereType<SaleModel>().toList(growable: false);
+
+    return (items: items, total: total);
   }
 
   Map<String, dynamic>? _firstRow(sqlite.ResultSet result) {

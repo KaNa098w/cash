@@ -65,7 +65,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     super.initState();
 
     final remote = GetIt.I<SaleRemoteDataSource>();
-    _cubit = SalesHistoryCubit(remote);
+    final sync = GetIt.I<PosSyncService>();
+    _cubit = SalesHistoryCubit(remote, sync);
 
     _saleSearchCtrl.addListener(() {
       _saleSearchDebounce?.cancel();
