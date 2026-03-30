@@ -28,7 +28,7 @@ class SessionRepositoryImpl implements SessionRepository {
   }
 
   @override
-  Future<void> closeSession({
+  Future<QueueSendResult> closeSession({
     required String key,
     required String deviceId,
     required String sessionId,
@@ -47,5 +47,7 @@ class SessionRepositoryImpl implements SessionRepository {
     if (result.result == QueueSendResult.manual) {
       throw Exception(result.errorMessage ?? 'Не удалось закрыть смену');
     }
+
+    return result.result;
   }
 }

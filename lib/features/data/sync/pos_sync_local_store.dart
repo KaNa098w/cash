@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
+import 'package:leemon_app/core/models/refund_model.dart';
 import 'package:leemon_app/core/models/product_response.dart';
 import 'package:leemon_app/core/models/sale_model.dart' show SaleItemModel, SaleModel;
 
@@ -37,6 +38,7 @@ class PosSyncLocalStore {
     db.execute('PRAGMA synchronous = NORMAL;');
     db.execute('PRAGMA foreign_keys = ON;');
     _createSchema(db);
+    _migrateSchema(db);
     _db = db;
     return db;
   }
@@ -176,6 +178,169 @@ class PosSyncLocalStore {
         created_at TEXT NOT NULL
       );
     ''');
+
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS return_access_keys (
+        id               TEXT PRIMARY KEY,
+        key              TEXT NOT NULL,
+        user_id          TEXT,
+        store_id         TEXT,
+        expires_at       TEXT,
+        is_active        INTEGER NOT NULL DEFAULT 1,
+        raw_json         TEXT NOT NULL,
+        updated_at_local TEXT NOT NULL
+      );
+    ''');
+
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS sessions (
+        id                   TEXT PRIMARY KEY,
+        client_session_id    TEXT UNIQUE NOT NULL,
+        server_session_id    TEXT,
+        user_id              TEXT NOT NULL,
+        device_id            TEXT NOT NULL,
+        opening_cash_amount  REAL NOT NULL DEFAULT 0,
+        closing_cash_amount  REAL,
+        opened_at            TEXT NOT NULL,
+        closed_at            TEXT,
+        is_opened            INTEGER NOT NULL DEFAULT 1,
+        synced               INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
+
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS sales (
+        id              TEXT PRIMARY KEY,
+        client_sale_id  TEXT UNIQUE NOT NULL,
+        pos_session_id  TEXT,
+        local_number    INTEGER NOT NULL,
+        number          TEXT,
+        date            TEXT NOT NULL,
+        total_amount    REAL NOT NULL,
+        payment_method  TEXT NOT NULL,
+        pos_id          TEXT,
+        store_id        TEXT,
+        account_id      TEXT,
+        customer_id     TEXT,
+        created_by_id   TEXT,
+        completed       INTEGER NOT NULL DEFAULT 1,
+        synced          INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
+
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS sale_items (
+        id          TEXT PRIMARY KEY,
+        sale_id     TEXT NOT NULL,
+        product_id  TEXT NOT NULL,
+        product_name TEXT,
+        quantity    REAL NOT NULL,
+        price       REAL NOT NULL,
+        total_price REAL NOT NULL
+      );
+    ''');
+
+    db.execute('''
+      CREATE INDEX IF NOT EXISTS sale_items_sale_id_idx
+      ON sale_items (sale_id);
+    ''');
+
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS payments (
+        id                TEXT PRIMARY KEY,
+        client_payment_id TEXT UNIQUE NOT NULL,
+        pos_session_id    TEXT,
+        is_expense        INTEGER NOT NULL,
+        amount            REAL NOT NULL,
+        date              TEXT NOT NULL,
+        account_id        TEXT,
+        expense_type_id   TEXT,
+        created_by_id     TEXT,
+        synced            INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
+
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS refunds (
+        id               TEXT PRIMARY KEY,
+        client_refund_id TEXT UNIQUE NOT NULL,
+        pos_session_id   TEXT,
+        client_sale_id   TEXT,
+        sale_id          TEXT,
+        date             TEXT NOT NULL,
+        total_amount     REAL NOT NULL,
+        pos_id           TEXT,
+        store_id         TEXT,
+        account_id       TEXT,
+        reason           TEXT,
+        note             TEXT,
+        return_key_used  TEXT,
+        synced           INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
+
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS refund_items (
+        id         TEXT PRIMARY KEY,
+        refund_id  TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        quantity   REAL NOT NULL,
+        price      REAL NOT NULL
+      );
+    ''');
+
+    db.execute('''
+      CREATE INDEX IF NOT EXISTS refund_items_refund_id_idx
+      ON refund_items (refund_id);
+    ''');
+  }
+
+  void _migrateSchema(sqlite.Database db) {
+    // products: add columns added in spec v2
+    for (final stmt in [
+      'ALTER TABLE sales ADD COLUMN pos_id TEXT NULL',
+      'ALTER TABLE sessions ADD COLUMN server_session_id TEXT NULL',
+      'ALTER TABLE sales ADD COLUMN pos_session_id TEXT NULL',
+      'ALTER TABLE sales ADD COLUMN store_id TEXT NULL',
+      'ALTER TABLE sales ADD COLUMN completed INTEGER NOT NULL DEFAULT 1',
+      'ALTER TABLE sale_items ADD COLUMN product_name TEXT NULL',
+      'ALTER TABLE payments ADD COLUMN pos_session_id TEXT NULL',
+      'ALTER TABLE refunds ADD COLUMN pos_session_id TEXT NULL',
+      'ALTER TABLE refunds ADD COLUMN pos_id TEXT NULL',
+      'ALTER TABLE refunds ADD COLUMN store_id TEXT NULL',
+      'ALTER TABLE refunds ADD COLUMN account_id TEXT NULL',
+      'ALTER TABLE refunds ADD COLUMN note TEXT NULL',
+      'ALTER TABLE products ADD COLUMN local_barcode TEXT NULL',
+      'ALTER TABLE products ADD COLUMN category_id TEXT NULL',
+      'ALTER TABLE products ADD COLUMN category_name TEXT NULL',
+      'ALTER TABLE products ADD COLUMN arrival_cost REAL NULL',
+      'ALTER TABLE products ADD COLUMN wholesale_price REAL NULL',
+    ]) {
+      try { db.execute(stmt); } catch (_) {}
+    }
+    // accounts
+    for (final stmt in [
+      'ALTER TABLE accounts ADD COLUMN allow_negative INTEGER DEFAULT 0',
+      'ALTER TABLE accounts ADD COLUMN visible_to_pos INTEGER DEFAULT 1',
+      'ALTER TABLE accounts ADD COLUMN organization_id TEXT NULL',
+    ]) {
+      try { db.execute(stmt); } catch (_) {}
+    }
+    // expense_types
+    for (final stmt in [
+      'ALTER TABLE expense_types ADD COLUMN is_active INTEGER DEFAULT 1',
+      'ALTER TABLE expense_types ADD COLUMN organization_id TEXT NULL',
+    ]) {
+      try { db.execute(stmt); } catch (_) {}
+    }
+    // customers
+    for (final stmt in [
+      'ALTER TABLE customers ADD COLUMN note TEXT NULL',
+      'ALTER TABLE customers ADD COLUMN store_id TEXT NULL',
+      'ALTER TABLE customers ADD COLUMN organization_id TEXT NULL',
+    ]) {
+      try { db.execute(stmt); } catch (_) {}
+    }
   }
 
   Future<void> clearAllLocalData() async {
@@ -191,6 +356,13 @@ class PosSyncLocalStore {
         'outbox_operations',
         'sync_errors',
         'sales_history',
+        'return_access_keys',
+        'sessions',
+        'sales',
+        'sale_items',
+        'payments',
+        'refunds',
+        'refund_items',
       ]) {
         db.execute('DELETE FROM $table;');
       }
@@ -319,6 +491,7 @@ class PosSyncLocalStore {
       db.execute('DELETE FROM accounts;');
       db.execute('DELETE FROM expense_types;');
       db.execute('DELETE FROM customers;');
+      db.execute('DELETE FROM return_access_keys;');
 
       final posRow = _mapPosInfoRow(posInfo);
       if (posRow != null) {
@@ -510,7 +683,16 @@ class PosSyncLocalStore {
         SELECT *
         FROM outbox_operations
         WHERE status = ?
-        ORDER BY created_at ASC
+        ORDER BY
+          CASE type
+            WHEN 'session_open'  THEN 0
+            WHEN 'sale'          THEN 1
+            WHEN 'payment'       THEN 2
+            WHEN 'refund'        THEN 3
+            WHEN 'session_close' THEN 4
+            ELSE 5
+          END ASC,
+          created_at ASC
         LIMIT ?
         ''',
         [OutboxOperationStatus.pending.value, limit],
@@ -681,6 +863,37 @@ class PosSyncLocalStore {
     if (entity == null) return;
 
     final action = change.action.trim().toLowerCase();
+    if (entity == _EntityKind.sale) {
+      if (action == 'delete') {
+        _deleteSalePullRecord(db, change.targetId ?? change.payload?['id']?.toString() ?? '');
+        return;
+      }
+      if (action == 'upsert' || action == 'insert' || action == 'update') {
+        final payload = change.payload;
+        if (payload == null) {
+          _deleteSalePullRecord(db, change.targetId ?? '');
+          return;
+        }
+        _upsertSalePullRecord(db, payload, now);
+      }
+      return;
+    }
+    if (entity == _EntityKind.refund) {
+      if (action == 'delete') {
+        _deleteRefundPullRecord(db, change.targetId ?? change.payload?['id']?.toString() ?? '');
+        return;
+      }
+      if (action == 'upsert' || action == 'insert' || action == 'update') {
+        final payload = change.payload;
+        if (payload == null) {
+          _deleteRefundPullRecord(db, change.targetId ?? '');
+          return;
+        }
+        _upsertRefundPullRecord(db, payload, now);
+      }
+      return;
+    }
+
     if (action == 'delete') {
       final targetId = (change.targetId ?? change.payload?['id'])?.toString() ?? '';
       if (targetId.isEmpty) return;
@@ -693,7 +906,14 @@ class PosSyncLocalStore {
     }
 
     final payload = change.payload;
-    if (payload == null) return;
+    if (payload == null) {
+      // upsert with no record = server-side delete
+      // (entity is not visible to this POS, e.g. product with zero stock)
+      final targetId = (change.targetId ?? '').toString();
+      if (targetId.isEmpty) return;
+      db.execute('DELETE FROM ${entity.table} WHERE id = ?', [targetId]);
+      return;
+    }
 
     final row = switch (entity) {
       _EntityKind.posInfo => _mapPosInfoRow(payload),
@@ -701,10 +921,443 @@ class PosSyncLocalStore {
       _EntityKind.account => _mapAccountRow(payload, now),
       _EntityKind.expenseType => _mapExpenseTypeRow(payload, now),
       _EntityKind.customer => _mapCustomerRow(payload, now),
+      _EntityKind.returnAccessKey => _mapReturnAccessKeyRow(payload, now),
+      _EntityKind.sale || _EntityKind.refund => null,
     };
 
     if (row == null) return;
     _upsertRow(db, entity.table, row);
+  }
+
+  void _upsertSalePullRecord(
+    sqlite.Database db,
+    Map<String, dynamic> payload,
+    String now,
+  ) {
+    final saleId = _string(payload['id']);
+    if (saleId.isEmpty) return;
+
+    final clientSaleId = _string(payload['client_sale_id'], fallback: saleId);
+    final existing = _firstRow(
+      db.select(
+        'SELECT id, local_number FROM sales WHERE id = ? OR client_sale_id = ? LIMIT 1',
+        [saleId, clientSaleId],
+      ),
+    );
+    final previousId = _string(existing?['id']);
+    final localNumber = _asInt(existing?['local_number']);
+
+    if (previousId.isNotEmpty && previousId != saleId) {
+      db.execute('UPDATE sale_items SET sale_id = ? WHERE sale_id = ?', [saleId, previousId]);
+      db.execute('DELETE FROM sales WHERE id = ?', [previousId]);
+      db.execute('DELETE FROM sales_history WHERE id = ?', [previousId]);
+    }
+
+    db.execute(
+      '''
+      INSERT INTO sales (
+        id, client_sale_id, local_number, number, date, total_amount,
+        pos_session_id, payment_method, pos_id, store_id, account_id, customer_id,
+        created_by_id, completed, synced
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+      ON CONFLICT(id) DO UPDATE SET
+        client_sale_id = excluded.client_sale_id,
+        local_number = excluded.local_number,
+        number = excluded.number,
+        date = excluded.date,
+        total_amount = excluded.total_amount,
+        pos_session_id = excluded.pos_session_id,
+        payment_method = excluded.payment_method,
+        pos_id = excluded.pos_id,
+        store_id = excluded.store_id,
+        account_id = excluded.account_id,
+        customer_id = excluded.customer_id,
+        created_by_id = excluded.created_by_id,
+        completed = excluded.completed,
+        synced = 1
+      ''',
+      [
+        saleId,
+        clientSaleId,
+        localNumber,
+        _nullableString(payload['number']),
+        _string(payload['date']),
+        _asDouble(payload['total_amount']),
+        _nullableString(payload['pos_session_id']),
+        _string(payload['payment_method'], fallback: 'cash'),
+        _nullableString(payload['pos_id']),
+        _nullableString(payload['store_id']),
+        _nullableString(payload['account_id']),
+        _nullableString(payload['customer_id']),
+        _nullableString(payload['user_id']),
+        payload['completed'] == null ? 1 : _asBoolInt(payload['completed']),
+      ],
+    );
+
+    db.execute('DELETE FROM sale_items WHERE sale_id = ?', [saleId]);
+    final items = payload['items'];
+    if (items is List) {
+      var idx = 0;
+      for (final item in items.whereType<Map>()) {
+        final itemMap = Map<String, dynamic>.from(item);
+        final itemId = _string(itemMap['id'], fallback: '${saleId}_$idx');
+        db.execute(
+          '''
+          INSERT INTO sale_items (id, sale_id, product_id, product_name, quantity, price, total_price)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            sale_id = excluded.sale_id,
+            product_id = excluded.product_id,
+            product_name = excluded.product_name,
+            quantity = excluded.quantity,
+            price = excluded.price,
+            total_price = excluded.total_price
+          ''',
+          [
+            itemId,
+            saleId,
+            _string(itemMap['product_id']),
+            _nullableString(itemMap['product_name'] ?? itemMap['name']),
+            _asDouble(itemMap['quantity']),
+            _asDouble(itemMap['price']),
+            _asDouble(itemMap['total_price']),
+          ],
+        );
+        idx++;
+      }
+    }
+
+    final refundPayload = _loadRefundPayloadForSale(
+      db,
+      saleId: saleId,
+      clientSaleId: clientSaleId,
+      filterByCurrentPos: true,
+    );
+    _upsertSaleHistoryRecord(
+      db: db,
+      salePayload: payload,
+      refundPayload: refundPayload,
+      now: now,
+      previousIdToReplace: previousId.isNotEmpty && previousId != saleId ? previousId : null,
+    );
+  }
+
+  void _deleteSalePullRecord(sqlite.Database db, String saleId) {
+    final targetId = saleId.trim();
+    if (targetId.isEmpty) return;
+
+    final existing = _firstRow(
+      db.select('SELECT client_sale_id FROM sales WHERE id = ? LIMIT 1', [targetId]),
+    );
+    final clientSaleId = _string(existing?['client_sale_id']);
+
+    db.execute('DELETE FROM sale_items WHERE sale_id = ?', [targetId]);
+    db.execute('DELETE FROM sales WHERE id = ?', [targetId]);
+    db.execute('DELETE FROM sales_history WHERE id = ?', [targetId]);
+    if (clientSaleId.isNotEmpty && clientSaleId != targetId) {
+      db.execute('DELETE FROM sales_history WHERE id = ?', [clientSaleId]);
+    }
+  }
+
+  void _upsertRefundPullRecord(
+    sqlite.Database db,
+    Map<String, dynamic> payload,
+    String now,
+  ) {
+    final refundId = _string(payload['id']);
+    if (refundId.isEmpty) return;
+
+    final clientRefundId = _string(payload['client_refund_id'], fallback: refundId);
+    final existing = _firstRow(
+      db.select(
+        'SELECT id FROM refunds WHERE id = ? OR client_refund_id = ? LIMIT 1',
+        [refundId, clientRefundId],
+      ),
+    );
+    final previousId = _string(existing?['id']);
+
+    if (previousId.isNotEmpty && previousId != refundId) {
+      db.execute('UPDATE refund_items SET refund_id = ? WHERE refund_id = ?', [refundId, previousId]);
+      db.execute('DELETE FROM refunds WHERE id = ?', [previousId]);
+    }
+
+    db.execute(
+      '''
+      INSERT INTO refunds (
+        id, client_refund_id, client_sale_id, sale_id, date, total_amount,
+        pos_id, store_id, account_id, reason, note, return_key_used, synced
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+      ON CONFLICT(id) DO UPDATE SET
+        client_refund_id = excluded.client_refund_id,
+        client_sale_id = excluded.client_sale_id,
+        sale_id = excluded.sale_id,
+        date = excluded.date,
+        total_amount = excluded.total_amount,
+        pos_id = excluded.pos_id,
+        store_id = excluded.store_id,
+        account_id = excluded.account_id,
+        reason = excluded.reason,
+        note = excluded.note,
+        return_key_used = excluded.return_key_used,
+        synced = 1
+      ''',
+      [
+        refundId,
+        clientRefundId,
+        _nullableString(payload['client_sale_id']),
+        _nullableString(payload['sale_id']),
+        _string(payload['date']),
+        _asDouble(payload['total_amount']),
+        _nullableString(payload['pos_id']),
+        _nullableString(payload['store_id']),
+        _nullableString(payload['account_id']),
+        _nullableString(payload['reason']),
+        _nullableString(payload['note']),
+        _nullableString(payload['return_access_key']),
+      ],
+    );
+
+    db.execute('DELETE FROM refund_items WHERE refund_id = ?', [refundId]);
+    final items = payload['items'];
+    if (items is List) {
+      var idx = 0;
+      for (final item in items.whereType<Map>()) {
+        final itemMap = Map<String, dynamic>.from(item);
+        final itemId = _string(itemMap['id'], fallback: '${refundId}_$idx');
+        db.execute(
+          '''
+          INSERT INTO refund_items (id, refund_id, product_id, quantity, price)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            refund_id = excluded.refund_id,
+            product_id = excluded.product_id,
+            quantity = excluded.quantity,
+            price = excluded.price
+          ''',
+          [
+            itemId,
+            refundId,
+            _string(itemMap['product_id']),
+            _asDouble(itemMap['quantity']),
+            _asDouble(itemMap['price']),
+          ],
+        );
+        idx++;
+      }
+    }
+
+    _applyRefundToSalesHistory(db, payload, now);
+  }
+
+  void _deleteRefundPullRecord(sqlite.Database db, String refundId) {
+    final targetId = refundId.trim();
+    if (targetId.isEmpty) return;
+
+    final existing = _firstRow(
+      db.select(
+        'SELECT sale_id, client_sale_id, pos_id FROM refunds WHERE id = ? LIMIT 1',
+        [targetId],
+      ),
+    );
+    final saleId = _string(existing?['sale_id']);
+    final clientSaleId = _string(existing?['client_sale_id']);
+    final refundPosId = _string(existing?['pos_id']);
+
+    db.execute('DELETE FROM refund_items WHERE refund_id = ?', [targetId]);
+    db.execute('DELETE FROM refunds WHERE id = ?', [targetId]);
+
+    final currentPosId = _currentPosId(db);
+    if (refundPosId.isEmpty || currentPosId.isEmpty || refundPosId == currentPosId) {
+      _clearRefundFromSaleHistory(db, saleId: saleId, clientSaleId: clientSaleId, now: _nowIso());
+    }
+  }
+
+  void _upsertSaleHistoryRecord({
+    required sqlite.Database db,
+    required Map<String, dynamic> salePayload,
+    required String now,
+    Map<String, dynamic>? refundPayload,
+    String? previousIdToReplace,
+  }) {
+    final enriched = Map<String, dynamic>.from(salePayload);
+    if (refundPayload != null) {
+      enriched['refund'] = refundPayload;
+    }
+    final sale = SaleModel.fromApiJson(enriched);
+    final saleId = sale.localId.trim();
+    if (saleId.isEmpty) return;
+
+    if ((previousIdToReplace ?? '').trim().isNotEmpty &&
+        previousIdToReplace!.trim() != saleId) {
+      db.execute('DELETE FROM sales_history WHERE id = ?', [previousIdToReplace.trim()]);
+    }
+
+    final clientSaleId = _string(salePayload['client_sale_id']);
+    if (clientSaleId.isNotEmpty && clientSaleId != saleId) {
+      db.execute('DELETE FROM sales_history WHERE id = ?', [clientSaleId]);
+    }
+
+    db.execute(
+      '''
+      INSERT INTO sales_history (id, date, raw_json, updated_at_local)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        date = excluded.date,
+        raw_json = excluded.raw_json,
+        updated_at_local = excluded.updated_at_local
+      ''',
+      [saleId, sale.date.toIso8601String(), jsonEncode(sale.toJson()), now],
+    );
+  }
+
+  Map<String, dynamic>? _loadRefundPayloadForSale(
+    sqlite.Database db, {
+    required String saleId,
+    required String clientSaleId,
+    required bool filterByCurrentPos,
+  }) {
+    final rows = db.select(
+      '''
+      SELECT *
+      FROM refunds
+      WHERE sale_id = ? OR (? <> '' AND client_sale_id = ?)
+      ORDER BY date DESC
+      LIMIT 1
+      ''',
+      [saleId, clientSaleId, clientSaleId],
+    );
+    if (rows.isEmpty) return null;
+
+    final refundRow = _rowMap(rows.first);
+    if (filterByCurrentPos) {
+      final currentPosId = _currentPosId(db);
+      final refundPosId = _string(refundRow['pos_id']);
+      if (refundPosId.isNotEmpty &&
+          currentPosId.isNotEmpty &&
+          refundPosId != currentPosId) {
+        return null;
+      }
+    }
+
+    final refundId = _string(refundRow['id']);
+    final itemRows = db.select(
+      'SELECT * FROM refund_items WHERE refund_id = ? ORDER BY id',
+      [refundId],
+    );
+    final items = itemRows.map((row) {
+      final map = _rowMap(row);
+      return {
+        'id': _string(map['id']),
+        'refund_id': refundId,
+        'sale_item_id': '',
+        'product_id': _string(map['product_id']),
+        'quantity': _asInt(map['quantity']),
+        'price': _asInt(map['price']),
+        'max_quantity': 0,
+      };
+    }).toList(growable: false);
+
+    return {
+      'id': refundId,
+      'number': null,
+      'date': _string(refundRow['date']),
+      'total_amount': _asInt(refundRow['total_amount']),
+      'reason': refundRow['reason'],
+      'note': refundRow['note'],
+      'sale_id': _nullableString(refundRow['sale_id']),
+      'pos_id': _nullableString(refundRow['pos_id']),
+      'store_id': _nullableString(refundRow['store_id']),
+      'account_id': _nullableString(refundRow['account_id']),
+      'items': items,
+    };
+  }
+
+  void _applyRefundToSalesHistory(
+    sqlite.Database db,
+    Map<String, dynamic> refundPayload,
+    String now,
+  ) {
+    final currentPosId = _currentPosId(db);
+    final refundPosId = _string(refundPayload['pos_id']);
+    if (refundPosId.isNotEmpty &&
+        currentPosId.isNotEmpty &&
+        refundPosId != currentPosId) {
+      return;
+    }
+
+    final saleId = _string(refundPayload['sale_id']);
+    final clientSaleId = _string(refundPayload['client_sale_id']);
+    final saleRow = _firstRow(
+      db.select(
+        '''
+        SELECT id, raw_json
+        FROM sales_history
+        WHERE id = ? OR (? <> '' AND id = ?)
+        LIMIT 1
+        ''',
+        [saleId, clientSaleId, clientSaleId],
+      ),
+    );
+    if (saleRow == null) return;
+
+    final rawSale = decodeJsonMap((saleRow['raw_json'] ?? '{}').toString());
+    rawSale['refund'] = RefundModel.fromJson(refundPayload).toJson();
+
+    final updated = SaleModel.fromJson(rawSale);
+    final historyId = _string(saleRow['id'], fallback: saleId);
+    db.execute(
+      '''
+      INSERT INTO sales_history (id, date, raw_json, updated_at_local)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        date = excluded.date,
+        raw_json = excluded.raw_json,
+        updated_at_local = excluded.updated_at_local
+      ''',
+      [historyId, updated.date.toIso8601String(), jsonEncode(updated.toJson()), now],
+    );
+  }
+
+  void _clearRefundFromSaleHistory(
+    sqlite.Database db, {
+    required String saleId,
+    required String clientSaleId,
+    required String now,
+  }) {
+    final saleRow = _firstRow(
+      db.select(
+        '''
+        SELECT id, raw_json
+        FROM sales_history
+        WHERE id = ? OR (? <> '' AND id = ?)
+        LIMIT 1
+        ''',
+        [saleId, clientSaleId, clientSaleId],
+      ),
+    );
+    if (saleRow == null) return;
+
+    final rawSale = decodeJsonMap((saleRow['raw_json'] ?? '{}').toString());
+    rawSale['refund'] = null;
+
+    final updated = SaleModel.fromJson(rawSale);
+    final historyId = _string(saleRow['id'], fallback: saleId);
+    db.execute(
+      '''
+      INSERT INTO sales_history (id, date, raw_json, updated_at_local)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        date = excluded.date,
+        raw_json = excluded.raw_json,
+        updated_at_local = excluded.updated_at_local
+      ''',
+      [historyId, updated.date.toIso8601String(), jsonEncode(updated.toJson()), now],
+    );
+  }
+
+  String _currentPosId(sqlite.Database db) {
+    final row = _firstRow(db.select('SELECT id FROM pos_info LIMIT 1'));
+    return _string(row?['id']);
   }
 
   void _upsertRow(
@@ -767,12 +1420,19 @@ class PosSyncLocalStore {
   Map<String, dynamic>? _mapProductRow(Map<String, dynamic> raw, String now) {
     final id = _string(raw['id']);
     if (id.isEmpty) return null;
+    final category = raw['category'];
+    final categoryName = category is Map ? _nullableString(category['name']) : _nullableString(raw['category_name']);
     return {
       'id': id,
       'name': _string(raw['name'], fallback: id),
       'barcode': _nullableString(raw['barcode']),
-      'sku': _nullableString(raw['sku'] ?? raw['local_barcode']),
+      'local_barcode': _nullableString(raw['local_barcode']),
+      'sku': _nullableString(raw['sku']),
+      'category_id': _nullableString(raw['category_id']),
+      'category_name': categoryName,
       'price': _asDouble(raw['selling_price'] ?? raw['price']),
+      'arrival_cost': _asDouble(raw['arrival_cost']),
+      'wholesale_price': _asDouble(raw['wholesale_price']),
       'quantity': _asDouble(raw['quantity']),
       'measurement_unit': _nullableString(raw['measurement_unit']),
       'cover_url': _nullableString(raw['cover_url']),
@@ -790,6 +1450,9 @@ class PosSyncLocalStore {
       'name': _string(raw['name'], fallback: id),
       'type': _nullableString(raw['type']),
       'value': raw['value'] == null ? null : _asDouble(raw['value']),
+      'allow_negative': _asBoolInt(raw['allow_negative']),
+      'visible_to_pos': raw['visible_to_pos'] == null ? 1 : _asBoolInt(raw['visible_to_pos']),
+      'organization_id': _nullableString(raw['organization_id']),
       'raw_json': jsonEncode(raw),
       'updated_at_local': now,
     };
@@ -801,6 +1464,8 @@ class PosSyncLocalStore {
     return {
       'id': id,
       'name': _string(raw['name'], fallback: id),
+      'is_active': raw['is_active'] == null ? 1 : _asBoolInt(raw['is_active']),
+      'organization_id': _nullableString(raw['organization_id']),
       'raw_json': jsonEncode(raw),
       'updated_at_local': now,
     };
@@ -813,9 +1478,448 @@ class PosSyncLocalStore {
       'id': id,
       'name': _string(raw['name'], fallback: id),
       'phone': _nullableString(raw['phone']),
+      'note': _nullableString(raw['note']),
+      'store_id': _nullableString(raw['store_id']),
+      'organization_id': _nullableString(raw['organization_id']),
       'raw_json': jsonEncode(raw),
       'updated_at_local': now,
     };
+  }
+
+  Map<String, dynamic>? _mapReturnAccessKeyRow(Map<String, dynamic> raw, String now) {
+    final id = _string(raw['id']);
+    final key = _string(raw['key']);
+    if (id.isEmpty || key.isEmpty) return null;
+    return {
+      'id': id,
+      'key': key,
+      'user_id': _nullableString(raw['user_id']),
+      'store_id': _nullableString(raw['store_id']),
+      'expires_at': _nullableString(raw['expires_at']),
+      'is_active': _asBoolInt(raw['is_active'] ?? true),
+      'raw_json': jsonEncode(raw),
+      'updated_at_local': now,
+    };
+  }
+
+  /// Check if a return access key is valid locally.
+  /// [checkExpiry] = false for offline refund scenarios.
+  Future<bool> checkReturnAccessKey(String key, {bool checkExpiry = true}) async {
+    final db = await _database;
+    final rows = db.select(
+      'SELECT * FROM return_access_keys WHERE key = ? AND is_active = 1 LIMIT 1',
+      [key.trim()],
+    );
+    if (rows.isEmpty) return false;
+    if (!checkExpiry) return true;
+    final row = _rowMap(rows.first);
+    final expiresAt = row['expires_at']?.toString().trim() ?? '';
+    if (expiresAt.isEmpty) return true;
+    final expiryDt = _parseDt(expiresAt);
+    if (expiryDt == null) return true;
+    return expiryDt.isAfter(DateTime.now());
+  }
+
+  /// Insert a new session into the local sessions table.
+  Future<void> upsertSession({
+    required String clientSessionId,
+    required String userId,
+    required String deviceId,
+    String? serverSessionId,
+    double? openingCashAmount,
+    required DateTime openedAt,
+  }) async {
+    final db = await _database;
+    final resolvedOpeningCashAmount =
+        openingCashAmount ?? await _resolveOpeningCashAmount(db, deviceId);
+    db.execute(
+      '''
+      INSERT INTO sessions (
+        client_session_id, server_session_id, user_id, device_id, opening_cash_amount, opened_at, is_opened, synced
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, 0)
+      ON CONFLICT(client_session_id) DO NOTHING
+      ''',
+      [
+        clientSessionId,
+        _nullableString(serverSessionId),
+        userId,
+        deviceId,
+        resolvedOpeningCashAmount,
+        openedAt.toIso8601String(),
+      ],
+    );
+  }
+
+  Future<void> setSessionServerId({
+    required String clientSessionId,
+    required String serverSessionId,
+  }) async {
+    final db = await _database;
+    final value = serverSessionId.trim();
+    if (value.isEmpty) return;
+    db.execute(
+      'UPDATE sessions SET server_session_id = ?, synced = 1 WHERE client_session_id = ?',
+      [value, clientSessionId],
+    );
+  }
+
+  Future<String?> resolveServerSessionId(String sessionId) async {
+    final db = await _database;
+    final raw = sessionId.trim();
+    if (raw.isEmpty) return null;
+    final row = _firstRow(
+      db.select(
+        '''
+        SELECT server_session_id
+        FROM sessions
+        WHERE client_session_id = ? OR server_session_id = ?
+        LIMIT 1
+        ''',
+        [raw, raw],
+      ),
+    );
+    if (row == null) return null;
+    final serverId = _nullableString(row['server_session_id']);
+    return serverId == null || serverId.trim().isEmpty ? null : serverId.trim();
+  }
+
+  Future<double> _resolveOpeningCashAmount(sqlite.Database db, String deviceId) async {
+    final rows = db.select(
+      '''
+      SELECT closing_cash_amount
+      FROM sessions
+      WHERE device_id = ? AND is_opened = 0 AND closed_at IS NOT NULL
+      ORDER BY datetime(closed_at) DESC
+      LIMIT 1
+      ''',
+      [deviceId],
+    );
+    if (rows.isEmpty) return 0;
+    return _asDouble(_rowMap(rows.first)['closing_cash_amount']);
+  }
+
+  /// Mark a session as closed in the local sessions table.
+  Future<void> closeSessionLocal({
+    required String clientSessionId,
+    required double closingCashAmount,
+    required DateTime closedAt,
+  }) async {
+    final db = await _database;
+    db.execute(
+      '''
+      UPDATE sessions
+      SET closing_cash_amount = ?, closed_at = ?, is_opened = 0
+      WHERE client_session_id = ?
+      ''',
+      [closingCashAmount, closedAt.toIso8601String(), clientSessionId],
+    );
+  }
+
+  /// Insert sale + items into dedicated local tables (separate from outbox).
+  Future<void> insertSaleLocal({
+    required String clientSaleId,
+    required int localNumber,
+    required Map<String, dynamic> payload,
+  }) async {
+    final db = await _database;
+    _inTransaction<void>(db, () {
+      db.execute(
+        '''
+        INSERT OR IGNORE INTO sales (
+          id, client_sale_id, local_number, number, date, total_amount,
+          pos_session_id, payment_method, pos_id, store_id, account_id, customer_id,
+          created_by_id, completed, synced
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
+        ''',
+        [
+          clientSaleId,
+          clientSaleId,
+          localNumber,
+          _nullableString(payload['local_number']),
+          _string(payload['date']),
+          _asDouble(payload['total_amount']),
+          _nullableString(payload['pos_session_id']),
+          _string(payload['payment_method'], fallback: 'cash'),
+          _nullableString(payload['pos_id']),
+          _nullableString(payload['store_id']),
+          _nullableString(payload['account_id']),
+          _nullableString(payload['customer_id']),
+          _nullableString(payload['user_id']),
+        ],
+      );
+      final items = payload['items'];
+      if (items is List) {
+        var idx = 0;
+        for (final item in items.whereType<Map>()) {
+          final itemMap = Map<String, dynamic>.from(item);
+          db.execute(
+            '''
+            INSERT OR IGNORE INTO sale_items (id, sale_id, product_id, product_name, quantity, price, total_price)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''',
+            [
+              '${clientSaleId}_$idx',
+              clientSaleId,
+              _string(itemMap['product_id']),
+              _nullableString(itemMap['product_name'] ?? itemMap['name']),
+              _asDouble(itemMap['quantity']),
+              _asDouble(itemMap['price']),
+              _asDouble(itemMap['total_price']),
+            ],
+          );
+          idx++;
+        }
+      }
+    });
+  }
+
+  /// Insert a payment into the local payments table.
+  Future<void> insertPaymentLocal(Map<String, dynamic> payload) async {
+    final db = await _database;
+    final clientPaymentId = _string(payload['client_payment_id']);
+    if (clientPaymentId.isEmpty) return;
+    db.execute(
+      '''
+      INSERT OR IGNORE INTO payments (
+        id, client_payment_id, pos_session_id, is_expense, amount, date,
+        account_id, expense_type_id, created_by_id, synced
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      ''',
+      [
+        clientPaymentId,
+        clientPaymentId,
+        _nullableString(payload['pos_session_id']),
+        _asBoolInt(payload['is_expense']),
+        _asDouble(payload['amount']),
+        _string(payload['date']),
+        _nullableString(payload['account_id']),
+        _nullableString(payload['expense_type_id']),
+        _nullableString(payload['created_by_id']),
+      ],
+    );
+  }
+
+  /// Insert refund + items into dedicated local tables.
+  Future<void> insertRefundLocal(Map<String, dynamic> payload) async {
+    final db = await _database;
+    final clientRefundId = _string(payload['client_refund_id']);
+    if (clientRefundId.isEmpty) return;
+    _inTransaction<void>(db, () {
+      db.execute(
+      '''
+      INSERT OR IGNORE INTO refunds (
+          id, client_refund_id, pos_session_id, client_sale_id, sale_id, date, total_amount,
+          pos_id, store_id, account_id, reason, note, return_key_used, synced
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        ''',
+        [
+          clientRefundId,
+          clientRefundId,
+          _nullableString(payload['pos_session_id']),
+          _nullableString(payload['client_sale_id']),
+          _nullableString(payload['sale_id']),
+          _string(payload['date']),
+          _asDouble(payload['total_amount']),
+          _nullableString(payload['pos_id']),
+          _nullableString(payload['store_id']),
+          _nullableString(payload['account_id']),
+          _nullableString(payload['reason']),
+          _nullableString(payload['note']),
+          _nullableString(payload['return_access_key']),
+        ],
+      );
+      final items = payload['items'];
+      if (items is List) {
+        var idx = 0;
+        for (final item in items.whereType<Map>()) {
+          final itemMap = Map<String, dynamic>.from(item);
+          db.execute(
+            '''
+            INSERT OR IGNORE INTO refund_items (id, refund_id, product_id, quantity, price)
+            VALUES (?, ?, ?, ?, ?)
+            ''',
+            [
+              '${clientRefundId}_$idx',
+              clientRefundId,
+              _string(itemMap['product_id']),
+              _asDouble(itemMap['quantity']),
+              _asDouble(itemMap['price']),
+            ],
+          );
+          idx++;
+        }
+      }
+    });
+  }
+
+  Future<void> markSaleSynced(String clientSaleId) async {
+    final db = await _database;
+    db.execute('UPDATE sales SET synced = 1 WHERE client_sale_id = ?', [clientSaleId]);
+  }
+
+  Future<void> markSessionSynced(String clientSessionId) async {
+    final db = await _database;
+    db.execute('UPDATE sessions SET synced = 1 WHERE client_session_id = ?', [clientSessionId]);
+  }
+
+  Future<void> markPaymentSynced(String clientPaymentId) async {
+    final db = await _database;
+    db.execute('UPDATE payments SET synced = 1 WHERE client_payment_id = ?', [clientPaymentId]);
+  }
+
+  Future<void> markRefundSynced(String clientRefundId) async {
+    final db = await _database;
+    db.execute('UPDATE refunds SET synced = 1 WHERE client_refund_id = ?', [clientRefundId]);
+  }
+
+  Future<ShiftReportData?> loadShiftReport(String clientSessionId) async {
+    final db = await _database;
+    final sessionRow = _firstRow(
+      db.select(
+        'SELECT * FROM sessions WHERE client_session_id = ? LIMIT 1',
+        [clientSessionId],
+      ),
+    );
+    if (sessionRow == null) return null;
+
+    final salesRows = db.select(
+      'SELECT payment_method, total_amount FROM sales WHERE pos_session_id = ?',
+      [clientSessionId],
+    );
+
+    num cashTotal = 0;
+    num cardTotal = 0;
+    num transferTotal = 0;
+
+    for (final row in salesRows) {
+      final map = _rowMap(row);
+      final amount = _asDouble(map['total_amount']);
+      switch (_string(map['payment_method']).toLowerCase()) {
+        case 'cash':
+          cashTotal += amount;
+          break;
+        case 'card':
+          cardTotal += amount;
+          break;
+        case 'transfer':
+          transferTotal += amount;
+          break;
+      }
+    }
+
+    final itemRows = db.select(
+      '''
+      SELECT
+        COALESCE(product_name, product_id) AS product_name,
+        SUM(quantity) AS total_qty,
+        SUM(total_price) AS total_sum
+      FROM sale_items
+      WHERE sale_id IN (
+        SELECT id FROM sales WHERE pos_session_id = ?
+      )
+      GROUP BY product_id, COALESCE(product_name, product_id)
+      ORDER BY product_name COLLATE NOCASE
+      ''',
+      [clientSessionId],
+    );
+
+    final items = itemRows.map((row) {
+      final map = _rowMap(row);
+      return ShiftReportItem(
+        name: _string(map['product_name'], fallback: 'Товар'),
+        quantity: _asDouble(map['total_qty']),
+        totalSum: _asDouble(map['total_sum']),
+      );
+    }).toList(growable: false);
+
+    return ShiftReportData(
+      sessionId: clientSessionId,
+      openedAt: _parseDt(sessionRow['opened_at']),
+      closedAt: _parseDt(sessionRow['closed_at']),
+      openingCashAmount: _asDouble(sessionRow['opening_cash_amount']),
+      closingCashAmount: _asDouble(sessionRow['closing_cash_amount']),
+      salesCount: salesRows.length,
+      cashTotal: cashTotal,
+      cardTotal: cardTotal,
+      transferTotal: transferTotal,
+      grandTotal: cashTotal + cardTotal + transferTotal,
+      items: items,
+    );
+  }
+
+  Future<ShiftClosureSummaryData?> loadShiftClosureSummary(String clientSessionId) async {
+    final db = await _database;
+    final sessionRow = _firstRow(
+      db.select(
+        'SELECT * FROM sessions WHERE client_session_id = ? LIMIT 1',
+        [clientSessionId],
+      ),
+    );
+    if (sessionRow == null) return null;
+
+    num cashSalesTotal = 0;
+    num cardSalesTotal = 0;
+    num transferSalesTotal = 0;
+
+    final salesRows = db.select(
+      'SELECT payment_method, total_amount FROM sales WHERE pos_session_id = ?',
+      [clientSessionId],
+    );
+    for (final row in salesRows) {
+      final map = _rowMap(row);
+      final amount = _asDouble(map['total_amount']);
+      switch (_string(map['payment_method']).toLowerCase()) {
+        case 'cash':
+          cashSalesTotal += amount;
+          break;
+        case 'card':
+          cardSalesTotal += amount;
+          break;
+        case 'transfer':
+          transferSalesTotal += amount;
+          break;
+      }
+    }
+
+    final refundsRow = _firstRow(
+      db.select(
+        'SELECT COALESCE(SUM(total_amount), 0) AS total FROM refunds WHERE pos_session_id = ?',
+        [clientSessionId],
+      ),
+    );
+    final paymentsRow = _firstRow(
+      db.select(
+        '''
+        SELECT
+          COALESCE(SUM(CASE WHEN is_expense = 0 THEN amount ELSE 0 END), 0) AS income_total,
+          COALESCE(SUM(CASE WHEN is_expense = 1 THEN amount ELSE 0 END), 0) AS expense_total
+        FROM payments
+        WHERE pos_session_id = ?
+        ''',
+        [clientSessionId],
+      ),
+    );
+
+    final openingCashAmount = _asDouble(sessionRow['opening_cash_amount']);
+    final refundsTotal = refundsRow == null ? 0 : _asDouble(refundsRow['total']);
+    final incomeTotal = paymentsRow == null ? 0 : _asDouble(paymentsRow['income_total']);
+    final expenseTotal = paymentsRow == null ? 0 : _asDouble(paymentsRow['expense_total']);
+    final totalSalesAmount = cashSalesTotal + cardSalesTotal + transferSalesTotal;
+    final expectedCashAmount =
+        openingCashAmount + cashSalesTotal - refundsTotal + incomeTotal - expenseTotal;
+
+    return ShiftClosureSummaryData(
+      sessionId: clientSessionId,
+      openingCashAmount: openingCashAmount,
+      cashSalesTotal: cashSalesTotal,
+      cardSalesTotal: cardSalesTotal,
+      transferSalesTotal: transferSalesTotal,
+      refundsTotal: refundsTotal,
+      incomeTotal: incomeTotal,
+      expenseTotal: expenseTotal,
+      expectedCashAmount: expectedCashAmount,
+      totalSalesAmount: totalSalesAmount,
+    );
   }
 
   QueueListItem _queueItemFromRow(Map<String, dynamic> row) {
@@ -1034,6 +2138,17 @@ class PosSyncLocalStore {
       case 'customer':
       case 'customers':
         return _EntityKind.customer;
+      case 'return_access_key':
+      case 'return_access_keys':
+      case 'return-access-key':
+      case 'return-access-keys':
+        return _EntityKind.returnAccessKey;
+      case 'sale':
+      case 'sales':
+        return _EntityKind.sale;
+      case 'refund':
+      case 'refunds':
+        return _EntityKind.refund;
     }
     return null;
   }
@@ -1044,7 +2159,10 @@ enum _EntityKind {
   product('products'),
   account('accounts'),
   expenseType('expense_types'),
-  customer('customers');
+  customer('customers'),
+  returnAccessKey('return_access_keys'),
+  sale('sales'),
+  refund('refunds');
 
   const _EntityKind(this.table);
   final String table;

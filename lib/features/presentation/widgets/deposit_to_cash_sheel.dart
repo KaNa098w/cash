@@ -298,16 +298,21 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
       final provider = context.read<AuthTokenProvider>();
       final deviceId = provider.deviceId?.trim() ?? '';
       final accountId = provider.accountId?.trim() ?? '';
+      final posSessionId = provider.shiftId?.trim() ?? '';
       if (deviceId.isEmpty) {
         throw Exception('deviceId не найден');
       }
       if (accountId.isEmpty) {
         throw Exception('accountId не найден');
       }
+      if (posSessionId.isEmpty) {
+        throw Exception('Смена не открыта');
+      }
 
       final result = await sl<PosSyncService>().createPayment(
         key: key,
         deviceId: deviceId,
+        posSessionId: posSessionId,
         accountId: accountId,
         isExpense: _isExpense, // ✅ type=false -> расход
         expenseTypeId: _isExpense ? _expenseTypeId : null,

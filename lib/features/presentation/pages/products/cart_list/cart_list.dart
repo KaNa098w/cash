@@ -3,6 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/widgets/footer_status.dart'
+    show TouchDeleteDialog;
 import 'package:leemon_app/features/presentation/widgets/keypad_widget.dart';
 import 'package:leemon_app/features/presentation/widgets/payment_panel.dart';
 
@@ -78,7 +80,7 @@ class CartList extends StatelessWidget {
                                 // Наименование + метки
                                 Expanded(
                                   child: Text(
-                                    it.product.name,
+                                    '${it.product.name} (${formatQty(it.product.quantity)})',
                                     style: const TextStyle(
                                       fontSize: kCartFs,
                                       fontWeight: FontWeight.w500,
@@ -417,6 +419,20 @@ Future<void> _showQtyDialog(
                               onPressed: () {
                                 final value = _parseValue();
                                 if (value != null && value >= 0) {
+                                  if (value <= 0) {
+                                    showDialog<bool>(
+                                      context: dialogCtx,
+                                      builder: (_) => TouchDeleteDialog(
+                                        productName:
+                                            cubit.state.items[index].product.name,
+                                      ),
+                                    ).then((confirmed) {
+                                      if (confirmed != true) return;
+                                      cubit.setQty(index, value);
+                                      Navigator.of(dialogCtx).pop();
+                                    });
+                                    return;
+                                  }
                                   cubit.setQty(index, value);
                                   Navigator.of(dialogCtx).pop();
                                 }

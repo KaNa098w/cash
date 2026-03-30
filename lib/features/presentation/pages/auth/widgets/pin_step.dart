@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:leemon_app/core/models/pos_provision_response.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 
@@ -26,10 +27,21 @@ class PinStep extends StatefulWidget {
 
 class _PinStepState extends State<PinStep> {
   final _pinController = TextEditingController();
+  final _pinFocusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _pinFocusNode.requestFocus();
+    });
+  }
 
   @override
   void dispose() {
     _pinController.dispose();
+    _pinFocusNode.dispose();
     super.dispose();
   }
 
@@ -69,9 +81,14 @@ class _PinStepState extends State<PinStep> {
 
         TextField(
           controller: _pinController,
-          readOnly: true,
-          showCursor: false,
-          enableInteractiveSelection: false,
+          focusNode: _pinFocusNode,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.done,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(4),
+          ],
           obscureText: true,
           decoration: InputDecoration(
             labelText: 'PIN',
@@ -80,6 +97,9 @@ class _PinStepState extends State<PinStep> {
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           ),
+          onTap: () => _pinFocusNode.requestFocus(),
+          onChanged: (value) => setState(() {}),
+          onSubmitted: (_) => _submit(),
         ),
 
         const SizedBox(height: 14),
@@ -100,9 +120,14 @@ class _PinStepState extends State<PinStep> {
 
         AmountKeypad(
           text: _pinController.text,
-          onChanged: _setPin,
+          onChanged: (value) {
+            _setPin(value);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _pinFocusNode.requestFocus();
+            });
+          },
           allowDecimal: false,
-          maxLength: 4, // если PIN другой длины — поменяй
+          maxLength: 4,
           showQuickRows: false,
         ),
 

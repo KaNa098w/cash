@@ -9,6 +9,10 @@ class PosSyncRemoteDataSource {
 
   final Dio _dio;
 
+  // Sync requests can transfer large batches — use a longer timeout.
+  static const _syncReceiveTimeout = Duration(seconds: 90);
+  Options get _syncOptions => Options(receiveTimeout: _syncReceiveTimeout);
+
   Future<int> fetchServerCursor({
     required String key,
   }) async {
@@ -52,6 +56,27 @@ class PosSyncRemoteDataSource {
     return _fetchPaginatedList('/organizations/pos/$key/customers');
   }
 
+  /// Request the server to generate a full snapshot.
+  Future<SnapshotStatus> requestSnapshot({required String key}) async {
+    final response = await _dio.post('/organizations/pos/$key/sync/snapshot');
+    return _parseSnapshotStatus(response.data);
+  }
+
+  /// Poll snapshot status until ready or failed.
+  Future<SnapshotStatus> pollSnapshotStatus({required String key}) async {
+    final response = await _dio.get('/organizations/pos/$key/sync/snapshot');
+    return _parseSnapshotStatus(response.data);
+  }
+
+  /// Download the snapshot file by URL (no auth headers needed).
+  Future<Map<String, dynamic>> downloadSnapshotFile(String url) async {
+    final client = Dio()
+      ..options.connectTimeout = const Duration(seconds: 30)
+      ..options.receiveTimeout = const Duration(minutes: 5);
+    final response = await client.get<dynamic>(url);
+    return _asMap(response.data);
+  }
+
   Future<SyncPullBatch> pullChanges({
     required String key,
     required int cursor,
@@ -63,6 +88,7 @@ class PosSyncRemoteDataSource {
         'cursor': cursor,
         'limit': limit,
       },
+      options: _syncOptions,
     );
 
     final body = _asMap(response.data);
@@ -95,38 +121,48 @@ class PosSyncRemoteDataSource {
     );
   }
 
-  Future<void> sendOperation({
+  Future<Map<String, dynamic>?> sendOperation({
     required OutboxOperationType type,
     required String key,
     required Map<String, dynamic> payload,
   }) async {
     switch (type) {
       case OutboxOperationType.sale:
-        await _dio.post('/organizations/pos/$key/sales', data: payload);
-        return;
-      case OutboxOperationType.payment:
-        await _dio.post('/organizations/pos/$key/payments', data: payload);
-        return;
-      case OutboxOperationType.refund:
-        final query = <String, dynamic>{};
-        final returnAccessKey = (payload['return_access_key'] ?? '').toString().trim();
-        if (returnAccessKey.isNotEmpty) {
-          query['return_access_key'] = returnAccessKey;
-        }
-        final body = Map<String, dynamic>.from(payload)..remove('return_access_key');
-        await _dio.post(
-          '/organizations/pos/$key/refunds',
-          queryParameters: query.isEmpty ? null : query,
-          data: body,
+        return _extractResponseData(
+          await _dio.post('/organizations/pos/$key/sales', data: payload),
         );
-        return;
+      case OutboxOperationType.payment:
+        return _extractResponseData(
+          await _dio.post('/organizations/pos/$key/payments', data: payload),
+        );
+      case OutboxOperationType.refund:
+        final returnAccessKey = (payload['return_access_key'] ?? '').toString().trim();
+        final headers = returnAccessKey.isNotEmpty
+            ? <String, dynamic>{'X-Return-Access-Key': returnAccessKey}
+            : null;
+        final body = Map<String, dynamic>.from(payload)..remove('return_access_key');
+        return _extractResponseData(
+          await _dio.post(
+            '/organizations/pos/$key/refunds',
+            options: Options(headers: headers),
+            data: body,
+          ),
+        );
       case OutboxOperationType.sessionOpen:
-        await _dio.post('/organizations/pos/$key/open-session', data: payload);
-        return;
+        return _extractResponseData(
+          await _dio.post('/organizations/pos/$key/open-session', data: payload),
+        );
       case OutboxOperationType.sessionClose:
-        await _dio.put('/organizations/pos/$key/close-session', data: payload);
-        return;
+        return _extractResponseData(
+          await _dio.put('/organizations/pos/$key/close-session', data: payload),
+        );
     }
+  }
+
+  Map<String, dynamic>? _extractResponseData(Response<dynamic> response) {
+    final body = _asMapOrNull(response.data);
+    if (body == null) return null;
+    return _nestedMap(body['data']) ?? body;
   }
 
   bool isRetryable(Object error) {
@@ -188,6 +224,7 @@ class PosSyncRemoteDataSource {
           'perPage': perPage,
           'size': perPage,
         },
+        options: _syncOptions,
       );
 
       final body = _asMap(response.data);
@@ -214,6 +251,18 @@ class PosSyncRemoteDataSource {
     }
 
     return all;
+  }
+
+  SnapshotStatus _parseSnapshotStatus(dynamic body) {
+    final map = _asMap(body);
+    final data = _nestedMap(map['data']) ?? map;
+    final status = (data['status'] ?? 'pending').toString().trim().toLowerCase();
+    final urlRaw = data['url']?.toString().trim() ?? '';
+    return SnapshotStatus(
+      status: status,
+      cursor: _readInt(data['cursor']),
+      url: urlRaw.isEmpty ? null : urlRaw,
+    );
   }
 
   SyncPullChange? _parseChange(Object? raw) {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -88,52 +90,70 @@ class _LoginPageState extends State<LoginPage> {
 
     setState(() {
       _syncingProducts = true;
-      _syncProgress = 0.08;
-      _syncStage = 'Подготавливаем синхронизацию...';
+      _syncProgress = 0.05;
+      _syncStage = 'Подготовка...';
     });
 
     try {
       final sync = sl<PosSyncService>();
-      await sync.bootstrap(
-        key: key,
-        deviceId: deviceId,
-        onProgress: (SyncProgress progress) {
-          if (!mounted) return;
-          setState(() {
-            _syncProgress = progress.progress;
-            _syncStage = progress.detail == null
-                ? progress.stage
-                : '${progress.stage}: ${progress.detail}';
-          });
-        },
-      );
+      final alreadyBootstrapped = !forceRefresh && await sync.isBootstrapped(key);
 
-      await context.read<ProductsCubit>().loadFirstPage(
-            key: key,
-            forceRefresh: false,
-          );
-      sync.startBackgroundLoops(key: key, deviceId: deviceId);
+      if (alreadyBootstrapped) {
+        // Fast path: load from local SQLite instantly, sync in background
+        setState(() {
+          _syncProgress = 0.5;
+          _syncStage = 'Загружаем локальные данные...';
+        });
 
-      if (!mounted) return;
-      setState(() {
-        _syncProgress = 1.0;
-        _syncStage = 'Синхронизация завершена';
-      });
+        if (!mounted) return;
+        await context.read<ProductsCubit>().loadFirstPage(key: key, forceRefresh: false);
+        sync.startBackgroundLoops(key: key, deviceId: deviceId);
+        unawaited(sync.pullOnce(key: key, deviceId: deviceId));
 
-      await Future.delayed(const Duration(milliseconds: 220));
-      if (!mounted) return;
-      context.go('/pos');
+        if (!mounted) return;
+        setState(() {
+          _syncProgress = 1.0;
+          _syncStage = 'Готово';
+        });
+        await Future.delayed(const Duration(milliseconds: 150));
+        if (!mounted) return;
+        context.go('/pos');
+      } else {
+        // Full bootstrap — first run or forced
+        await sync.bootstrap(
+          key: key,
+          deviceId: deviceId,
+          onProgress: (SyncProgress progress) {
+            if (!mounted) return;
+            setState(() {
+              _syncProgress = progress.progress;
+              _syncStage = progress.detail == null
+                  ? progress.stage
+                  : '${progress.stage} (${progress.detail})';
+            });
+          },
+        );
+
+        if (!mounted) return;
+        await context.read<ProductsCubit>().loadFirstPage(key: key, forceRefresh: false);
+        sync.startBackgroundLoops(key: key, deviceId: deviceId);
+
+        if (!mounted) return;
+        setState(() {
+          _syncProgress = 1.0;
+          _syncStage = 'Синхронизация завершена';
+        });
+        await Future.delayed(const Duration(milliseconds: 220));
+        if (!mounted) return;
+        context.go('/pos');
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка загрузки данных: $e')),
       );
     } finally {
-      if (mounted) {
-        setState(() {
-          _syncingProducts = false;
-        });
-      }
+      if (mounted) setState(() => _syncingProducts = false);
     }
   }
 
@@ -285,21 +305,6 @@ class _LoginPageState extends State<LoginPage> {
                                     hint: provider.deviceId == null
                                         ? null
                                         : 'Device ID: ${provider.deviceId}',
-                                  );
-                                }
-
-                                if (authState is AuthOpeningCashStep) {
-                                  return OpeningCashStep(
-                                    theme: theme,
-                                    user: authState.user,
-                                    onBack: () => context.read<AuthCubit>().selectUser(
-                                          authState.provision,
-                                          authState.user,
-                                        ),
-                                    onSubmit: () => context.read<AuthCubit>().openSessionWithCash(
-                                          provision: authState.provision,
-                                          user: authState.user,
-                                        ),
                                   );
                                 }
 

@@ -12,13 +12,11 @@ List<SaleModel> filterSales(List<SaleModel> sales, String query) {
 }
 
 String saleNumber(SaleModel s) {
+  final isLocalOnly = s.items.any((item) => item.id.trim().isEmpty);
   final n = s.number.trim();
-  if (n.isNotEmpty) return n;
+  if (n.isNotEmpty && !isLocalOnly) return n;
 
-  if (s.localId.isEmpty) return '—';
-  return s.localId.length > 8
-      ? s.localId.substring(s.localId.length - 8)
-      : s.localId;
+  return 'Без номера';
 }
 
 String cashierLabel(SaleModel s) {

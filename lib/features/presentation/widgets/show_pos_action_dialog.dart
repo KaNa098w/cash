@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:pdf/pdf.dart';
 import 'package:leemon_app/core/models/app_update_response.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
@@ -19,7 +20,6 @@ import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
-import 'package:leemon_app/features/presentation/widgets/close_shift_bottom.dart';
 import 'package:leemon_app/features/presentation/widgets/deposit_to_cash_sheel.dart';
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -98,7 +98,10 @@ Future<void> showPosActionsDialog(BuildContext context) {
     _PosAction('СДАТЬ СМЕНУ', () async {
       Navigator.of(context, rootNavigator: true)
           .pop(); // закрыть actions dialog
-      await showCloseShiftSheet(context); // открыть sheet с клавой
+      FocusManager.instance.primaryFocus?.unfocus();
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      if (!context.mounted) return;
+      context.go('/close-shift');
     }),
     _PosAction('ПРИНТЕР', () async {
       Navigator.of(context, rootNavigator: true).pop();

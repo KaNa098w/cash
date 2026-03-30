@@ -21,27 +21,29 @@ class PosPage extends StatelessWidget {
           Expanded(
             child: BlocBuilder<PosCubit, PosState>(
               builder: (context, state) {
-                if (state.isHistoryMode) {
-                  return const SafeArea(
-                    top: false,
-                    child: SalesHistoryPage(),
-                  );
-                }
-
-                return const Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        children: [
-                          Padding(
-                            padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
-                            child: sb.SearchBar(),
+                return IndexedStack(
+                  index: state.isHistoryMode ? 1 : 0,
+                  children: const [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            children: [
+                              Padding(
+                                padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                                child: sb.SearchBar(),
+                              ),
+                              SizedBox(height: 8),
+                              Expanded(child: CartList()),
+                              FooterStatus(),
+                            ],
                           ),
-                          SizedBox(height: 8),
-                          Expanded(child: CartList()),
-                          FooterStatus(),
-                        ],
-                      ),
+                        ),
+                      ],
+                    ),
+                    SafeArea(
+                      top: false,
+                      child: SalesHistoryPage(),
                     ),
                   ],
                 );

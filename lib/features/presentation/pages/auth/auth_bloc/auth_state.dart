@@ -86,13 +86,17 @@ class AuthUnlocked extends AuthState {
 
 class AuthClosingSession extends AuthState {
   final num closingCashAmount;
+  final String title;
+  final String message;
 
   const AuthClosingSession({
     required this.closingCashAmount,
+    required this.title,
+    required this.message,
   });
 
   @override
-  List<Object?> get props => [closingCashAmount];
+  List<Object?> get props => [closingCashAmount, title, message];
 }
 
 /// ✅ “Готово к входу в POS” (после успешного открытия смены)

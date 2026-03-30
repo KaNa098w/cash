@@ -1,8 +1,15 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pdf/pdf.dart';
 
+import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/pos_provision_response.dart';
+import 'package:leemon_app/core/print/print_service.dart';
+import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
+import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/domain/repositories/auth_repository.dart';
 import 'package:leemon_app/features/domain/repositories/session_repository.dart';
 
@@ -147,7 +154,10 @@ class AuthCubit extends Cubit<AuthState> {
       return;
     }
 
-    emit(AuthOpeningCashStep(provision: provision, user: user));
+    await openSessionWithCash(
+      provision: provision,
+      user: user,
+    );
   }
 
   Future<void> openSessionWithCash({
@@ -180,10 +190,10 @@ class AuthCubit extends Cubit<AuthState> {
       emit(AuthFailure(
         'Не удалось открыть смену: Dio ${e.response?.statusCode}: ${e.response?.data}',
       ));
-      emit(AuthOpeningCashStep(provision: provision, user: user));
+      emit(AuthPinStep(provision: provision, user: user));
     } catch (e) {
       emit(AuthFailure('Не удалось открыть смену: $e'));
-      emit(AuthOpeningCashStep(provision: provision, user: user));
+      emit(AuthPinStep(provision: provision, user: user));
     }
   }
 
@@ -203,13 +213,28 @@ class AuthCubit extends Cubit<AuthState> {
       }
 
       final userId = _tokenProvider.activeUserId?.trim() ?? '';
+      final cashierName = _tokenProvider.activeUserName?.trim() ?? userId;
+      final storeName = (_tokenProvider.storeName ?? '').trim().isEmpty
+          ? ((_tokenProvider.posName ?? '').trim().isEmpty
+              ? 'Магазин'
+              : _tokenProvider.posName!.trim())
+          : _tokenProvider.storeName!.trim();
+      final posName = (_tokenProvider.posName ?? '').trim().isEmpty
+          ? 'POS'
+          : _tokenProvider.posName!.trim();
       if (userId.isEmpty) {
         throw Exception('activeUserId отсутствует: не определен кассир');
       }
 
-      emit(AuthClosingSession(closingCashAmount: closingCashAmount));
+      emit(
+        AuthClosingSession(
+          closingCashAmount: closingCashAmount,
+          title: 'Закрываем смену',
+          message: 'Отправляем данные и фиксируем итог по кассе.',
+        ),
+      );
 
-      await _sessionRepository.closeSession(
+      final closeResult = await _sessionRepository.closeSession(
         key: key,
         deviceId: deviceId,
         sessionId: sessionId,
@@ -217,16 +242,89 @@ class AuthCubit extends Cubit<AuthState> {
         closingCashAmount: closingCashAmount,
       );
 
+      if (closeResult == QueueSendResult.sent) {
+        emit(
+          AuthClosingSession(
+            closingCashAmount: closingCashAmount,
+            title: 'Готовим Z-отчёт',
+            message: 'Собираем продажи смены и считаем итоговые суммы.',
+          ),
+        );
+        final report = await sl<PosSyncService>().loadShiftReport(sessionId);
+        if (report != null) {
+          emit(
+            AuthClosingSession(
+              closingCashAmount: closingCashAmount,
+              title: 'Печатаем Z-отчёт',
+              message: 'Отправляем чек закрытия смены на принтер.',
+            ),
+          );
+          final pageFormat = _tokenProvider.receiptPaperMm == 57
+              ? PdfPageFormat.roll57
+              : PdfPageFormat.roll80;
+          final printer = PrintService();
+          await printer.print80mmSilently(
+            () => buildShiftReportPdf(
+              ShiftReportPdfData(
+                pageFormat: pageFormat,
+                money: money,
+                storeName: storeName,
+                posName: posName,
+                cashierName: cashierName,
+                sessionId: report.sessionId,
+                openedAt: report.openedAt,
+                closedAt: report.closedAt,
+                openingCashAmount: report.openingCashAmount,
+                closingCashAmount: report.closingCashAmount,
+                salesCount: report.salesCount,
+                cashTotal: report.cashTotal,
+                cardTotal: report.cardTotal,
+                transferTotal: report.transferTotal,
+                grandTotal: report.grandTotal,
+                items: report.items
+                    .map(
+                      (item) => ReceiptPdfItem(
+                        name: item.name,
+                        quantity: item.quantity,
+                        unitPrice: 0,
+                        lineTotal: item.totalSum,
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+            format: pageFormat,
+          );
+        }
+      }
+
+      emit(
+        AuthClosingSession(
+          closingCashAmount: closingCashAmount,
+          title: 'Завершаем',
+          message: 'Очищаем активную смену и возвращаем на экран входа.',
+        ),
+      );
+
       await _tokenProvider.clearShiftId();
       await _tokenProvider.clearActiveUserId();
 
       emit(const AuthShiftClosed());
 
-      final cached = _tokenProvider.cachedProvision;
-      if (cached != null) {
-        emit(AuthProvisioned(cached));
-      } else {
-        emit(const AuthInitial());
+      try {
+        final refreshedProvision = await _authRepository.provisionPos(
+          key: key,
+          deviceId: deviceId,
+        );
+        await _tokenProvider.setProvisioned(refreshedProvision);
+        emit(AuthProvisioned(refreshedProvision));
+      } catch (_) {
+        final cached = _tokenProvider.cachedProvision;
+        if (cached != null) {
+          emit(AuthProvisioned(cached));
+        } else {
+          emit(const AuthInitial());
+        }
       }
     } catch (e) {
       emit(AuthFailure('Не удалось закрыть смену: $e'));

@@ -43,7 +43,8 @@ class SalesHistoryController {
     required SaleItemModel item,
   }) {
     final saleMap = salePickMap(saleId);
-    final sid = item.id.toString();
+    // For synced items use server-assigned id; for offline (id empty) fall back to productId.
+    final sid = item.id.isNotEmpty ? item.id : item.productId;
 
     final totalQty = toIntQty(item.quantity);
     final refundedQty = refundedQtyOf(item);

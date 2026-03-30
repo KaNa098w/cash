@@ -39,11 +39,13 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
   final ScrollController _scrollController = ScrollController();
   late final SalesHistoryCubit _cubit;
+  StreamSubscription<void>? _historyChangedSub;
 
   final _controller = SalesHistoryController();
 
   final TextEditingController _saleSearchCtrl = TextEditingController();
   Timer? _saleSearchDebounce;
+  Timer? _historyRefreshDebounce;
   String _saleQuery = '';
 
   int? _statusCodeOf(Object e) {
@@ -67,6 +69,9 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     final remote = GetIt.I<SaleRemoteDataSource>();
     final sync = GetIt.I<PosSyncService>();
     _cubit = SalesHistoryCubit(remote, sync);
+    _historyChangedSub = sync.onSalesHistoryChanged.listen((_) {
+      _scheduleHistoryRefresh();
+    });
 
     _saleSearchCtrl.addListener(() {
       _saleSearchDebounce?.cancel();
@@ -88,7 +93,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         return;
       }
 
-      _cubit.loadFirst(key: key);
+      _reloadHistory();
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!_scrollController.hasClients) return;
@@ -112,6 +117,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   @override
   void dispose() {
     _saleSearchDebounce?.cancel();
+    _historyRefreshDebounce?.cancel();
+    _historyChangedSub?.cancel();
     _saleSearchCtrl.dispose();
     _saleSearchFocusNode.dispose();
 
@@ -119,6 +126,23 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     _controller.dispose();
     _cubit.close();
     super.dispose();
+  }
+
+  void _scheduleHistoryRefresh() {
+    _historyRefreshDebounce?.cancel();
+    _historyRefreshDebounce = Timer(
+      const Duration(milliseconds: 250),
+      _reloadHistory,
+    );
+  }
+
+  void _reloadHistory() {
+    if (!mounted) return;
+
+    final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
+    if (key.isEmpty) return;
+
+    _cubit.loadFirst(key: key);
   }
 
   void _maybeLoadMore() {
@@ -389,9 +413,11 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
     final key = auth.posKey?.trim() ?? '';
     final deviceId = auth.deviceId?.trim() ?? '';
+    final posSessionId = auth.shiftId?.trim() ?? '';
 
     if (key.isEmpty) return _snack('Нет posKey');
     if (deviceId.isEmpty) return _snack('Нет deviceId');
+    if (posSessionId.isEmpty) return _snack('Смена не открыта');
 
     final saleId = sale.localId.trim();
     if (saleId.isEmpty) return _snack('saleId пустой (sale.localId)');
@@ -405,15 +431,18 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
     if (picks.isEmpty) return _snack('Выбери товары для возврата');
 
+    // Synced sales have server-assigned item IDs; local-only sales do not.
+    final isSynced = sale.items.any((i) => i.id.isNotEmpty);
+
     final items = picks.map((e) {
       if (e.productId.trim().isEmpty) {
         throw Exception('product_id пустой у sale_item_id=${e.saleItemId}');
       }
       return <String, dynamic>{
         'product_id': e.productId,
-        'sale_item_id': e.saleItemId,
         'quantity': e.quantity,
         'price': e.price,
+        if (isSynced && e.saleItemId.isNotEmpty) 'sale_item_id': e.saleItemId,
       };
     }).toList();
 
@@ -428,8 +457,10 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     final sync = sl<PosSyncService>();
     final refundId = (sale.refund?.id ?? '').trim();
     var effectiveRefundId = refundId;
+    // Key: server item id for synced sales, productId for offline sales.
     final pickedBySaleItemId = <String, int>{
-      for (final p in picks) p.saleItemId: p.quantity,
+      for (final p in picks)
+        (p.saleItemId.isNotEmpty ? p.saleItemId : p.productId): p.quantity,
     };
 
     _controller.setRefundLoading(saleId, true, () => setState(() {}));
@@ -445,42 +476,23 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
               if (accessKey.isEmpty) return false;
 
               try {
-                if (refundId.isNotEmpty) {
-                  // ✅ ВАЖНО: добавь в updateRefundV2 параметр returnAccessKey и прокинь в запрос
-                  final result = await sync.createRefund(
-                    key: key,
-                    deviceId: deviceId,
-                    saleId: saleId,
-                    totalAmount: totalAmount,
-                    items: items,
-                    date: DateTime.now(),
-                    returnAccessKey: accessKey, // <— добавить в datasource
+                final result = await sync.createRefund(
+                  key: key,
+                  deviceId: deviceId,
+                  posSessionId: posSessionId,
+                  saleId: isSynced ? saleId : '',
+                  clientSaleId: isSynced ? null : saleId,
+                  totalAmount: totalAmount,
+                  items: items,
+                  date: DateTime.now(),
+                  returnAccessKey: accessKey,
+                );
+                if (result.result == QueueSendResult.manual) {
+                  throw Exception(
+                    result.errorMessage ?? 'Возврат требует ручной обработки',
                   );
-                  if (result.result == QueueSendResult.manual) {
-                    throw Exception(
-                      result.errorMessage ??
-                          'Р’РѕР·РІСЂР°С‚ С‚СЂРµР±СѓРµС‚ СЂСѓС‡РЅРѕР№ РѕР±СЂР°Р±РѕС‚РєРё',
-                    );
-                  }
-                  effectiveRefundId = result.clientId;
-                } else {
-                  final result = await sync.createRefund(
-                    key: key,
-                    deviceId: deviceId,
-                    saleId: saleId,
-                    totalAmount: totalAmount,
-                    items: items,
-                    date: DateTime.now(),
-                    returnAccessKey: accessKey,
-                  );
-                  if (result.result == QueueSendResult.manual) {
-                    throw Exception(
-                      result.errorMessage ??
-                          'Р’РѕР·РІСЂР°С‚ С‚СЂРµР±СѓРµС‚ СЂСѓС‡РЅРѕР№ РѕР±СЂР°Р±РѕС‚РєРё',
-                    );
-                  }
-                  effectiveRefundId = result.clientId;
                 }
+                effectiveRefundId = result.clientId;
                 return true; // 200 — доступ есть
               } catch (e) {
                 // 401 — доступ нет, диалог покажет ошибку и попросит перескан
@@ -512,8 +524,9 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       if (!mounted) return;
       _snack('Ошибка возврата: $e');
     } finally {
-      if (mounted)
+      if (mounted) {
         _controller.setRefundLoading(saleId, false, () => setState(() {}));
+      }
     }
   }
 

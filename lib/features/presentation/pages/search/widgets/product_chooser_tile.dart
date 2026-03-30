@@ -79,7 +79,7 @@ class ProductChooserTileState extends State<ProductChooserTile> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${p.name} (${p.quantity})',
+                      '${p.name} (${_formatQty(p.quantity)})',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyMedium?.copyWith(
@@ -138,6 +138,10 @@ class ProductChooserTileState extends State<ProductChooserTile> {
         ),
       ),
     );
+  }
+
+  String _formatQty(double v) {
+    return v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
   }
 
   String _formatPrice(num value) {

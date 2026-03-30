@@ -612,8 +612,29 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       storeId: storeId,
                                       userId: userId,
                                       accountId: accountId,
+                                      posSessionId: auth.shiftId?.trim(),
                                       customerId: customerId,
-                                      items: saleItems,
+                                      items: saleItems
+                                          .asMap()
+                                          .entries
+                                          .map(
+                                            (entry) => entry.value.copyWith(
+                                              product: ProductModel(
+                                                id: posCubit.state.items[entry.key]
+                                                    .product
+                                                    .id,
+                                                name: posCubit.state.items[entry.key]
+                                                    .product
+                                                    .name,
+                                                measurementUnit: 'шт.',
+                                                arrivalCost: 0,
+                                                sellingPrice: posCubit
+                                                    .state.items[entry.key].product.price,
+                                                wholesalePrice: 0,
+                                              ),
+                                            ),
+                                          )
+                                          .toList(),
                                     );
 
                                     final repo = GetIt.I<SaleRepository>();

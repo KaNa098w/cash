@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:leemon_app/core/models/pos_provision_response.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -63,6 +64,7 @@ class _CashierLoginStepState extends State<CashierLoginStep> {
   int _secretTapCount = 0;
   DateTime? _lastSecretTapAt;
   bool _wipingData = false;
+  final _keyboardFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -71,6 +73,36 @@ class _CashierLoginStepState extends State<CashierLoginStep> {
         (widget.provision.users.isNotEmpty
             ? widget.provision.users.first
             : null);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _keyboardFocusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _keyboardFocusNode.dispose();
+    super.dispose();
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.backspace) {
+      _backspace();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
+      _ok();
+      return KeyEventResult.handled;
+    }
+    final label = event.character;
+    if (label != null && RegExp(r'^[0-9]$').hasMatch(label)) {
+      _digit(label);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   @override
@@ -187,7 +219,10 @@ class _CashierLoginStepState extends State<CashierLoginStep> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
+    return Focus(
+      focusNode: _keyboardFocusNode,
+      onKeyEvent: _handleKeyEvent,
+      child: Stack(
       children: [
         ColoredBox(
           color: widget.backgroundColor,
@@ -287,6 +322,7 @@ class _CashierLoginStepState extends State<CashierLoginStep> {
           ),
         ),
       ],
+      ),
     );
   }
 }
@@ -401,7 +437,21 @@ class _LoginCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canOk = selected != null && pin.trim().length == pinLength;
+    final uniqueUsers = <String, PosUser>{};
+    for (final user in users) {
+      uniqueUsers[user.id] = user;
+    }
+    final safeUsers = uniqueUsers.values.toList();
+    PosUser? safeSelected;
+    if (selected != null) {
+      for (final user in safeUsers) {
+        if (user.id == selected!.id) {
+          safeSelected = user;
+          break;
+        }
+      }
+    }
+    final canOk = safeSelected != null && pin.trim().length == pinLength;
     final pinCtrl = TextEditingController(text: pin)
       ..selection = TextSelection.collapsed(offset: pin.length);
 
@@ -441,9 +491,9 @@ class _LoginCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10.0),
             child: _BlueFieldShell(
               child: DropdownButtonFormField<PosUser>(
-                value: selected,
+                value: safeSelected,
                 isExpanded: true,
-                items: users
+                items: safeUsers
                     .map(
                       (u) => DropdownMenuItem(
                         value: u,

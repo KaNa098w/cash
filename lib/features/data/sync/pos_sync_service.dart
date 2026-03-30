@@ -27,16 +27,33 @@ class PosSyncService {
   Future<void>? _pushFuture;
 
   final _syncedController = StreamController<int>.broadcast();
+  final _productsChangedController = StreamController<void>.broadcast();
+  final _salesHistoryChangedController = StreamController<void>.broadcast();
 
   /// Emits the number of operations successfully sent in each push batch.
   Stream<int> get onOperationsSynced => _syncedController.stream;
 
+  /// Emits whenever pull sync applies changes that include product entities.
+  Stream<void> get onProductsChanged => _productsChangedController.stream;
+
+  /// Emits when sales/refunds change and the history UI should refresh.
+  Stream<void> get onSalesHistoryChanged => _salesHistoryChangedController.stream;
+
   Future<void> initialize() => _localStore.initialize();
+
+  /// Returns true if a full bootstrap has been completed at least once.
+  Future<bool> isBootstrapped(String key) async {
+    await initialize();
+    final state = await _localStore.loadSyncState(key);
+    return state?.lastBootstrapAt != null;
+  }
 
   Future<void> dispose() async {
     _pullTimer?.cancel();
     _pushTimer?.cancel();
     await _syncedController.close();
+    await _productsChangedController.close();
+    await _salesHistoryChangedController.close();
     await _localStore.close();
   }
 
@@ -89,6 +106,12 @@ class PosSyncService {
     return _localStore.loadQueueItems();
   }
 
+  /// Check if a return access key is valid in the local DB.
+  /// Pass [checkExpiry: false] for offline refund scenarios.
+  Future<bool> checkReturnAccessKey(String key, {bool checkExpiry = true}) {
+    return _localStore.checkReturnAccessKey(key, checkExpiry: checkExpiry);
+  }
+
   Future<int> peekNextLocalSaleNumber() {
     return _localStore.peekNextLocalSaleNumber();
   }
@@ -102,6 +125,14 @@ class PosSyncService {
     int perPage = 15,
   }) {
     return _localStore.loadSalesHistoryPage(page: page, perPage: perPage);
+  }
+
+  Future<ShiftReportData?> loadShiftReport(String clientSessionId) {
+    return _localStore.loadShiftReport(clientSessionId);
+  }
+
+  Future<ShiftClosureSummaryData?> loadShiftClosureSummary(String clientSessionId) {
+    return _localStore.loadShiftClosureSummary(clientSessionId);
   }
 
   Future<void> bootstrap({
@@ -124,48 +155,77 @@ class PosSyncService {
     await initialize();
     await _localStore.ensureSyncState(posKey: key, deviceId: deviceId);
 
-    onProgress?.call(const SyncProgress(progress: 0.05, stage: 'Получаем sync state'));
-    final cursorBefore = await _remote.fetchServerCursor(key: key);
+    // Step 1 — Request snapshot
+    onProgress?.call(const SyncProgress(progress: 0.05, stage: 'Запрашиваем снапшот...'));
+    var snapshot = await _remote.requestSnapshot(key: key);
 
-    onProgress?.call(const SyncProgress(progress: 0.12, stage: 'Загружаем POS'));
+    // Step 2 — Poll until ready (retry POST if failed)
+    var retryCount = 0;
+    while (!snapshot.isReady) {
+      if (snapshot.isFailed) {
+        if (retryCount >= 3) throw Exception('Snapshot failed after $retryCount retries');
+        retryCount++;
+        onProgress?.call(SyncProgress(progress: 0.05, stage: 'Повторяем запрос снапшота...', detail: 'попытка $retryCount'));
+        snapshot = await _remote.requestSnapshot(key: key);
+        continue;
+      }
+      await Future.delayed(const Duration(seconds: 3));
+      onProgress?.call(const SyncProgress(progress: 0.08, stage: 'Ожидаем подготовку снапшота...'));
+      snapshot = await _remote.pollSnapshotStatus(key: key);
+    }
+
+    final snapshotUrl = snapshot.url;
+    if (snapshotUrl == null || snapshotUrl.isEmpty) {
+      throw Exception('Snapshot ready but URL is empty');
+    }
+
+    // Step 3 — Download snapshot file
+    onProgress?.call(const SyncProgress(progress: 0.15, stage: 'Скачиваем снапшот...'));
+    final snapshotFile = await _remote.downloadSnapshotFile(snapshotUrl);
+    final snapshotCursor = snapshot.cursor > 0
+        ? snapshot.cursor
+        : _readIntFromMap(snapshotFile, 'cursor');
+
+    final rawProducts = (snapshotFile['products'] as List?)
+            ?.whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList() ??
+        <Map<String, dynamic>>[];
+
+    onProgress?.call(SyncProgress(progress: 0.30, stage: 'Загружаем счета...', detail: '${rawProducts.length} товаров'));
+    final accounts = await _remote.fetchAllAccounts(key: key);
+
+    onProgress?.call(SyncProgress(progress: 0.45, stage: 'Загружаем типы расходов...', detail: '${accounts.length} счетов'));
+    final expenseTypes = await _remote.fetchAllExpenseTypes(key: key);
+
+    onProgress?.call(SyncProgress(progress: 0.58, stage: 'Загружаем покупателей...', detail: '${expenseTypes.length} типов расходов'));
+    final customers = await _remote.fetchAllCustomers(key: key);
+
+    onProgress?.call(SyncProgress(progress: 0.68, stage: 'Подключаемся к серверу...', detail: '${customers.length} покупателей'));
     final posInfo = await _remote.fetchPosInfo(key: key);
 
-    onProgress?.call(const SyncProgress(progress: 0.28, stage: 'Загружаем товары'));
-    final productsFuture = _remote.fetchAllProducts(key: key);
-    onProgress?.call(const SyncProgress(progress: 0.42, stage: 'Загружаем счета'));
-    final accountsFuture = _remote.fetchAllAccounts(key: key);
-    onProgress?.call(const SyncProgress(progress: 0.56, stage: 'Загружаем типы расходов'));
-    final expenseTypesFuture = _remote.fetchAllExpenseTypes(key: key);
-    onProgress?.call(const SyncProgress(progress: 0.70, stage: 'Загружаем покупателей'));
-    final customersFuture = _remote.fetchAllCustomers(key: key);
-
-    final products = await productsFuture;
-    final accounts = await accountsFuture;
-    final expenseTypes = await expenseTypesFuture;
-    final customers = await customersFuture;
-
-    onProgress?.call(const SyncProgress(progress: 0.80, stage: 'Сохраняем snapshot'));
+    onProgress?.call(SyncProgress(progress: 0.73, stage: 'Сохраняем данные...'));
     await _localStore.replaceBootstrapData(
       posKey: key,
       deviceId: deviceId,
-      cursorBefore: cursorBefore,
+      cursorBefore: snapshotCursor,
       posInfo: posInfo,
-      products: products,
+      products: rawProducts,
       accounts: accounts,
       expenseTypes: expenseTypes,
       customers: customers,
     );
 
-    onProgress?.call(const SyncProgress(progress: 0.88, stage: 'Применяем дельту'));
+    onProgress?.call(const SyncProgress(progress: 0.82, stage: 'Применяем обновления...'));
     await pullOnce(
       key: key,
       deviceId: deviceId,
-      initialCursor: cursorBefore,
+      initialCursor: snapshotCursor,
       onProgress: (progress) {
-        final normalized = 0.88 + (progress.progress * 0.11);
+        final normalized = 0.82 + (progress.progress * 0.17);
         onProgress?.call(
           SyncProgress(
-            progress: normalized.clamp(0.88, 0.99),
+            progress: normalized.clamp(0.82, 0.99),
             stage: progress.stage,
             detail: progress.detail,
           ),
@@ -174,6 +234,14 @@ class PosSyncService {
     );
 
     onProgress?.call(const SyncProgress(progress: 1, stage: 'Синхронизация завершена'));
+  }
+
+  int _readIntFromMap(Map<String, dynamic> map, String key) {
+    final value = map[key];
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is num) return value.round();
+    return int.tryParse(value.toString()) ?? 0;
   }
 
   Future<void> pullOnce({
@@ -222,7 +290,7 @@ class PosSyncService {
           SyncProgress(
             progress: 0.8,
             stage: 'Применяем изменения',
-            detail: 'batch ${batchIndex}',
+            detail: 'batch $batchIndex',
           ),
         );
         await _localStore.applyPullBatch(
@@ -230,6 +298,13 @@ class PosSyncService {
           changes: batch.items,
           nextCursor: batch.nextCursor,
         );
+        final hasProducts = batch.items.any(
+          (c) => c.entity.trim().toLowerCase().contains('product'),
+        );
+        if (hasProducts && !_productsChangedController.isClosed) {
+          _productsChangedController.add(null);
+        }
+        _notifySalesHistoryChanged();
       } else if (batch.nextCursor != cursor) {
         await _localStore.applyPullBatch(
           posKey: key,
@@ -282,6 +357,7 @@ class PosSyncService {
 
     if (ackedCount > 0) {
       _syncedController.add(ackedCount);
+      _notifySalesHistoryChanged();
       await _localStore.touchLastPush(key);
       await pullOnce(key: key, deviceId: deviceId);
     }
@@ -297,6 +373,8 @@ class PosSyncService {
       'device_id': deviceId,
       'client_sale_id': sale.localId,
       'local_number': localNumber,
+      if ((sale.posSessionId ?? '').trim().isNotEmpty)
+        'pos_session_id': sale.posSessionId!.trim(),
       'date': _formatDate(sale.date),
       'total_amount': sale.totalAmount,
       'payment_method': sale.paymentMethod,
@@ -309,6 +387,10 @@ class PosSyncService {
           .map(
             (item) => {
               'product_id': item.productId,
+              'product_name':
+                  (item.product?.name ?? '').trim().isEmpty
+                      ? item.productId
+                      : item.product!.name,
               'quantity': item.quantity,
               'price': item.price,
               'total_price': item.totalPrice,
@@ -316,6 +398,13 @@ class PosSyncService {
           )
           .toList(growable: false),
     };
+
+    await _localStore.insertSaleLocal(
+      clientSaleId: sale.localId,
+      localNumber: localNumber,
+      payload: payload,
+    );
+    _notifySalesHistoryChanged();
 
     return _queueAndTrySend(
       key: key,
@@ -329,6 +418,7 @@ class PosSyncService {
   Future<QueueOperationResult> createPayment({
     required String key,
     required String deviceId,
+    required String posSessionId,
     required String accountId,
     required bool isExpense,
     required num amount,
@@ -343,10 +433,13 @@ class PosSyncService {
       'date': _formatDate(date),
       'is_expense': isExpense,
       'amount': amount.round(),
+      'pos_session_id': posSessionId,
       'account_id': accountId,
       if ((expenseTypeId ?? '').trim().isNotEmpty) 'expense_type_id': expenseTypeId!.trim(),
       if ((userId ?? '').trim().isNotEmpty) 'created_by_id': userId!.trim(),
     };
+
+    await _localStore.insertPaymentLocal(payload);
 
     return _queueAndTrySend(
       key: key,
@@ -371,6 +464,13 @@ class PosSyncService {
       'user_id': userId,
     };
 
+    await _localStore.upsertSession(
+      clientSessionId: clientId,
+      userId: userId,
+      deviceId: deviceId,
+      openedAt: openedAt,
+    );
+
     return _queueAndTrySend(
       key: key,
       deviceId: deviceId,
@@ -393,8 +493,14 @@ class PosSyncService {
       'client_session_id': clientSessionId,
       'closed_at': _formatDate(closedAt),
       'user_id': userId,
-      'closing_cash_amount': closingCashAmount.round(),
+      'closing_cash_amount': double.parse(closingCashAmount.toStringAsFixed(2)),
     };
+
+    await _localStore.closeSessionLocal(
+      clientSessionId: clientSessionId,
+      closingCashAmount: closingCashAmount.toDouble(),
+      closedAt: closedAt,
+    );
 
     return _queueAndTrySend(
       key: key,
@@ -409,22 +515,32 @@ class PosSyncService {
   Future<QueueOperationResult> createRefund({
     required String key,
     required String deviceId,
+    required String posSessionId,
+    /// Server-assigned sale id. Pass empty string if the sale is not yet synced.
     required String saleId,
+    /// Client-side client_sale_id. Required when [saleId] is empty (offline refund).
+    String? clientSaleId,
     required int totalAmount,
     required DateTime date,
     required List<Map<String, dynamic>> items,
     String? returnAccessKey,
   }) async {
     final clientId = 'refund_${_uuid.v7()}';
+    final isOffline = saleId.isEmpty;
     final payload = <String, dynamic>{
       'device_id': deviceId,
       'client_refund_id': clientId,
+      'pos_session_id': posSessionId,
       'date': _formatDate(date),
-      'sale_id': saleId,
+      if (!isOffline) 'sale_id': saleId
+      else if ((clientSaleId ?? '').isNotEmpty) 'client_sale_id': clientSaleId!,
       'total_amount': totalAmount,
       'items': items,
       if ((returnAccessKey ?? '').trim().isNotEmpty) 'return_access_key': returnAccessKey!.trim(),
     };
+
+    await _localStore.insertRefundLocal(payload);
+    _notifySalesHistoryChanged();
 
     return _queueAndTrySend(
       key: key,
@@ -483,6 +599,7 @@ class PosSyncService {
     );
     if (result.result == QueueSendResult.sent) {
       await _localStore.touchLastPush(key);
+      _notifySalesHistoryChanged();
       unawaited(pullOnce(key: key, deviceId: deviceId));
     }
     return result;
@@ -494,23 +611,31 @@ class PosSyncService {
     required OutboxOperationRecord record,
   }) async {
     try {
-      await _remote.sendOperation(
+      final payloadForSend = await _preparePayloadForSend(record);
+      final responseData = await _remote.sendOperation(
         type: record.type,
         key: key,
         payload: {
-          ...record.payload,
+          ...payloadForSend,
           'device_id': deviceId,
         },
       );
       await _localStore.markOperationAcked(record.id);
-      if (record.type == OutboxOperationType.sale) {
-        unawaited(_localStore.upsertSaleFromOutboxPayload(record.payload));
+      if (record.type == OutboxOperationType.sessionOpen) {
+        final serverSessionId = responseData?['id']?.toString().trim() ?? '';
+        if (serverSessionId.isNotEmpty) {
+          await _localStore.setSessionServerId(
+            clientSessionId: record.clientId,
+            serverSessionId: serverSessionId,
+          );
+        }
       }
+      _markDedicatedTableSynced(record);
       return QueueOperationResult(
         result: QueueSendResult.sent,
         type: record.type,
         clientId: record.clientId,
-        payload: record.payload,
+        payload: payloadForSend,
       );
     } catch (error) {
       final errorCode = _remote.extractErrorCode(error);
@@ -519,9 +644,7 @@ class PosSyncService {
       // Duplicate key: the operation already exists on the server — treat as success.
       if (errorCode == 'IDEMPOTENCY_CONFLICT') {
         await _localStore.markOperationAcked(record.id);
-        if (record.type == OutboxOperationType.sale) {
-          unawaited(_localStore.upsertSaleFromOutboxPayload(record.payload));
-        }
+        _markDedicatedTableSynced(record);
         return QueueOperationResult(
           result: QueueSendResult.sent,
           type: record.type,
@@ -563,6 +686,47 @@ class PosSyncService {
         errorMessage: errorMessage,
       );
     }
+  }
+
+  Future<Map<String, dynamic>> _preparePayloadForSend(OutboxOperationRecord record) async {
+    final payload = Map<String, dynamic>.from(record.payload);
+    switch (record.type) {
+      case OutboxOperationType.sale:
+      case OutboxOperationType.payment:
+      case OutboxOperationType.refund:
+        final rawSessionId = (payload['pos_session_id'] ?? '').toString().trim();
+        if (rawSessionId.isNotEmpty) {
+          final serverSessionId = await _localStore.resolveServerSessionId(rawSessionId);
+          if ((serverSessionId ?? '').isNotEmpty) {
+            payload['pos_session_id'] = serverSessionId;
+          }
+        }
+      case OutboxOperationType.sessionOpen:
+      case OutboxOperationType.sessionClose:
+        break;
+    }
+    return payload;
+  }
+
+  void _markDedicatedTableSynced(OutboxOperationRecord record) {
+    switch (record.type) {
+      case OutboxOperationType.sale:
+        unawaited(_localStore.upsertSaleFromOutboxPayload(record.payload));
+        unawaited(_localStore.markSaleSynced(record.clientId));
+      case OutboxOperationType.payment:
+        unawaited(_localStore.markPaymentSynced(record.clientId));
+      case OutboxOperationType.refund:
+        unawaited(_localStore.markRefundSynced(record.clientId));
+      case OutboxOperationType.sessionOpen:
+        unawaited(_localStore.markSessionSynced(record.clientId));
+      case OutboxOperationType.sessionClose:
+        unawaited(_localStore.markSessionSynced(record.clientId));
+    }
+  }
+
+  void _notifySalesHistoryChanged() {
+    if (_salesHistoryChangedController.isClosed) return;
+    _salesHistoryChangedController.add(null);
   }
 
   String _formatDate(DateTime value) {

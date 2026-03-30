@@ -5,6 +5,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 import 'package:leemon_app/features/presentation/widgets/dialog_primary_button.dart';
+import 'package:leemon_app/features/presentation/widgets/footer_status.dart'
+    show TouchDeleteDialog;
 
 Future<void> editSelectedQty(BuildContext context) async {
   final cubit = context.read<PosCubit>();
@@ -153,10 +155,24 @@ Future<void> editSelectedQty(BuildContext context) async {
                                   child: DialogPrimaryButton(
                                     label: 'Сохранить',
                                     enabled: isValid,
-                                    onPressed: () {
+                                    onPressed: () async {
                                       final v = parseQty(controller.text) ?? 0;
                                       final normalized =
                                           (v * 100).round() / 100;
+
+                                      if (normalized <= 0) {
+                                        final confirmed =
+                                            await showDialog<bool>(
+                                                  context: ctx,
+                                                  builder: (_) =>
+                                                      TouchDeleteDialog(
+                                                    productName:
+                                                        item.product.name,
+                                                  ),
+                                                ) ??
+                                                false;
+                                        if (!confirmed) return;
+                                      }
 
                                       cubit.setQty(idx, normalized);
                                       Navigator.of(ctx).pop();

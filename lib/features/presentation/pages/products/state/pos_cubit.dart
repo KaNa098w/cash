@@ -15,6 +15,12 @@ class PosCubit extends Cubit<PosState> {
 
   PosCubit(this.repo) : super(PosState.initial());
 
+  double _normalizedMaxQty(Product product) {
+    final qty = product.quantity;
+    if (qty.isNaN || qty.isInfinite) return 0;
+    return qty < 0 ? 0 : qty;
+  }
+
   List<PosTicket> _updateActiveTicketItems(
     List<CartItem> Function(List<CartItem>) updater,
   ) {
@@ -45,6 +51,7 @@ class PosCubit extends Cubit<PosState> {
       name: m.name,
       price: m.sellingPrice,
       vat: 0,
+      quantity: m.quantity,
     );
   }
 
@@ -92,6 +99,9 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void add(Product p) {
+    final maxQty = _normalizedMaxQty(p);
+    if (maxQty <= 0) return;
+
     int? selectedIndex; // какой индекс выбрать после добавления/увеличения
 
     final tickets = _updateActiveTicketItems((items) {
@@ -100,7 +110,8 @@ class PosCubit extends Cubit<PosState> {
 
       if (idx >= 0) {
         final it = list[idx];
-        list[idx] = it.copyWith(qty: it.qty + 1);
+        final nextQty = (it.qty + 1) > maxQty ? maxQty : (it.qty + 1);
+        list[idx] = it.copyWith(qty: nextQty);
         selectedIndex = idx;
       } else {
         list.add(CartItem(product: p, qty: 1));
@@ -166,7 +177,10 @@ class PosCubit extends Cubit<PosState> {
     final tickets = _updateActiveTicketItems((items) {
       final list = List<CartItem>.from(items);
       if (index >= 0 && index < list.length) {
-        list[index] = list[index].copyWith(qty: qty);
+        final current = list[index];
+        final maxQty = _normalizedMaxQty(current.product);
+        final nextQty = qty > maxQty ? maxQty : qty;
+        list[index] = current.copyWith(qty: nextQty);
       }
       return list;
     });

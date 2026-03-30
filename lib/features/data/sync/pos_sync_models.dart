@@ -114,6 +114,24 @@ class SyncStateSnapshot {
   final String? lastError;
 }
 
+class SnapshotStatus {
+  const SnapshotStatus({
+    required this.status,
+    required this.cursor,
+    this.url,
+    this.expiresAt,
+  });
+
+  final String status; // 'pending', 'ready', 'failed'
+  final int cursor;
+  final String? url;
+  final DateTime? expiresAt;
+
+  bool get isPending => status == 'pending';
+  bool get isReady => status == 'ready';
+  bool get isFailed => status == 'failed';
+}
+
 class SyncPullChange {
   const SyncPullChange({
     required this.entity,
@@ -218,6 +236,72 @@ class LocalCustomer {
   final String name;
   final String phone;
   final Map<String, dynamic> rawJson;
+}
+
+class ShiftReportItem {
+  const ShiftReportItem({
+    required this.name,
+    required this.quantity,
+    required this.totalSum,
+  });
+
+  final String name;
+  final num quantity;
+  final num totalSum;
+}
+
+class ShiftReportData {
+  const ShiftReportData({
+    required this.sessionId,
+    required this.openedAt,
+    required this.closedAt,
+    required this.openingCashAmount,
+    required this.closingCashAmount,
+    required this.salesCount,
+    required this.cashTotal,
+    required this.cardTotal,
+    required this.transferTotal,
+    required this.grandTotal,
+    required this.items,
+  });
+
+  final String sessionId;
+  final DateTime? openedAt;
+  final DateTime? closedAt;
+  final num openingCashAmount;
+  final num closingCashAmount;
+  final int salesCount;
+  final num cashTotal;
+  final num cardTotal;
+  final num transferTotal;
+  final num grandTotal;
+  final List<ShiftReportItem> items;
+}
+
+class ShiftClosureSummaryData {
+  const ShiftClosureSummaryData({
+    required this.sessionId,
+    required this.openingCashAmount,
+    required this.cashSalesTotal,
+    required this.cardSalesTotal,
+    required this.transferSalesTotal,
+    required this.refundsTotal,
+    required this.incomeTotal,
+    required this.expenseTotal,
+    required this.expectedCashAmount,
+    required this.totalSalesAmount,
+  });
+
+  final String sessionId;
+  final num openingCashAmount;
+  final num cashSalesTotal;
+  final num cardSalesTotal;
+  final num transferSalesTotal;
+  final num refundsTotal;
+  final num incomeTotal;
+  final num expenseTotal;
+  final num expectedCashAmount;
+  final num totalSalesAmount;
 }
 
 Map<String, dynamic> decodeJsonMap(String raw) {

@@ -63,10 +63,11 @@ class PosProvisionResponse {
     }
 
     final rawUsers = data['users'];
-    final users = (rawUsers is List ? rawUsers : const [])
-        .whereType<Map<String, dynamic>>()
-        .map(PosUser.fromJson)
-        .toList();
+    final users = _uniqueUsersById(
+      (rawUsers is List ? rawUsers : const [])
+          .whereType<Map<String, dynamic>>()
+          .map(PosUser.fromJson),
+    );
 
     return PosProvisionResponse(
       id: id,
@@ -80,6 +81,14 @@ class PosProvisionResponse {
       updatedAt: parseDt(data['updated']),
       users: users,
     );
+  }
+
+  static List<PosUser> _uniqueUsersById(Iterable<PosUser> users) {
+    final uniqueById = <String, PosUser>{};
+    for (final user in users) {
+      uniqueById[user.id] = user;
+    }
+    return uniqueById.values.toList();
   }
 }
 

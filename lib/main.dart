@@ -179,11 +179,22 @@ class PosApp extends StatefulWidget {
 
 class _PosAppState extends State<PosApp> {
   late final GoRouter _router;
+  StreamSubscription<void>? _productsSyncSub;
 
   @override
   void initState() {
     super.initState();
-    _router = createRouter(context); // ✅ один раз
+    _router = createRouter(context);
+    _productsSyncSub = sl<PosSyncService>().onProductsChanged.listen((_) {
+      if (!mounted) return;
+      context.read<ProductsCubit>().loadFirstPage(key: '');
+    });
+  }
+
+  @override
+  void dispose() {
+    _productsSyncSub?.cancel();
+    super.dispose();
   }
 
   @override

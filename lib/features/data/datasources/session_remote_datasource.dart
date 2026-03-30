@@ -7,6 +7,7 @@ class SessionRemoteDataSource {
   Future<String> openSession({
     required String key,
     required String userId,
+    required String deviceId,
   }) async {
     final safeKey = key.trim();
 
@@ -14,6 +15,7 @@ class SessionRemoteDataSource {
       '/organizations/pos/$safeKey/open-session',
       data: {
         'user_id': userId,
+        'device_id': deviceId,
       },
     );
 
@@ -39,6 +41,7 @@ class SessionRemoteDataSource {
     required String key,
     required String sessionId,
     required String userId,
+    required String deviceId,
     required num closingCashAmount,
   }) async {
     final safeKey = key.trim();
@@ -48,7 +51,8 @@ class SessionRemoteDataSource {
       data: {
         'session_id': sessionId, // ✅ сохранённый
         'user_id': userId,
-        'closing_cash_amount': closingCashAmount,
+        'device_id': deviceId,
+        'closing_cash_amount': double.parse(closingCashAmount.toStringAsFixed(2)),
       },
     );
   }

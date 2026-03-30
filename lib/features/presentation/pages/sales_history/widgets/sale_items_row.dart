@@ -58,6 +58,7 @@ class SaleItemRow extends StatelessWidget {
         ),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
             width: 34,
@@ -85,7 +86,7 @@ class SaleItemRow extends StatelessWidget {
               children: [
                 Text(
                   name,
-                  overflow: TextOverflow.ellipsis,
+                  softWrap: true,
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 if (refundedQty > 0)

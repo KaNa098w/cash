@@ -182,7 +182,12 @@ class AuthTokenProvider extends ChangeNotifier {
     _organizationId = resp.organizationId;
     _accountId = resp.accountId;
 
-    _users = resp.users.map((u) {
+    final uniqueUsers = <String, PosUser>{};
+    for (final user in resp.users) {
+      uniqueUsers[user.id] = user;
+    }
+
+    _users = uniqueUsers.values.map((u) {
       final apiPin = u.pinCode.trim();
       final h = apiPin.isEmpty ? null : hashPin(apiPin);
       return u.copyWith(pinHash: h, pinCode: '');

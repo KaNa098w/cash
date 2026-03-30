@@ -33,11 +33,14 @@ class SalesHistoryState {
 
   bool get canLoadMore => !loading && !loadingMore && page < lastPage;
 
+  static const _keep = Object();
+
   SalesHistoryState copyWith({
     bool? loading,
     bool? loadingMore,
     bool? printing,
-    String? error,
+    // Pass error: null to clear, omit to keep current value.
+    Object? error = _keep,
     List<SaleModel>? sales,
     int? page,
     int? lastPage,
@@ -46,7 +49,7 @@ class SalesHistoryState {
       loading: loading ?? this.loading,
       loadingMore: loadingMore ?? this.loadingMore,
       printing: printing ?? this.printing,
-      error: error,
+      error: identical(error, _keep) ? this.error : error as String?,
       sales: sales ?? this.sales,
       page: page ?? this.page,
       lastPage: lastPage ?? this.lastPage,

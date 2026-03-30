@@ -70,7 +70,7 @@ class SaleCard extends StatelessWidget {
         final compact = constraints.maxWidth < 900;
         final desktopNarrow = !compact && constraints.maxWidth < 1180;
         final actionWidth = (constraints.maxWidth - 36).clamp(180.0, 520.0);
-        final saleNumberWidth = desktopNarrow ? 150.0 : 205.0;
+        final saleNumberWidth = desktopNarrow ? 220.0 : 280.0;
         final dateWidth = desktopNarrow ? 220.0 : 400.0;
         final statusWidth = desktopNarrow ? 130.0 : 180.0;
         final cashierWidth = desktopNarrow ? 170.0 : 250.0;

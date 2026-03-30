@@ -16,6 +16,7 @@ class SaleModel {
 
   final String userId;
   final String accountId;
+  final String? posSessionId;
 
   final String? customerId;
 
@@ -34,6 +35,7 @@ class SaleModel {
     required this.storeId,
     required this.userId,
     required this.accountId,
+    this.posSessionId,
     required this.items,
     this.customerId,
     this.refund,
@@ -49,6 +51,7 @@ class SaleModel {
     String? storeId,
     String? userId,
     String? accountId,
+    String? posSessionId,
     String? customerId,
     List<SaleItemModel>? items,
     RefundModel? refund,
@@ -63,6 +66,7 @@ class SaleModel {
       storeId: storeId ?? this.storeId,
       userId: userId ?? this.userId,
       accountId: accountId ?? this.accountId,
+      posSessionId: posSessionId ?? this.posSessionId,
       customerId: customerId ?? this.customerId,
       items: items ?? this.items,
       refund: refund ?? this.refund,
@@ -77,6 +81,7 @@ class SaleModel {
       "payment_method": paymentMethod,
       "user_id": userId,
       "pos_id": posId,
+      if ((posSessionId ?? '').trim().isNotEmpty) "pos_session_id": posSessionId,
       if (customerId != null && customerId!.isNotEmpty) "customer_id": customerId,
       "store_id": storeId,
       "items": items.map((e) => e.toApiJson()).toList(),
@@ -112,6 +117,7 @@ class SaleModel {
       customerId: json["customer_id"]?.toString(),
       accountId: accountId,
       userId: userId,
+      posSessionId: json["pos_session_id"]?.toString(),
       items: items,
       refund: refund,
     );
@@ -124,6 +130,7 @@ class SaleModel {
       "number": number,
       "userId": userId,
       "accountId": accountId,
+      "posSessionId": posSessionId,
       "date": date.toIso8601String(),
       "totalAmount": totalAmount,
       "paymentMethod": paymentMethod,
@@ -154,6 +161,7 @@ class SaleModel {
       number: (json["number"] ?? "").toString(),
       userId: (json["userId"] ?? "").toString(),
       accountId: (json["accountId"] ?? "").toString(),
+      posSessionId: json["posSessionId"]?.toString(),
       date: DateTime.tryParse((json["date"] ?? "").toString()) ?? DateTime.now(),
       totalAmount: _toInt(json["totalAmount"]),
       paymentMethod: (json["paymentMethod"] ?? "cash").toString(),

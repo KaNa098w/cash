@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/features/presentation/widgets/quit_products_screen.dart';
 import 'package:pdf/pdf.dart';
 import 'package:leemon_app/core/models/sale_model.dart'
-    show SaleItemModel, SaleModel;
+    show ProductModel, SaleItemModel, SaleModel;
 import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
@@ -38,6 +38,17 @@ class FooterStatus extends StatelessWidget {
 
 class _FooterDesktop extends StatelessWidget {
   const _FooterDesktop();
+
+  Future<bool> _confirmRemoveCartItem(
+    BuildContext context, {
+    required String productName,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => TouchDeleteDialog(productName: productName),
+        ) ??
+        false;
+  }
 
 
   Future<void> _payByCardWithPrint(BuildContext context) async {
@@ -137,8 +148,24 @@ class _FooterDesktop extends StatelessWidget {
         storeId: storeId,
         userId: userId,
         accountId: accountId,
+        posSessionId: auth.shiftId?.trim(),
         customerId: customerId,
-        items: saleItems,
+        items: saleItems
+            .asMap()
+            .entries
+            .map(
+              (entry) => entry.value.copyWith(
+                product: ProductModel(
+                  id: posCubit.state.items[entry.key].product.id,
+                  name: posCubit.state.items[entry.key].product.name,
+                  measurementUnit: 'шт.',
+                  arrivalCost: 0,
+                  sellingPrice: posCubit.state.items[entry.key].product.price,
+                  wholesalePrice: 0,
+                ),
+              ),
+            )
+            .toList(),
       );
 
       final repo = GetIt.I<SaleRepository>();
@@ -566,7 +593,25 @@ class _FooterDesktop extends StatelessWidget {
                           return FooterControlsOnly(
                             smallAmountText: money(beforeDiscount),
                             bigAmountText: money(total),
-                            onMinus: cubit.decrementSelectedQty,
+                            onMinus: () async {
+                              final idx = cubit.state.selectedItemIndex;
+                              if (idx == null ||
+                                  idx < 0 ||
+                                  idx >= cubit.state.items.length) {
+                                return;
+                              }
+                              final item = cubit.state.items[idx];
+                              if (item.qty > 1) {
+                                cubit.decrementSelectedQty();
+                                return;
+                              }
+                              final confirmed = await _confirmRemoveCartItem(
+                                context,
+                                productName: item.product.name,
+                              );
+                              if (!confirmed) return;
+                              cubit.removeAt(idx);
+                            },
                             onPlus: cubit.incrementSelectedQty,
                             onQuick: () async {
                               final auth = context.read<AuthTokenProvider>();
@@ -690,6 +735,124 @@ class _FooterDesktop extends StatelessWidget {
           child: child,
         );
       },
+    );
+  }
+}
+
+class TouchDeleteDialog extends StatelessWidget {
+  const TouchDeleteDialog({
+    required this.productName,
+  });
+
+  final String productName;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      backgroundColor: Colors.transparent,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.14),
+                  blurRadius: 28,
+                  offset: const Offset(0, 18),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Container(
+                //   width: 58,
+                //   height: 58,
+                //   decoration: BoxDecoration(
+                //     color: const Color(0xFFFFF1EB),
+                //     borderRadius: BorderRadius.circular(18),
+                //   ),
+                //   child: const Icon(
+                //     Icons.delete_outline_rounded,
+                //     color: Color(0xFFBE3A14),
+                //     size: 30,
+                //   ),
+                // ),
+                // const SizedBox(height: 18),
+                const Text(
+                  'Удалить товар',
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Удалить товар "$productName" из корзины?',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    height: 1.4,
+                    color: Color(0xFF4B5563),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(58),
+                          side: const BorderSide(color: Color(0xFFD1D5DB)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                        ),
+                        child: const Text(
+                          'Отмена',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF374151),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(58),
+                          backgroundColor: const Color(0xFFBE3A14),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                        ),
+                        child: const Text(
+                          'Удалить',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
