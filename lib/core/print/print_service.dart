@@ -6,25 +6,26 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 class PrintService {
-  Printer? _defaultPrinter;
-
-  Future<Printer?> _ensureDefault() async {
-    if (_defaultPrinter != null) return _defaultPrinter;
+  Future<Printer?> _resolvePrinter(String? name) async {
     final printers = await Printing.listPrinters();
-    _defaultPrinter = printers.isEmpty
-        ? null
-        : printers.firstWhere(
-            (p) => p.isDefault == true,
-            orElse: () => printers.first,
-          );
-    return _defaultPrinter;
+    if (printers.isEmpty) return null;
+    if (name != null && name.isNotEmpty) {
+      final found = printers.where((p) => p.name == name).toList();
+      if (found.isNotEmpty) return found.first;
+    }
+    return printers.firstWhere(
+      (p) => p.isDefault == true,
+      orElse: () => printers.first,
+    );
   }
 
+  // Чеки и Z-отчёт — маленький термопринтер
   Future<void> print80mmSilently(
     Future<pw.Document> Function() buildDoc, {
     PdfPageFormat format = PdfPageFormat.roll80,
+    String? printerName,
   }) async {
-    final printer = await _ensureDefault();
+    final printer = await _resolvePrinter(printerName);
     if (printer == null) return;
 
     final doc = await buildDoc();
@@ -38,9 +39,12 @@ class PrintService {
     );
   }
 
-  // ✅ НОВОЕ: печать готового PDF, который пришёл с сервера
-  Future<void> printPdfBytesSilently(Uint8List pdfBytes) async {
-    final printer = await _ensureDefault();
+  // Накладные — большой принтер (A4)
+  Future<void> printPdfBytesSilently(
+    Uint8List pdfBytes, {
+    String? printerName,
+  }) async {
+    final printer = await _resolvePrinter(printerName);
     if (printer == null) return;
 
     await Printing.directPrintPdf(

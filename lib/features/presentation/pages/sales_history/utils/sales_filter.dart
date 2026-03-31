@@ -1,10 +1,23 @@
 import 'package:leemon_app/core/models/sale_model.dart';
 
-List<SaleModel> filterSales(List<SaleModel> sales, String query) {
-  final q = query.trim().toLowerCase();
-  if (q.isEmpty) return sales;
+List<SaleModel> filterSales(
+  List<SaleModel> sales,
+  String query, {
+  DateTime? date,
+}) {
+  var result = sales;
 
-  return sales.where((s) {
+  if (date != null) {
+    result = result.where((s) {
+      final d = s.date.toLocal();
+      return d.year == date.year && d.month == date.month && d.day == date.day;
+    }).toList();
+  }
+
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return result;
+
+  return result.where((s) {
     final n = s.number.trim().toLowerCase();
     final id = s.localId.trim().toLowerCase();
     return n.contains(q) || id.contains(q);

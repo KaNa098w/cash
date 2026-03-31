@@ -47,6 +47,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   Timer? _saleSearchDebounce;
   Timer? _historyRefreshDebounce;
   String _saleQuery = '';
+  DateTime? _selectedDate;
 
   int? _statusCodeOf(Object e) {
     try {
@@ -62,9 +63,13 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   final FocusNode _saleSearchFocusNode = FocusNode();
   bool _saleKeyboardOpen = false;
 
+  DateTime _dateOnly(DateTime value) =>
+      DateTime(value.year, value.month, value.day);
+
   @override
   void initState() {
     super.initState();
+    _selectedDate = _dateOnly(DateTime.now());
 
     final remote = GetIt.I<SaleRemoteDataSource>();
     final sync = GetIt.I<PosSyncService>();
@@ -148,6 +153,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   void _maybeLoadMore() {
     if (!mounted) return;
     if (_saleQuery.isNotEmpty) return;
+    if (_selectedDate != null) return;
 
     final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
     if (key.isEmpty) return;
@@ -232,12 +238,66 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
           ),
         ),
         format: pageFormat,
+        printerName: auth.receiptPrinterName,
       );
       if (!mounted) return;
       _snack('Чек отправлен на печать');
     } catch (e) {
       if (!mounted) return;
       _snack('Ошибка печати: $e');
+    }
+  }
+
+  Future<void> _printInvoice(SaleModel sale) async {
+    final auth = context.read<AuthTokenProvider>();
+    final printer = PrintService();
+    final cashierName = (auth.activeUserName ?? '').trim().isEmpty
+        ? (sale.userId.trim().isEmpty ? '-' : sale.userId.trim())
+        : auth.activeUserName!.trim();
+    final storeName = (auth.storeName?.trim().isNotEmpty == true)
+        ? auth.storeName!.trim()
+        : (auth.posName?.trim().isNotEmpty == true ? auth.posName!.trim() : 'Магазин');
+
+    try {
+      final doc = await buildInvoicePdf(
+        InvoicePdfData(
+          money: money,
+          invoiceDate: sale.date,
+          invoiceNumber: sale.number.trim().isEmpty ? sale.localId : sale.number.trim(),
+          cashierName: cashierName,
+          storeName: storeName,
+          items: sale.items
+              .map(
+                (it) => ReceiptPdfItem(
+                  name: (it.product?.name ?? '').trim().isEmpty
+                      ? 'Товар ${it.productId}'
+                      : it.product!.name,
+                  quantity: it.quantity,
+                  unitPrice: it.price,
+                  lineTotal: it.totalPrice,
+                ),
+              )
+              .toList(),
+          total: sale.totalAmount,
+          discountSum: 0,
+          paymentMethodLabel: switch (sale.paymentMethod.trim().toLowerCase()) {
+            'cash' => 'Наличные',
+            'card' => 'Безналичный',
+            'credit' => 'В долг',
+            _ => sale.paymentMethod.trim().isEmpty ? '-' : sale.paymentMethod.trim(),
+          },
+        ),
+      );
+      final bytes = await doc.save();
+      await printer.printPdfBytesSilently(
+        bytes,
+        printerName: auth.invoicePrinterName,
+      );
+      if (!mounted) return;
+      _snack('Накладная отправлена на печать');
+    } catch (e) {
+      if (!mounted) return;
+      _snack('Ошибка печати накладной: $e');
     }
   }
 
@@ -373,6 +433,48 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         );
       },
     );
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      locale: const Locale('ru'),
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF2563EB),
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Color(0xFF111827),
+              surfaceContainerHighest: Color(0xFFEFF6FF),
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF2563EB),
+                textStyle: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            dialogTheme: const DialogThemeData(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(20)),
+              ),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (!mounted) return;
+    if (picked != null) {
+      setState(() {
+        _selectedDate = _dateOnly(picked);
+        _expandedSaleId = null;
+      });
+    }
   }
 
   void _applySaleSearch() {
@@ -538,7 +640,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         value: _cubit,
         child: BlocBuilder<SalesHistoryCubit, SalesHistoryState>(
           builder: (context, state) {
-            final visibleSales = filterSales(state.sales, _saleQuery);
+            final visibleSales = filterSales(state.sales, _saleQuery, date: _selectedDate);
             final showLoadMoreTile = state.loadingMore && _saleQuery.isEmpty;
             final savedCashierName =
                 context.read<AuthTokenProvider>().activeUserName ?? '';
@@ -548,8 +650,9 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                 SalesSearchBar(
                   controller: _saleSearchCtrl,
                   focusNode: _saleSearchFocusNode,
-                  foundCount:
-                      _saleQuery.isNotEmpty ? visibleSales.length : null,
+                  foundCount: (_saleQuery.isNotEmpty || _selectedDate != null)
+                      ? visibleSales.length
+                      : null,
                   onSubmit: _applySaleSearch,
                   onOpenKeyboard: _openSaleKeyboard,
                   onClear: () {
@@ -557,6 +660,12 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                     setState(() => _expandedSaleId = null);
                     _applySaleSearch();
                   },
+                  selectedDate: _selectedDate,
+                  onPickDate: _pickDate,
+                  onClearDate: () => setState(() {
+                    _selectedDate = null;
+                    _expandedSaleId = null;
+                  }),
                 ),
                 Expanded(
                   child: state.loading
@@ -620,6 +729,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                                           _submitRefund(context, sale),
                                       onPrintReceipt: () =>
                                           _printSaleReceipt(sale),
+                                      onPrintInvoice: () =>
+                                          _printInvoice(sale),
                                       onToggle: () => setState(() {
                                         _expandedSaleId =
                                             expanded ? null : sale.localId;

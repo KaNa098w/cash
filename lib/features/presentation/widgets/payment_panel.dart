@@ -703,6 +703,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                             change: posCubit.change,
                                           ),
                                         ),
+                                        printerName: auth.receiptPrinterName,
                                       );
 
                                       if (!mounted) return;

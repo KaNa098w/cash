@@ -294,6 +294,7 @@ class AuthCubit extends Cubit<AuthState> {
               ),
             ),
             format: pageFormat,
+            printerName: _tokenProvider.receiptPrinterName,
           );
         }
       }

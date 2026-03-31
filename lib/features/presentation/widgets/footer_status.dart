@@ -237,6 +237,7 @@ class _FooterDesktop extends StatelessWidget {
             change: posCubit.change,
           ),
         ),
+        printerName: auth.receiptPrinterName,
       );
 
       await showDialog<void>(

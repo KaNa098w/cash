@@ -19,6 +19,7 @@ class SaleCard extends StatelessWidget {
     required this.refundLoading,
     required this.onSubmitRefund,
     required this.onPrintReceipt,
+    required this.onPrintInvoice,
     required this.selectedCount,
     required this.selectedTotal,
     required this.picks,
@@ -36,6 +37,7 @@ class SaleCard extends StatelessWidget {
   final bool refundLoading;
   final VoidCallback onSubmitRefund;
   final VoidCallback onPrintReceipt;
+  final VoidCallback onPrintInvoice;
 
   final int selectedCount;
   final num selectedTotal;
@@ -242,7 +244,7 @@ class SaleCard extends StatelessWidget {
                         label: 'Накладная',
                         width: actionWidth,
                         bg: const Color(0xFF21B3C0),
-                        onTap: () {},
+                        onTap: onPrintInvoice,
                       ),
                       const SizedBox(height: 12),
                       BottomActionButton(
@@ -276,7 +278,7 @@ class SaleCard extends StatelessWidget {
                               label: 'Накладная',
                               width: invoiceBtnWidth,
                               bg: const Color(0xFF21B3C0),
-                              onTap: () {}),
+                              onTap: onPrintInvoice),
                           const SizedBox(width: 12),
                           BottomActionButton(
                               label: 'Распечатать чек',

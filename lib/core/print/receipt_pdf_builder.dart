@@ -233,6 +233,248 @@ Future<pw.Document> buildReceiptPdf(ReceiptPdfData data) async {
   return doc;
 }
 
+class InvoicePdfData {
+  const InvoicePdfData({
+    required this.money,
+    required this.invoiceDate,
+    required this.invoiceNumber,
+    required this.cashierName,
+    required this.storeName,
+    required this.items,
+    required this.total,
+    required this.paymentMethodLabel,
+    this.discountSum = 0,
+    this.buyerName = '',
+    this.ndsAmount,
+    this.amountInWords = '',
+  });
+
+  final String Function(num) money;
+  final DateTime invoiceDate;
+  final String invoiceNumber;
+  final String cashierName;
+  final String storeName;
+  final List<ReceiptPdfItem> items;
+  final num total;
+  final num discountSum;
+  final String paymentMethodLabel;
+  final String buyerName;
+  final num? ndsAmount;
+  final String amountInWords;
+}
+
+String _fmtDateRu(DateTime dt) {
+  const months = [
+    'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+  ];
+  final d = dt.toLocal();
+  return '${d.day} ${months[d.month - 1]} ${d.year} г.';
+}
+
+Future<pw.Document> buildInvoicePdf(InvoicePdfData data) async {
+  final base = await PdfGoogleFonts.robotoRegular();
+  final bold = await PdfGoogleFonts.robotoBold();
+
+  const labelColor = PdfColor.fromInt(0xFF1155BB);
+  const borderColor = PdfColor.fromInt(0xFF888888);
+  const cellPad = pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4);
+  const fs = 9.0;
+
+  // Ячейка таблицы товаров
+  pw.Widget cell(
+    String text, {
+    bool isBold = false,
+    pw.Alignment align = pw.Alignment.centerLeft,
+    PdfColor? bg,
+  }) =>
+      pw.Container(
+        color: bg,
+        padding: cellPad,
+        alignment: align,
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(font: isBold ? bold : base, fontSize: fs),
+        ),
+      );
+
+  // Строка шапки: синяя метка + чёрное значение
+  pw.Widget infoRow(String label, String value, {bool valueBold = false}) =>
+      pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
+        child: pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.SizedBox(
+              width: 80,
+              child: pw.Text(label,
+                  style: pw.TextStyle(
+                      font: base, fontSize: fs, color: labelColor)),
+            ),
+            pw.Expanded(
+              child: pw.Text(value,
+                  style: pw.TextStyle(
+                      font: valueBold ? bold : base, fontSize: fs)),
+            ),
+          ],
+        ),
+      );
+
+  final nds = data.ndsAmount ?? 0;
+  final tableBorder = pw.TableBorder.all(color: borderColor, width: 0.5);
+  final doc = pw.Document();
+
+  doc.addPage(
+    pw.Page(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.fromLTRB(20, 20, 20, 20),
+      build: (_) => pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          // ─── Заголовок ───
+          pw.Text(
+            'Расходная накладная № ${data.invoiceNumber} от ${_fmtDateRu(data.invoiceDate)}',
+            style: pw.TextStyle(font: bold, fontSize: 11),
+          ),
+          pw.Container(height: 0.8, color: PdfColors.black,
+              margin: const pw.EdgeInsets.symmetric(vertical: 4)),
+
+          // ─── Шапка (без рамки, синие метки) ───
+          infoRow('Поставщик', data.storeName),
+          infoRow('Покупатель', data.buyerName),
+          infoRow('Основание', 'Без договора', valueBold: true),
+          infoRow('Склад', 'Основной склад', valueBold: true),
+          pw.SizedBox(height: 8),
+
+          // ─── Таблица товаров ───
+          pw.Table(
+            border: tableBorder,
+            columnWidths: const {
+              0: pw.FixedColumnWidth(30),
+              1: pw.FlexColumnWidth(),
+              2: pw.FixedColumnWidth(72),
+              3: pw.FixedColumnWidth(62),
+              4: pw.FixedColumnWidth(72),
+            },
+            children: [
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(
+                    color: PdfColor.fromInt(0xFFF5F5F5)),
+                children: [
+                  cell('№ п/п', isBold: true, align: pw.Alignment.center),
+                  cell('Товар', isBold: true, align: pw.Alignment.center),
+                  cell('Количество', isBold: true,
+                      align: pw.Alignment.center),
+                  cell('Цена', isBold: true,
+                      align: pw.Alignment.center),
+                  cell('Сумма', isBold: true,
+                      align: pw.Alignment.center),
+                ],
+              ),
+              for (var i = 0; i < data.items.length; i++)
+                pw.TableRow(children: [
+                  cell('${i + 1}', align: pw.Alignment.center),
+                  cell(data.items[i].name),
+                  cell(
+                    '${data.items[i].quantity % 1 == 0 ? data.items[i].quantity.toInt() : data.items[i].quantity} шт.',
+                    align: pw.Alignment.center,
+                  ),
+                  cell(data.money(data.items[i].unitPrice),
+                      align: pw.Alignment.centerRight),
+                  cell(data.money(data.items[i].lineTotal),
+                      align: pw.Alignment.centerRight),
+                ]),
+              if (data.items.isEmpty)
+                pw.TableRow(children: [
+                  cell(''), cell(''), cell(''), cell(''), cell(''),
+                ]),
+            ],
+          ),
+          pw.SizedBox(height: 4),
+
+          // ─── Итоги (справа) ───
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Row(children: [
+                  pw.Text('Итого:',
+                      style: pw.TextStyle(font: bold, fontSize: fs)),
+                  pw.SizedBox(width: 30),
+                  pw.SizedBox(
+                    width: 80,
+                    child: pw.Text(data.money(data.total),
+                        textAlign: pw.TextAlign.right,
+                        style: pw.TextStyle(font: bold, fontSize: fs)),
+                  ),
+                ]),
+                pw.SizedBox(height: 2),
+                pw.Row(children: [
+                  pw.Text('В том числе\nНДС:',
+                      style: pw.TextStyle(font: bold, fontSize: fs)),
+                  pw.SizedBox(width: 30),
+                  pw.SizedBox(
+                    width: 80,
+                    child: pw.Text(data.money(nds),
+                        textAlign: pw.TextAlign.right,
+                        style: pw.TextStyle(font: bold, fontSize: fs)),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 10),
+
+          // ─── Всего наименований ───
+          pw.Text(
+            'Всего наименований ${data.items.length}, на сумму ${data.money(data.total)}',
+            style: pw.TextStyle(
+                font: base,
+                fontSize: fs,
+                color: labelColor,
+                decoration: pw.TextDecoration.underline),
+          ),
+          if (data.amountInWords.isNotEmpty) ...[
+            pw.SizedBox(height: 2),
+            pw.Text(
+              data.amountInWords,
+              style: pw.TextStyle(font: bold, fontSize: fs),
+            ),
+          ],
+
+          pw.SizedBox(height: 20),
+
+          // ─── Подписи ───
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Row(children: [
+                pw.Text('Отпустил',
+                    style: pw.TextStyle(font: base, fontSize: 10)),
+                pw.SizedBox(width: 6),
+                pw.Container(width: 130, height: 0.5, color: PdfColors.black),
+                pw.Text('  /',
+                    style: pw.TextStyle(font: base, fontSize: 10)),
+              ]),
+              pw.Row(children: [
+                pw.Text('Получил',
+                    style: pw.TextStyle(font: base, fontSize: 10)),
+                pw.SizedBox(width: 6),
+                pw.Container(width: 130, height: 0.5, color: PdfColors.black),
+                pw.Text('  /',
+                    style: pw.TextStyle(font: base, fontSize: 10)),
+              ]),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+
+  return doc;
+}
+
 Future<pw.Document> buildShiftReportPdf(ShiftReportPdfData data) async {
   final base = await PdfGoogleFonts.robotoRegular();
   final bold = await PdfGoogleFonts.robotoBold();

@@ -492,6 +492,7 @@ class PosSyncLocalStore {
       db.execute('DELETE FROM expense_types;');
       db.execute('DELETE FROM customers;');
       db.execute('DELETE FROM return_access_keys;');
+      db.execute('DELETE FROM sales_history;');
 
       final posRow = _mapPosInfoRow(posInfo);
       if (posRow != null) {
@@ -946,6 +947,12 @@ class PosSyncLocalStore {
     );
     final previousId = _string(existing?['id']);
     final localNumber = _asInt(existing?['local_number']);
+    final shouldRefreshHistoryCache = _hasCachedSaleHistoryRecord(
+      db,
+      saleId: saleId,
+      clientSaleId: clientSaleId,
+      previousId: previousId,
+    );
 
     if (previousId.isNotEmpty && previousId != saleId) {
       db.execute('UPDATE sale_items SET sale_id = ? WHERE sale_id = ?', [saleId, previousId]);
@@ -1027,19 +1034,22 @@ class PosSyncLocalStore {
       }
     }
 
-    final refundPayload = _loadRefundPayloadForSale(
-      db,
-      saleId: saleId,
-      clientSaleId: clientSaleId,
-      filterByCurrentPos: true,
-    );
-    _upsertSaleHistoryRecord(
-      db: db,
-      salePayload: payload,
-      refundPayload: refundPayload,
-      now: now,
-      previousIdToReplace: previousId.isNotEmpty && previousId != saleId ? previousId : null,
-    );
+    if (shouldRefreshHistoryCache) {
+      final refundPayload = _loadRefundPayloadForSale(
+        db,
+        saleId: saleId,
+        clientSaleId: clientSaleId,
+        filterByCurrentPos: true,
+      );
+      _upsertSaleHistoryRecord(
+        db: db,
+        salePayload: payload,
+        refundPayload: refundPayload,
+        now: now,
+        previousIdToReplace:
+            previousId.isNotEmpty && previousId != saleId ? previousId : null,
+      );
+    }
   }
 
   void _deleteSalePullRecord(sqlite.Database db, String saleId) {
@@ -1208,6 +1218,30 @@ class PosSyncLocalStore {
       ''',
       [saleId, sale.date.toIso8601String(), jsonEncode(sale.toJson()), now],
     );
+  }
+
+  bool _hasCachedSaleHistoryRecord(
+    sqlite.Database db, {
+    required String saleId,
+    required String clientSaleId,
+    String? previousId,
+  }) {
+    final candidateIds = <String>{
+      saleId.trim(),
+      clientSaleId.trim(),
+      (previousId ?? '').trim(),
+    }..removeWhere((id) => id.isEmpty);
+
+    if (candidateIds.isEmpty) return false;
+
+    final placeholders = List.filled(candidateIds.length, '?').join(', ');
+    final row = _firstRow(
+      db.select(
+        'SELECT id FROM sales_history WHERE id IN ($placeholders) LIMIT 1',
+        candidateIds.toList(growable: false),
+      ),
+    );
+    return row != null;
   }
 
   Map<String, dynamic>? _loadRefundPayloadForSale(

@@ -5,6 +5,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:leemon_app/core/di/api/device_id_store.dart';
@@ -203,6 +204,8 @@ class _PosAppState extends State<PosApp> {
       debugShowCheckedModeBanner: false,
       title: 'POS',
       routerConfig: _router,
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      supportedLocales: const [Locale('ru'), Locale('en')],
     );
   }
 }

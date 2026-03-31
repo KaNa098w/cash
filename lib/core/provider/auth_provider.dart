@@ -25,6 +25,8 @@ class AuthTokenProvider extends ChangeNotifier {
 
   static const _kShiftId = 'shiftId';
   static const _kReceiptPaperMm = 'receiptPaperMm';
+  static const _kReceiptPrinterName = 'receiptPrinterName';
+  static const _kInvoicePrinterName = 'invoicePrinterName';
 
   // ✅ активный кассир
   static const _kActiveUserId = 'activeUserId';
@@ -65,6 +67,12 @@ class AuthTokenProvider extends ChangeNotifier {
   int _receiptPaperMm = 80;
   int get receiptPaperMm => _receiptPaperMm == 57 ? 57 : 80;
   bool get isReceipt57mm => receiptPaperMm == 57;
+
+  String? _receiptPrinterName;
+  String? get receiptPrinterName => _receiptPrinterName;
+
+  String? _invoicePrinterName;
+  String? get invoicePrinterName => _invoicePrinterName;
 
   String? _activeUserId;
   String? get activeUserId => _activeUserId;
@@ -124,6 +132,8 @@ class AuthTokenProvider extends ChangeNotifier {
     _shiftId = prefs.getString(_kShiftId);
     _activeUserId = prefs.getString(_kActiveUserId);
     _receiptPaperMm = (prefs.getInt(_kReceiptPaperMm) == 57) ? 57 : 80;
+    _receiptPrinterName = prefs.getString(_kReceiptPrinterName);
+    _invoicePrinterName = prefs.getString(_kInvoicePrinterName);
 
     if (_deviceId == null || _deviceId!.isEmpty) {
       _deviceId = const Uuid().v4();
@@ -253,6 +263,28 @@ class AuthTokenProvider extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_kReceiptPaperMm, next);
+  }
+
+  Future<void> setReceiptPrinterName(String? name) async {
+    _receiptPrinterName = (name?.trim().isEmpty ?? true) ? null : name!.trim();
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    if (_receiptPrinterName == null) {
+      await prefs.remove(_kReceiptPrinterName);
+    } else {
+      await prefs.setString(_kReceiptPrinterName, _receiptPrinterName!);
+    }
+  }
+
+  Future<void> setInvoicePrinterName(String? name) async {
+    _invoicePrinterName = (name?.trim().isEmpty ?? true) ? null : name!.trim();
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    if (_invoicePrinterName == null) {
+      await prefs.remove(_kInvoicePrinterName);
+    } else {
+      await prefs.setString(_kInvoicePrinterName, _invoicePrinterName!);
+    }
   }
 
   Future<void> setShiftId(String id) async {
