@@ -29,6 +29,7 @@ class PaymentPanel extends StatefulWidget {
 class _PaymentPanelState extends State<PaymentPanel> {
   final _cashCtrl = TextEditingController();
   bool _paying = false;
+  bool _openingCustomerPicker = false;
 
   @override
   void dispose() {
@@ -50,6 +51,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
   }
 
   Future<void> _pickCustomer() async {
+    if (_openingCustomerPicker) return;
+    _openingCustomerPicker = true;
+
     final posCubit = context.read<PosCubit>();
 
     try {
@@ -79,6 +83,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
       );
     } catch (_) {
       // intentionally no snackbar in payment panel
+    } finally {
+      _openingCustomerPicker = false;
     }
   }
 

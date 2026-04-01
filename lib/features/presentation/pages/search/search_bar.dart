@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -30,6 +31,11 @@ class _SearchBarState extends State<SearchBar> {
   final _focusNode = FocusNode();
   bool _allowAutoRefocus = true;
   bool _disableSearchFieldForIpad = false;
+  bool _openingCustomerPicker = false;
+  DateTime? _lastHardwareDigitAt;
+  String? _pendingHardwareDigit;
+  bool _hardwareScanMode = false;
+  Timer? _hardwareScanResetTimer;
 
   final _layerLink = LayerLink();
   final _fieldKey = GlobalKey();
@@ -118,6 +124,7 @@ class _SearchBarState extends State<SearchBar> {
     super.dispose();
     _scanDebounce?.cancel();
     _typingDebounce?.cancel();
+    _hardwareScanResetTimer?.cancel();
   }
 
   Future<T?> _runWithDialogFocus<T>(
@@ -240,6 +247,169 @@ class _SearchBarState extends State<SearchBar> {
     }
   }
 
+  void _restoreSearchFocus() {
+    if (!mounted || _disableSearchFieldForIpad) return;
+    _allowAutoRefocus = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _disableSearchFieldForIpad) return;
+      _focusNode.requestFocus();
+      _ensureValidSelection();
+    });
+  }
+
+  void _insertSearchText(String text) {
+    final value = _controller.value;
+    final selection = value.selection;
+    final start = selection.start < 0 ? value.text.length : selection.start;
+    final end = selection.end < 0 ? value.text.length : selection.end;
+    final newText = value.text.replaceRange(start, end, text);
+    final newOffset = start + text.length;
+
+    _controller.value = value.copyWith(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newOffset),
+      composing: TextRange.empty,
+    );
+  }
+
+  void _replaceSearchText(String text) {
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+      composing: TextRange.empty,
+    );
+  }
+
+  void _scheduleHardwareScanReset() {
+    _hardwareScanResetTimer?.cancel();
+    _hardwareScanResetTimer = Timer(
+      const Duration(milliseconds: 180),
+      _resetHardwareScanState,
+    );
+  }
+
+  void _resetHardwareScanState() {
+    _lastHardwareDigitAt = null;
+    _pendingHardwareDigit = null;
+    _hardwareScanMode = false;
+    _hardwareScanResetTimer?.cancel();
+    _hardwareScanResetTimer = null;
+  }
+
+  void _startHardwareScan() {
+    final now = DateTime.now();
+    _lastHardwareDigitAt = now;
+    _hardwareScanMode = true;
+    _scheduleHardwareScanReset();
+  }
+
+  void _backspaceSearchText() {
+    final value = _controller.value;
+    final selection = value.selection;
+    final start = selection.start < 0 ? value.text.length : selection.start;
+    final end = selection.end < 0 ? value.text.length : selection.end;
+
+    if (start != end) {
+      _controller.value = value.copyWith(
+        text: value.text.replaceRange(start, end, ''),
+        selection: TextSelection.collapsed(offset: start),
+        composing: TextRange.empty,
+      );
+      return;
+    }
+
+    if (start == 0) return;
+
+    _controller.value = value.copyWith(
+      text: value.text.replaceRange(start - 1, start, ''),
+      selection: TextSelection.collapsed(offset: start - 1),
+      composing: TextRange.empty,
+    );
+  }
+
+  String? _digitFromPhysicalKey(PhysicalKeyboardKey key) {
+    final digits = <PhysicalKeyboardKey, String>{
+      PhysicalKeyboardKey.digit0: '0',
+      PhysicalKeyboardKey.digit1: '1',
+      PhysicalKeyboardKey.digit2: '2',
+      PhysicalKeyboardKey.digit3: '3',
+      PhysicalKeyboardKey.digit4: '4',
+      PhysicalKeyboardKey.digit5: '5',
+      PhysicalKeyboardKey.digit6: '6',
+      PhysicalKeyboardKey.digit7: '7',
+      PhysicalKeyboardKey.digit8: '8',
+      PhysicalKeyboardKey.digit9: '9',
+      PhysicalKeyboardKey.numpad0: '0',
+      PhysicalKeyboardKey.numpad1: '1',
+      PhysicalKeyboardKey.numpad2: '2',
+      PhysicalKeyboardKey.numpad3: '3',
+      PhysicalKeyboardKey.numpad4: '4',
+      PhysicalKeyboardKey.numpad5: '5',
+      PhysicalKeyboardKey.numpad6: '6',
+      PhysicalKeyboardKey.numpad7: '7',
+      PhysicalKeyboardKey.numpad8: '8',
+      PhysicalKeyboardKey.numpad9: '9',
+    };
+
+    return digits[key];
+  }
+
+  KeyEventResult _handleSearchKeyEvent(FocusNode node, KeyEvent event) {
+    if (_disableSearchFieldForIpad || !_focusNode.hasFocus) {
+      return KeyEventResult.ignored;
+    }
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    final digit = _digitFromPhysicalKey(event.physicalKey);
+    if (digit != null) {
+      final now = DateTime.now();
+      final last = _lastHardwareDigitAt;
+      final isRapidContinuation =
+          last != null && now.difference(last) <= const Duration(milliseconds: 45);
+
+      if (_hardwareScanMode) {
+        _lastHardwareDigitAt = now;
+        _scheduleHardwareScanReset();
+        _insertSearchText(digit);
+        return KeyEventResult.handled;
+      }
+
+      if (isRapidContinuation && _pendingHardwareDigit != null) {
+        _startHardwareScan();
+        _replaceSearchText('${_pendingHardwareDigit!}$digit');
+        _pendingHardwareDigit = null;
+        return KeyEventResult.handled;
+      }
+
+      _pendingHardwareDigit = digit;
+      _lastHardwareDigitAt = now;
+      _scheduleHardwareScanReset();
+      return KeyEventResult.ignored;
+    }
+
+    if (event.physicalKey == PhysicalKeyboardKey.enter ||
+        event.physicalKey == PhysicalKeyboardKey.numpadEnter) {
+      _resetHardwareScanState();
+      _doSearch();
+      return KeyEventResult.handled;
+    }
+
+    if (event.physicalKey == PhysicalKeyboardKey.backspace) {
+      if (_hardwareScanMode) {
+        _resetHardwareScanState();
+        _backspaceSearchText();
+        return KeyEventResult.handled;
+      }
+      _pendingHardwareDigit = null;
+      _lastHardwareDigitAt = null;
+      return KeyEventResult.ignored;
+    }
+
+    _pendingHardwareDigit = null;
+    _lastHardwareDigitAt = null;
+    return KeyEventResult.ignored;
+  }
+
   void _removeChooser() {
     _chooserEntry?.remove();
     _chooserEntry = null;
@@ -307,6 +477,7 @@ class _SearchBarState extends State<SearchBar> {
 
       _controller.clear();
       _removeChooser();
+      _restoreSearchFocus();
       return;
     }
 
@@ -373,22 +544,33 @@ class _SearchBarState extends State<SearchBar> {
                               const Divider(height: 0.1),
                           itemBuilder: (_, index) {
                             final p = products[index];
+                            final qtyLabel = (() {
+                              final shown = (p.conversionValue != null &&
+                                      p.conversionValue! > 0)
+                                  ? p.quantity * p.conversionValue!
+                                  : p.quantity;
+                              return ProductModel.isPiecesMeasurementUnit(
+                                p.measurementUnit,
+                              )
+                                  ? shown.round().toString()
+                                  : shown
+                                      .toStringAsFixed(2)
+                                      .replaceFirst(RegExp(r'\\.?0+\$'), '');
+                            })();
                             return ListTile(
                               dense: true,
                               title: Text(
-                                '${p.name} (${(() {
-                                  final shown = (p.conversionValue != null && p.conversionValue! > 0)
-                                      ? p.quantity * p.conversionValue!
-                                      : p.quantity;
-                                  return ProductModel.isPiecesMeasurementUnit(p.measurementUnit)
-                                      ? shown.round().toString()
-                                      : shown.toStringAsFixed(2).replaceFirst(RegExp(r'\\.?0+\$'), '');
-                                })()} ${p.measurementUnit})',
-                                style: const TextStyle(fontSize: 14),
+                                '${_shortProductNameKeepEnd(p.name, maxChars: 42)} ($qtyLabel ${p.measurementUnit})',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                               subtitle: Text(
                                 [
-                                  if (p.barcode != null) 'ШК: ${p.barcode}',
+                                  if (p.barcode != null) '${p.barcode}',
                                   // if (p.localBarcode != null)
                                   //   'Код: ${p.localBarcode}',
                                   // 'Ед.: ${p.measurementUnit}',
@@ -398,8 +580,8 @@ class _SearchBarState extends State<SearchBar> {
                               trailing: Text(
                                 '${p.sellingPrice.toStringAsFixed(2)} т',
                                 style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
                                 ),
                               ),
                               onTap: () async {
@@ -416,6 +598,7 @@ class _SearchBarState extends State<SearchBar> {
                                 if (added != true) return;
                                 _controller.clear();
                                 _removeChooser();
+                                _restoreSearchFocus();
                               },
                             );
                           },
@@ -462,7 +645,9 @@ class _SearchBarState extends State<SearchBar> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: TextField(
+                child: Focus(
+                  onKeyEvent: _handleSearchKeyEvent,
+                  child: TextField(
                   controller: _controller,
                   focusNode: _focusNode,
                   autofocus: !_disableSearchFieldForIpad,
@@ -470,6 +655,7 @@ class _SearchBarState extends State<SearchBar> {
                   readOnly: _disableSearchFieldForIpad,
                   showCursor: !_disableSearchFieldForIpad,
                   enableInteractiveSelection: !_disableSearchFieldForIpad,
+                  onTapOutside: (_) => _restoreSearchFocus(),
                   onSubmitted: (_) => _doSearch(),
                   textInputAction: TextInputAction.search,
                   style: const TextStyle(fontSize: 18),
@@ -511,6 +697,7 @@ class _SearchBarState extends State<SearchBar> {
                     ),
                   ),
                 ),
+                ),
               ),
             ),
           ),
@@ -550,12 +737,15 @@ class _SearchBarState extends State<SearchBar> {
         const SizedBox(width: 16),
         OutlinedButton(
           onPressed: () async {
+            if (_openingCustomerPicker) return;
+            _openingCustomerPicker = true;
             final auth = context.read<AuthTokenProvider>();
             final posKey = auth.posKey?.trim() ?? '';
             if (posKey.isEmpty) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('posKey пустой')),
               );
+              _openingCustomerPicker = false;
               return;
             }
 
@@ -596,6 +786,8 @@ class _SearchBarState extends State<SearchBar> {
                   behavior: SnackBarBehavior.floating,
                 ),
               );
+            } finally {
+              _openingCustomerPicker = false;
             }
           },
           style: OutlinedButton.styleFrom(
@@ -671,4 +863,29 @@ class _SearchBarState extends State<SearchBar> {
       ],
     );
   }
+}
+
+String _shortProductNameKeepEnd(String name, {int maxChars = 40}) {
+  final normalized = name.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (normalized.length <= maxChars) return normalized;
+
+  final parts = normalized.split(' ');
+  if (parts.length < 2) {
+    return '${normalized.substring(0, maxChars - 3)}...';
+  }
+
+  final tail = parts.last;
+  final prefixBudget = maxChars - 3 - tail.length;
+  if (prefixBudget <= 1) {
+    final endLen = (maxChars - 3).clamp(1, tail.length);
+    return '...${tail.substring(tail.length - endLen)}';
+  }
+
+  var prefix = normalized.substring(0, prefixBudget).trimRight();
+  final lastSpace = prefix.lastIndexOf(' ');
+  if (lastSpace > 8) {
+    prefix = prefix.substring(0, lastSpace).trimRight();
+  }
+
+  return '$prefix...$tail';
 }

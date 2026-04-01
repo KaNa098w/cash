@@ -11,6 +11,31 @@ import 'package:leemon_app/features/presentation/widgets/payment_panel.dart';
 
 const double kCartFs = 18;
 
+String _shortProductNameKeepEnd(String name, {int maxChars = 46}) {
+  final normalized = name.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (normalized.length <= maxChars) return normalized;
+
+  final parts = normalized.split(' ');
+  if (parts.length < 2) {
+    return '${normalized.substring(0, maxChars - 3)}...';
+  }
+
+  final tail = parts.last;
+  final prefixBudget = maxChars - 3 - tail.length;
+  if (prefixBudget <= 1) {
+    final endLen = (maxChars - 3).clamp(1, tail.length);
+    return '...${tail.substring(tail.length - endLen)}';
+  }
+
+  var prefix = normalized.substring(0, prefixBudget).trimRight();
+  final lastSpace = prefix.lastIndexOf(' ');
+  if (lastSpace > 8) {
+    prefix = prefix.substring(0, lastSpace).trimRight();
+  }
+
+  return '$prefix...$tail';
+}
+
 class CartList extends StatelessWidget {
   const CartList({super.key});
 
@@ -96,12 +121,12 @@ class CartList extends StatelessWidget {
                                 // Наименование + метки
                                 Expanded(
                                   child: Text(
-                                    '${it.product.name} (${formatQtyByUnit(it.product.quantity, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit})',
+                                    '${_shortProductNameKeepEnd(it.product.name)} (${formatQtyByUnit(it.product.quantity, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit})',
                                     style: const TextStyle(
-                                      fontSize: kCartFs,
-                                      fontWeight: FontWeight.w500,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w600,
                                     ),
-                                    maxLines: 2,
+                                    maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),

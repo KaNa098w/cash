@@ -1,3 +1,5 @@
+import 'package:leemon_app/core/service/app_build_info.dart';
+
 /// Текущая версия приложения.
-/// Обновлять вручную перед каждой release-сборкой вместо pubspec.yaml.
-const String kAppVersion = '1.0.8';
+/// Берется из единого источника, чтобы экран обновления и сборка не расходились.
+const String kAppVersion = AppBuildInfo.appVersion;

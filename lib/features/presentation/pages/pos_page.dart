@@ -1,15 +1,37 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:leemon_app/features/presentation/pages/products/cart_list/cart_list.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/sales_history_page.dart';
-import 'package:leemon_app/features/presentation/pages/products/cart_list/cart_list.dart';
+import 'package:leemon_app/features/presentation/widgets/app_update_background_check.dart';
 import 'package:leemon_app/features/presentation/widgets/footer_status.dart';
+import 'package:leemon_app/features/presentation/widgets/top_bar.dart';
 import 'package:leemon_app/features/presentation/pages/search/search_bar.dart'
     as sb;
-import 'package:leemon_app/features/presentation/widgets/top_bar.dart';
 
-class PosPage extends StatelessWidget {
+class PosPage extends StatefulWidget {
   const PosPage({super.key});
+
+  @override
+  State<PosPage> createState() => _PosPageState();
+}
+
+class _PosPageState extends State<PosPage> {
+  bool _updateCheckStarted = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_updateCheckStarted) return;
+    _updateCheckStarted = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(checkForAppUpdateAfterCashierLogin(context));
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get_it/get_it.dart';
 
 import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
@@ -46,7 +47,7 @@ class CustomerCreateDialog extends StatefulWidget {
 
 class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
   final _name = TextEditingController();
-  final _phone = TextEditingController();
+  final _phone = TextEditingController(text: '+7 7');
   final _iinBin = TextEditingController();
 
   final _nameFocus = FocusNode();
@@ -54,10 +55,9 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
   final _iinFocus = FocusNode();
 
   TextEditingController? _active;
-
   bool _saving = false;
+  bool _formattingPhone = false;
   String? _errorText;
-
   OverlayEntry? _keyboardEntry;
 
   CustomersRemoteDataSource get _ds => GetIt.I<CustomersRemoteDataSource>();
@@ -69,7 +69,7 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
     void bind(FocusNode node, TextEditingController ctrl) {
       node.addListener(() {
         if (node.hasFocus) {
-          setState(() => _active = ctrl); // ✅ активное поле меняется
+          setState(() => _active = ctrl);
         }
       });
     }
@@ -77,6 +77,7 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
     bind(_nameFocus, _name);
     bind(_phoneFocus, _phone);
     bind(_iinFocus, _iinBin);
+    _phone.addListener(_normalizePhoneField);
 
     _active = _name;
 
@@ -88,7 +89,6 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
   @override
   void dispose() {
     _hideKeyboard();
-
     _name.dispose();
     _phone.dispose();
     _iinBin.dispose();
@@ -111,8 +111,14 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
           child: OnScreenKeyboardSheet(
             controllerGetter: () => _active ?? _name,
             onEnter: () {
-              if (_nameFocus.hasFocus) return _phoneFocus.requestFocus();
-              if (_phoneFocus.hasFocus) return _iinFocus.requestFocus();
+              if (_nameFocus.hasFocus) {
+                _phoneFocus.requestFocus();
+                return;
+              }
+              if (_phoneFocus.hasFocus) {
+                _submit();
+                return;
+              }
               _submit();
             },
             onClose: _hideKeyboard,
@@ -129,13 +135,67 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
     _keyboardEntry = null;
   }
 
+  void _normalizePhoneField() {
+    if (_formattingPhone) return;
+
+    final formatted = _formatKzPhone(_phone.text);
+    if (_phone.text == formatted) return;
+
+    _formattingPhone = true;
+    _phone.value = TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+    _formattingPhone = false;
+  }
+
+  String _formatKzPhone(String input) {
+    var digits = input.replaceAll(RegExp(r'\D'), '');
+
+    if (digits.isEmpty) return '+7 7';
+
+    if (digits.startsWith('8')) {
+      digits = '7${digits.substring(1)}';
+    } else if (!digits.startsWith('7')) {
+      digits = '7$digits';
+    }
+
+    if (digits.length == 1) {
+      digits = '77';
+    } else if (digits[1] != '7') {
+      digits = '7${digits.substring(1)}';
+    }
+
+    if (digits.length > 11) {
+      digits = digits.substring(0, 11);
+    }
+
+    final local = digits.substring(1);
+    final parts = <String>[];
+
+    if (local.isNotEmpty) {
+      parts.add(local.substring(0, local.length < 3 ? local.length : 3));
+    }
+    if (local.length > 3) {
+      parts.add(local.substring(3, local.length < 6 ? local.length : 6));
+    }
+    if (local.length > 6) {
+      parts.add(local.substring(6, local.length < 8 ? local.length : 8));
+    }
+    if (local.length > 8) {
+      parts.add(local.substring(8, local.length < 10 ? local.length : 10));
+    }
+
+    return '+7 ${parts.join(' ')}'.trimRight();
+  }
+
   String _extractDioMessage(DioException e) {
     final data = e.response?.data;
     if (data is Map) {
       final msg = data['message']?.toString();
       if (msg != null && msg.trim().isNotEmpty) return msg.trim();
     }
-    return 'Ошибка сети/сервер вернул ошибку';
+    return 'Ошибка сети или сервер вернул ошибку';
   }
 
   Future<void> _submit() async {
@@ -143,10 +203,11 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
 
     final posKey = widget.posKey.trim();
     final name = _name.text.trim();
-    final phone = _phone.text.trim();
+    final phone = _formatKzPhone(_phone.text.trim());
+    final phoneDigits = phone.replaceAll(RegExp(r'\D'), '');
 
     if (posKey.isEmpty) {
-      setState(() => _errorText = 'posKey пустой (не выбрана POS/организация)');
+      setState(() => _errorText = 'posKey пустой');
       return;
     }
     if (name.isEmpty) {
@@ -154,9 +215,11 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
       setState(() => _errorText = 'Введите имя');
       return;
     }
-    if (phone.isEmpty) {
+    if (phoneDigits.length != 11 || !phoneDigits.startsWith('77')) {
       _phoneFocus.requestFocus();
-      setState(() => _errorText = 'Введите телефон');
+      setState(
+        () => _errorText = 'Введите телефон в формате +7 777 777 77 77',
+      );
       return;
     }
 
@@ -166,7 +229,6 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
     });
 
     try {
-      // ✅ один вызов. второй вызов убираем.
       final created = await _ds.createCustomer(
         key: posKey,
         name: name,
@@ -176,12 +238,14 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
       if (!mounted) return;
 
       _hideKeyboard();
-      Navigator.of(context).pop(CustomerLite(
-        id: created.id,
-        name: created.name,
-        phone: created.phone,
-        balance: 0,
-      ));
+      Navigator.of(context).pop(
+        CustomerLite(
+          id: created.id,
+          name: created.name,
+          phone: _formatKzPhone(created.phone),
+          balance: 0,
+        ),
+      );
     } on DioException catch (e) {
       if (!mounted) return;
       setState(() => _errorText = _extractDioMessage(e));
@@ -204,7 +268,7 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
         padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: const Color(0xFF2F80ED), width: 2),
           boxShadow: const [
             BoxShadow(
@@ -232,15 +296,15 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
                   ),
                 ),
                 SizedBox(
-                  height: 38,
-                  width: 38,
+                  height: 42,
+                  width: 42,
                   child: OutlinedButton(
-                    onPressed: _showKeyboard, // ✅ overlay, не блокирует фон
+                    onPressed: _showKeyboard,
                     style: OutlinedButton.styleFrom(
                       padding: EdgeInsets.zero,
                       side: const BorderSide(color: Color(0xFFE5E7EB)),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     child: const Icon(Icons.keyboard_alt_outlined, size: 20),
@@ -249,20 +313,21 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
               ],
             ),
             const SizedBox(height: 18),
-
-            // ✅ Тап по полю делает его активным + можно вводить физ. клавой
             BlueField(
               controller: _name,
               focusNode: _nameFocus,
-              hint: 'Имя',
+              hint: 'Имя покупателя',
             ),
             const SizedBox(height: 14),
             BlueField(
               controller: _phone,
               focusNode: _phoneFocus,
-              hint: 'Телефон',
+              hint: '+7 777 777 77 77',
+              keyboardType: TextInputType.phone,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[\d\+\s]')),
+              ],
             ),
-
             if (_errorText != null) ...[
               const SizedBox(height: 12),
               Align(
@@ -276,7 +341,6 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
                 ),
               ),
             ],
-
             const SizedBox(height: 18),
             Row(
               children: [

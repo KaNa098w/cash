@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class BlueField extends StatefulWidget {
   const BlueField({
@@ -7,12 +8,16 @@ class BlueField extends StatefulWidget {
     required this.focusNode,
     required this.hint,
     this.keyboardType,
+    this.onChanged,
+    this.inputFormatters,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
   final String hint;
   final TextInputType? keyboardType;
+  final ValueChanged<String>? onChanged;
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   State<BlueField> createState() => _BlueFieldState();
@@ -78,6 +83,8 @@ class _BlueFieldState extends State<BlueField> {
           controller: widget.controller,
           focusNode: widget.focusNode,
           keyboardType: widget.keyboardType,
+          onChanged: widget.onChanged,
+          inputFormatters: widget.inputFormatters,
           decoration: InputDecoration(
             isDense: true,
             border: InputBorder.none,

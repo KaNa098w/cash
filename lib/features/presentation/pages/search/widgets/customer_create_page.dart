@@ -95,7 +95,7 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
     final qPhone = q.replaceAll(' ', '');
     return _all.where((c) {
       return c.name.toLowerCase().contains(q) ||
-          c.phone.replaceAll(' ', '').contains(qPhone);
+          _formatCustomerPhone(c.phone).replaceAll(' ', '').contains(qPhone);
     }).toList();
   }
 
@@ -296,7 +296,7 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
                           Expanded(
                             flex: 3,
                             child: Text(
-                              c.phone,
+                              _formatCustomerPhone(c.phone),
                               style: const TextStyle(fontSize: 16),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -364,6 +364,43 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
       ),
     );
   }
+}
+
+String _formatCustomerPhone(String input) {
+  var digits = input.replaceAll(RegExp(r'\D'), '');
+
+  if (digits.isEmpty) return input;
+  if (digits.startsWith('8')) {
+    digits = '7${digits.substring(1)}';
+  } else if (!digits.startsWith('7')) {
+    digits = '7$digits';
+  }
+
+  if (digits.length > 11) {
+    digits = digits.substring(0, 11);
+  }
+
+  if (digits.length < 2) {
+    return '+7';
+  }
+
+  final local = digits.substring(1);
+  final parts = <String>[];
+
+  if (local.isNotEmpty) {
+    parts.add(local.substring(0, local.length < 3 ? local.length : 3));
+  }
+  if (local.length > 3) {
+    parts.add(local.substring(3, local.length < 6 ? local.length : 6));
+  }
+  if (local.length > 6) {
+    parts.add(local.substring(6, local.length < 8 ? local.length : 8));
+  }
+  if (local.length > 8) {
+    parts.add(local.substring(8, local.length < 10 ? local.length : 10));
+  }
+
+  return '+7 ${parts.join(' ')}'.trimRight();
 }
 
 String _fmtMoneyKzt(num v) {

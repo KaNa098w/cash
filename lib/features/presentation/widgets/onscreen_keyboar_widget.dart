@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
 
 class OnScreenKeyboardSheet extends StatelessWidget {
   const OnScreenKeyboardSheet({
@@ -9,12 +8,8 @@ class OnScreenKeyboardSheet extends StatelessWidget {
     required this.onClose,
   });
 
-  /// ✅ Берём контроллер динамически (активное поле может меняться)
   final TextEditingController Function() controllerGetter;
-
   final VoidCallback onEnter;
-
-  /// ✅ Закрыть клавиатуру (в overlay это не Navigator.pop)
   final VoidCallback onClose;
 
   @override
@@ -96,13 +91,22 @@ class _Keyboard extends StatefulWidget {
 
 class _KeyboardState extends State<_Keyboard> {
   bool _shift = false;
+  bool _isRussian = true;
 
-  static const _row1 = ['1','2','3','4','5','6','7','8','9','0'];
-  static const _row2 = ['q','w','e','r','t','y','u','i','o','p'];
-  static const _row3 = ['a','s','d','f','g','h','j','k','l'];
-  static const _row4 = ['z','x','c','v','b','n','m'];
+  static const _digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+  static const _ruRow1 = ['й', 'ц', 'у', 'к', 'е', 'н', 'г', 'ш', 'щ', 'з', 'х', 'ъ'];
+  static const _ruRow2 = ['ф', 'ы', 'в', 'а', 'п', 'р', 'о', 'л', 'д', 'ж', 'э'];
+  static const _ruRow3 = ['я', 'ч', 'с', 'м', 'и', 'т', 'ь', 'б', 'ю'];
+
+  static const _enRow1 = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'];
+  static const _enRow2 = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'];
+  static const _enRow3 = ['z', 'x', 'c', 'v', 'b', 'n', 'm'];
 
   TextEditingController get _ctrl => widget.controllerGetter();
+
+  List<String> get _lettersRow1 => _isRussian ? _ruRow1 : _enRow1;
+  List<String> get _lettersRow2 => _isRussian ? _ruRow2 : _enRow2;
+  List<String> get _lettersRow3 => _isRussian ? _ruRow3 : _enRow3;
 
   void _insert(String text) {
     final ctrl = _ctrl;
@@ -149,30 +153,7 @@ class _KeyboardState extends State<_Keyboard> {
     );
   }
 
-  Widget _key(String label, {VoidCallback? onTap, int flex = 1}) {
-    final display = _shift ? label.toUpperCase() : label;
-
-    return Expanded(
-      flex: flex,
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: Material(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: onTap ?? () => _insert(display),
-            child: const SizedBox(
-              height: 48,
-              child: Center(),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _keyText(String label, {VoidCallback? onTap, int flex = 1}) {
+  Widget _textKey(String label, {VoidCallback? onTap, int flex = 1}) {
     final display = _shift ? label.toUpperCase() : label;
 
     return Expanded(
@@ -204,25 +185,24 @@ class _KeyboardState extends State<_Keyboard> {
   }
 
   Widget _actionKey(
-    IconData icon, {
+    Widget child, {
     required VoidCallback onTap,
     int flex = 1,
+    Color backgroundColor = const Color(0xFF111827),
   }) {
     return Expanded(
       flex: flex,
       child: Padding(
         padding: const EdgeInsets.all(4),
         child: Material(
-          color: const Color(0xFF111827),
+          color: backgroundColor,
           borderRadius: BorderRadius.circular(12),
           child: InkWell(
             borderRadius: BorderRadius.circular(12),
             onTap: onTap,
             child: SizedBox(
               height: 48,
-              child: Center(
-                child: Icon(icon, color: Colors.white),
-              ),
+              child: Center(child: child),
             ),
           ),
         ),
@@ -234,27 +214,53 @@ class _KeyboardState extends State<_Keyboard> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Row(children: _row1.map((k) => _keyText(k)).toList()),
-        Row(children: _row2.map((k) => _keyText(k)).toList()),
+        Row(
+          children: [
+            ..._digits.map((k) => _textKey(k)),
+            _textKey('+'),
+          ],
+        ),
+        Row(children: _lettersRow1.map((k) => _textKey(k)).toList()),
         Row(
           children: [
             _actionKey(
-              _shift ? Icons.keyboard_capslock : Icons.keyboard_arrow_up,
+              Icon(
+                _shift ? Icons.keyboard_capslock : Icons.keyboard_arrow_up,
+                color: Colors.white,
+              ),
               onTap: () => setState(() => _shift = !_shift),
               flex: 2,
             ),
-            ..._row3.map((k) => _keyText(k)).toList(),
-            _actionKey(Icons.backspace_outlined, onTap: _backspace, flex: 2),
+            ..._lettersRow2.map((k) => _textKey(k)).toList(),
+            _actionKey(
+              const Icon(Icons.backspace_outlined, color: Colors.white),
+              onTap: _backspace,
+              flex: 2,
+            ),
           ],
         ),
-        Row(children: _row4.map((k) => _keyText(k)).toList()),
+        Row(children: _lettersRow3.map((k) => _textKey(k)).toList()),
         Row(
           children: [
-            _keyText('Пробел', onTap: () => _insert(' '), flex: 6),
             _actionKey(
-              Icons.subdirectory_arrow_left,
+              Text(
+                _isRussian ? 'RU' : 'EN',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              onTap: () => setState(() => _isRussian = !_isRussian),
+              flex: 2,
+              backgroundColor: const Color(0xFF2563EB),
+            ),
+            _textKey('-', flex: 1),
+            _textKey('Пробел', onTap: () => _insert(' '), flex: 5),
+            _actionKey(
+              const Icon(Icons.subdirectory_arrow_left, color: Colors.white),
               onTap: widget.onEnter,
               flex: 2,
+              backgroundColor: const Color(0xFF0F766E),
             ),
           ],
         ),

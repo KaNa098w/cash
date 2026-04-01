@@ -482,15 +482,34 @@ Future<pw.Document> buildShiftReportPdf(ShiftReportPdfData data) async {
   final doc = pw.Document();
 
   pw.Widget divider() => pw.Container(
-        margin: const pw.EdgeInsets.symmetric(vertical: 4),
-        height: 0.6,
-        color: PdfColors.grey600,
+        margin: const pw.EdgeInsets.symmetric(vertical: 3),
+        child: pw.LayoutBuilder(
+          builder: (context, constraints) {
+            const dashWidth = 4.0;
+            const dashGap = 2.0;
+            const thickness = 0.4;
+
+            final width = constraints!.maxWidth;
+            final dashCount = (width / (dashWidth + dashGap)).floor();
+
+            return pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: List.generate(dashCount, (_) {
+                return pw.Container(
+                  width: dashWidth,
+                  height: thickness,
+                  color: PdfColors.grey700,
+                );
+              }),
+            );
+          },
+        ),
       );
 
-  pw.Widget kv(String left, String right, {bool strong = false}) {
+  pw.Widget kv(String left, String right, {bool strong = false, double fs = 7}) {
     final style = pw.TextStyle(
       font: strong ? bold : base,
-      fontSize: 8,
+      fontSize: fs,
     );
     return pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -506,62 +525,115 @@ Future<pw.Document> buildShiftReportPdf(ShiftReportPdfData data) async {
   doc.addPage(
     pw.Page(
       pageFormat: data.pageFormat,
-      margin: const pw.EdgeInsets.fromLTRB(10, 12, 18, 12),
+      orientation: pw.PageOrientation.portrait,
+      margin: const pw.EdgeInsets.only(
+        right: 24,
+        top: 12,
+        bottom: 12,
+      ),
       build: (_) => pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
           pw.Text(
-            'Z-OTCHET (Zakrytie smeny)',
+            data.storeName,
             textAlign: pw.TextAlign.center,
-            style: pw.TextStyle(font: bold, fontSize: 10),
+            style: pw.TextStyle(font: base, fontSize: 9),
+          ),
+          pw.SizedBox(height: 2),
+          pw.Text(
+            'Z-ОТЧЕТ',
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(font: bold, fontSize: 9),
+          ),
+          pw.SizedBox(height: 2),
+          pw.Text(
+            'Закрытие смены',
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(font: base, fontSize: 7),
+          ),
+          pw.SizedBox(height: 2),
+          pw.Text(
+            'Дата закрытия: ${data.closedAt == null ? '-' : formatReceiptDate(data.closedAt!)}',
+            style: pw.TextStyle(font: base, fontSize: 7),
+          ),
+          pw.SizedBox(height: 2),
+          pw.Text(
+            'Смена №: ${data.sessionId}',
+            style: pw.TextStyle(font: base, fontSize: 7),
+          ),
+          pw.SizedBox(height: 2),
+          pw.Text(
+            'Кассир: ${data.cashierName}',
+            style: pw.TextStyle(font: base, fontSize: 7),
+          ),
+          pw.SizedBox(height: 2),
+          pw.Text(
+            'Касса: ${data.posName}',
+            style: pw.TextStyle(font: base, fontSize: 7),
           ),
           divider(),
-          kv('Magazin:', data.storeName),
-          kv('Kassa:', data.posName),
-          kv('Kassir:', data.cashierName),
-          kv('Smena:', '#${data.sessionId}'),
+          kv(
+            'Открытие смены',
+            data.openedAt == null ? '-' : formatReceiptDate(data.openedAt!),
+          ),
+          kv(
+            'Закрытие смены',
+            data.closedAt == null ? '-' : formatReceiptDate(data.closedAt!),
+          ),
           divider(),
-          kv('Otkrytie:', data.openedAt == null ? '-' : formatReceiptDate(data.openedAt!)),
-          kv('Zakrytie:', data.closedAt == null ? '-' : formatReceiptDate(data.closedAt!)),
-          divider(),
-          pw.Text('N  Tovar', style: pw.TextStyle(font: bold, fontSize: 8)),
+          pw.Text(
+            'Проданные товары',
+            style: pw.TextStyle(font: bold, fontSize: 7),
+          ),
           pw.SizedBox(height: 2),
-          for (var i = 0; i < data.items.length; i++) ...[
+          if (data.items.isEmpty)
             pw.Text(
-              '${i + 1}. ${data.items[i].name}',
-              style: pw.TextStyle(font: base, fontSize: 8),
+              'Нет проданных товаров',
+              style: pw.TextStyle(font: base, fontSize: 7),
+            ),
+          for (final item in data.items) ...[
+            pw.Text(
+              item.name,
+              style: pw.TextStyle(font: base, fontSize: 7),
             ),
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text(
-                  'Kol: ${data.items[i].quantity}',
+                  '${item.quantity} шт.',
                   style: pw.TextStyle(font: base, fontSize: 7),
                 ),
+                pw.SizedBox(width: 10),
                 pw.Text(
-                  data.money(data.items[i].lineTotal),
+                  data.money(item.lineTotal),
                   style: pw.TextStyle(font: base, fontSize: 7),
                 ),
               ],
             ),
-            pw.SizedBox(height: 3),
+            pw.SizedBox(height: 2),
           ],
           divider(),
-          kv('Kol-vo prodazh:', '${data.salesCount}'),
-          kv('Nalichnye:', data.money(data.cashTotal)),
-          kv('Karta:', data.money(data.cardTotal)),
-          kv('Perevod:', data.money(data.transferTotal)),
+          kv('Количество чеков', '${data.salesCount}'),
+          kv('Наличные', data.money(data.cashTotal)),
+          kv('Карта', data.money(data.cardTotal)),
+          kv('Перевод', data.money(data.transferTotal)),
           divider(),
-          kv('ITOGO:', data.money(data.grandTotal), strong: true),
+          kv('ИТОГО', data.money(data.grandTotal), strong: true),
           divider(),
-          kv('Nalichnye pri otkrytii:', data.money(data.openingCashAmount)),
-          kv('Nalichnye pri zakrytii:', data.money(data.closingCashAmount)),
+          kv('Наличные при открытии', data.money(data.openingCashAmount)),
+          kv('Наличные при закрытии', data.money(data.closingCashAmount)),
           kv(
-            'Raznitsa:',
+            'Разница',
             data.money(data.closingCashAmount - data.openingCashAmount),
             strong: true,
           ),
-          pw.SizedBox(height: 24 * PdfPageFormat.mm),
+          pw.SizedBox(height: 6),
+          pw.Text(
+            'Смена успешно закрыта',
+            style: pw.TextStyle(font: base, fontSize: 8),
+            textAlign: pw.TextAlign.center,
+          ),
+          pw.SizedBox(height: 35 * PdfPageFormat.mm),
         ],
       ),
     ),
