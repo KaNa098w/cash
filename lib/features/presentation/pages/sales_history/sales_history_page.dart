@@ -10,7 +10,6 @@ import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
-import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
@@ -71,9 +70,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     super.initState();
     _selectedDate = _dateOnly(DateTime.now());
 
-    final remote = GetIt.I<SaleRemoteDataSource>();
     final sync = GetIt.I<PosSyncService>();
-    _cubit = SalesHistoryCubit(remote, sync);
+    _cubit = SalesHistoryCubit(sync);
     _historyChangedSub = sync.onSalesHistoryChanged.listen((_) {
       _scheduleHistoryRefresh();
     });
@@ -99,23 +97,6 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       }
 
       _reloadHistory();
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_scrollController.hasClients) return;
-        final pos = _scrollController.position;
-        if (pos.maxScrollExtent <= 0) _maybeLoadMore();
-      });
-    });
-
-    _scrollController.addListener(() {
-      if (!_scrollController.hasClients) return;
-
-      final pos = _scrollController.position;
-      const threshold = 240.0;
-
-      if (pos.pixels >= pos.maxScrollExtent - threshold) {
-        _maybeLoadMore();
-      }
     });
   }
 
@@ -148,21 +129,6 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     if (key.isEmpty) return;
 
     _cubit.loadFirst(key: key);
-  }
-
-  void _maybeLoadMore() {
-    if (!mounted) return;
-    if (_saleQuery.isNotEmpty) return;
-    if (_selectedDate != null) return;
-
-    final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
-    if (key.isEmpty) return;
-
-    final state = _cubit.state;
-    if (state.loading) return;
-    if (state.loadingMore) return;
-
-    _cubit.loadMore(key: key);
   }
 
   Future<T?> _runWithDialogFocus<T>(Future<T?> Function() open) async {
@@ -446,15 +412,15 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: Color(0xFF2563EB),
+              primary: Color(0xFF456B5A),
               onPrimary: Colors.white,
               surface: Colors.white,
               onSurface: Color(0xFF111827),
-              surfaceContainerHighest: Color(0xFFEFF6FF),
+              surfaceContainerHighest: Color(0xFFEAF1ED),
             ),
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF2563EB),
+                foregroundColor: const Color(0xFF456B5A),
                 textStyle: const TextStyle(fontWeight: FontWeight.w700),
               ),
             ),
@@ -621,7 +587,6 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       );
 
       _controller.clearPicksForSale(saleId, () => setState(() {}));
-      await _cubit.refreshSaleById(key: key, saleId: saleId);
     } catch (e) {
       if (!mounted) return;
       _snack('Ошибка возврата: $e');
@@ -641,9 +606,13 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         child: BlocBuilder<SalesHistoryCubit, SalesHistoryState>(
           builder: (context, state) {
             final visibleSales = filterSales(state.sales, _saleQuery, date: _selectedDate);
-            final showLoadMoreTile = state.loadingMore && _saleQuery.isEmpty;
             final savedCashierName =
                 context.read<AuthTokenProvider>().activeUserName ?? '';
+            final visibleTotalAmount = visibleSales.fold<num>(
+              0,
+              (sum, sale) => sum + sale.totalAmount,
+            );
+            final visibleChecksCount = visibleSales.length;
 
             return Column(
               children: [
@@ -696,20 +665,10 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                                   controller: _scrollController,
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 16, vertical: 4),
-                                  itemCount: visibleSales.length +
-                                      (showLoadMoreTile ? 1 : 0),
+                                  itemCount: visibleSales.length,
                                   separatorBuilder: (_, __) =>
                                       const SizedBox(height: 10),
                                   itemBuilder: (_, index) {
-                                    if (showLoadMoreTile &&
-                                        index >= visibleSales.length) {
-                                      return const Padding(
-                                        padding: EdgeInsets.all(16),
-                                        child: Center(
-                                            child: CircularProgressIndicator()),
-                                      );
-                                    }
-
                                     final sale = visibleSales[index];
                                     final expanded =
                                         _expandedSaleId == sale.localId;
@@ -762,10 +721,114 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                               ),
                             ),
                 ),
+                _SalesHistoryTotalsBar(
+                  checksCount: visibleChecksCount,
+                  totalAmount: visibleTotalAmount,
+                ),
               ],
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _SalesHistoryTotalsBar extends StatelessWidget {
+  const _SalesHistoryTotalsBar({
+    required this.checksCount,
+    required this.totalAmount,
+  });
+
+  final int checksCount;
+  final num totalAmount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFFFCF8),
+        border: Border(
+          top: BorderSide(color: Color(0xFFE6E0D8)),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x120F172A),
+            blurRadius: 18,
+            offset: Offset(0, -6),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            Expanded(
+              child: _TotalsTile(
+                label: 'Количество чеков',
+                value: '$checksCount',
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _TotalsTile(
+                label: 'Общая сумма',
+                value: money(totalAmount),
+                emphasized: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TotalsTile extends StatelessWidget {
+  const _TotalsTile({
+    required this.label,
+    required this.value,
+    this.emphasized = false,
+  });
+
+  final String label;
+  final String value;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: emphasized ? const Color(0xFFE9F0EB) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: emphasized ? const Color(0xFFC9D7CF) : const Color(0xFFE5E7EB),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              color: Color(0xFF6B7280),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: emphasized ? 24 : 22,
+              color: const Color(0xFF17211C),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }

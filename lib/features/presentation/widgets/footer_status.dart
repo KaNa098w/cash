@@ -15,6 +15,7 @@ import 'package:leemon_app/features/domain/entities/payment.dart';
 import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/widgets/conversion_product_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/footer_panels_widget.dart';
 import 'package:leemon_app/features/presentation/widgets/live_data_text.dart';
 import 'package:leemon_app/features/presentation/widgets/payment_panel.dart';
@@ -116,11 +117,12 @@ class _FooterDesktop extends StatelessWidget {
     try {
       final saleItems = <SaleItemModel>[];
       for (final it in posCubit.state.items) {
-        if (it.qty % 1 != 0) {
-          throw Exception(
-              'Дробное количество не поддерживается: ${it.product.name}');
-        }
-        final qty = it.qty.toInt();
+        final cv = it.product.conversionValue;
+        // Для конвертируемых товаров отправляем количество
+        // в единице измерения товара, а не во внутренних штуках.
+        final qty = (cv != null && cv > 0)
+            ? (it.qty * cv)
+            : it.qty;
         final price = it.product.price.round();
         final totalPrice = (it.product.price * it.qty).round();
 
@@ -158,7 +160,8 @@ class _FooterDesktop extends StatelessWidget {
                 product: ProductModel(
                   id: posCubit.state.items[entry.key].product.id,
                   name: posCubit.state.items[entry.key].product.name,
-                  measurementUnit: 'шт.',
+                  measurementUnit:
+                      posCubit.state.items[entry.key].product.measurementUnit,
                   arrivalCost: 0,
                   sellingPrice: posCubit.state.items[entry.key].product.price,
                   wholesalePrice: 0,
@@ -591,6 +594,7 @@ class _FooterDesktop extends StatelessWidget {
                           final total = cubit.total;
                           final discount = cubit.discountSum;
                           final beforeDiscount = total + discount;
+                          final hasItems = state.items.isNotEmpty;
                           return FooterControlsOnly(
                             smallAmountText: money(beforeDiscount),
                             bigAmountText: money(total),
@@ -649,8 +653,12 @@ class _FooterDesktop extends StatelessWidget {
                                   products: items,
                                 );
 
+                                if (!context.mounted) return;
                                 if (picked == null) return;
-                                cubit.addFromProductModel(picked);
+                                await addProductToCartWithConversionFlow(
+                                  context,
+                                  picked,
+                                );
                               } catch (e) {
                                 if (!context.mounted) return;
                                 Navigator.of(context, rootNavigator: true)
@@ -669,7 +677,9 @@ class _FooterDesktop extends StatelessWidget {
                             onPayCard: () async {
                               await _payByCardWithPrint(context);
                             },
-                            onPay: () => _showPaymentPanelCenter(context),
+                            onPay: hasItems
+                                ? () => _showPaymentPanelCenter(context)
+                                : null,
                           );
                         },
                       ),

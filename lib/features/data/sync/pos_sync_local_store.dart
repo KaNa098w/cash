@@ -7,7 +7,8 @@ import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 import 'package:leemon_app/core/models/refund_model.dart';
 import 'package:leemon_app/core/models/product_response.dart';
-import 'package:leemon_app/core/models/sale_model.dart' show SaleItemModel, SaleModel;
+import 'package:leemon_app/core/models/sale_model.dart'
+    show SaleItemModel, SaleModel;
 
 import 'pos_sync_models.dart';
 
@@ -315,8 +316,11 @@ class PosSyncLocalStore {
       'ALTER TABLE products ADD COLUMN category_name TEXT NULL',
       'ALTER TABLE products ADD COLUMN arrival_cost REAL NULL',
       'ALTER TABLE products ADD COLUMN wholesale_price REAL NULL',
+      'ALTER TABLE products ADD COLUMN conversion_value REAL NULL',
     ]) {
-      try { db.execute(stmt); } catch (_) {}
+      try {
+        db.execute(stmt);
+      } catch (_) {}
     }
     // accounts
     for (final stmt in [
@@ -324,14 +328,18 @@ class PosSyncLocalStore {
       'ALTER TABLE accounts ADD COLUMN visible_to_pos INTEGER DEFAULT 1',
       'ALTER TABLE accounts ADD COLUMN organization_id TEXT NULL',
     ]) {
-      try { db.execute(stmt); } catch (_) {}
+      try {
+        db.execute(stmt);
+      } catch (_) {}
     }
     // expense_types
     for (final stmt in [
       'ALTER TABLE expense_types ADD COLUMN is_active INTEGER DEFAULT 1',
       'ALTER TABLE expense_types ADD COLUMN organization_id TEXT NULL',
     ]) {
-      try { db.execute(stmt); } catch (_) {}
+      try {
+        db.execute(stmt);
+      } catch (_) {}
     }
     // customers
     for (final stmt in [
@@ -339,7 +347,9 @@ class PosSyncLocalStore {
       'ALTER TABLE customers ADD COLUMN store_id TEXT NULL',
       'ALTER TABLE customers ADD COLUMN organization_id TEXT NULL',
     ]) {
-      try { db.execute(stmt); } catch (_) {}
+      try {
+        db.execute(stmt);
+      } catch (_) {}
     }
   }
 
@@ -366,7 +376,8 @@ class PosSyncLocalStore {
       ]) {
         db.execute('DELETE FROM $table;');
       }
-      db.execute("UPDATE local_counters SET value = 0 WHERE name = 'sale_local_number';");
+      db.execute(
+          "UPDATE local_counters SET value = 0 WHERE name = 'sale_local_number';");
     });
   }
 
@@ -479,6 +490,7 @@ class PosSyncLocalStore {
     required int cursorBefore,
     required Map<String, dynamic> posInfo,
     required List<Map<String, dynamic>> products,
+    required List<Map<String, dynamic>> sales,
     required List<Map<String, dynamic>> accounts,
     required List<Map<String, dynamic>> expenseTypes,
     required List<Map<String, dynamic>> customers,
@@ -502,6 +514,26 @@ class PosSyncLocalStore {
       for (final raw in products) {
         final row = _mapProductRow(raw, now);
         if (row != null) _upsertRow(db, 'products', row);
+      }
+      for (final raw in sales) {
+        try {
+          final sale = SaleModel.fromApiJson(raw);
+          final saleId = sale.localId.trim();
+          if (saleId.isEmpty) continue;
+          db.execute(
+            '''
+            INSERT INTO sales_history (id, date, raw_json, updated_at_local)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              date = excluded.date,
+              raw_json = excluded.raw_json,
+              updated_at_local = excluded.updated_at_local
+            ''',
+            [saleId, sale.date.toIso8601String(), jsonEncode(sale.toJson()), now],
+          );
+        } catch (_) {
+          // Ignore malformed snapshot records and keep bootstrapping.
+        }
       }
       for (final raw in accounts) {
         final row = _mapAccountRow(raw, now);
@@ -556,9 +588,11 @@ class PosSyncLocalStore {
 
   Future<List<ProductModel>> loadProducts() async {
     final db = await _database;
-    final rows = db.select('SELECT raw_json FROM products ORDER BY name COLLATE NOCASE;');
+    final rows = db
+        .select('SELECT raw_json FROM products ORDER BY name COLLATE NOCASE;');
     return rows
-        .map((row) => ProductModel.fromJson(decodeJsonMap((row['raw_json'] ?? '{}').toString())))
+        .map((row) => ProductModel.fromJson(
+            decodeJsonMap((row['raw_json'] ?? '{}').toString())))
         .toList(growable: false);
   }
 
@@ -573,13 +607,15 @@ class PosSyncLocalStore {
       ''',
     );
     return rows
-        .map((row) => ProductModel.fromJson(decodeJsonMap((row['raw_json'] ?? '{}').toString())))
+        .map((row) => ProductModel.fromJson(
+            decodeJsonMap((row['raw_json'] ?? '{}').toString())))
         .toList(growable: false);
   }
 
   Future<List<LocalExpenseType>> loadExpenseTypes() async {
     final db = await _database;
-    final rows = db.select('SELECT id, name, raw_json FROM expense_types ORDER BY name COLLATE NOCASE;');
+    final rows = db.select(
+        'SELECT id, name, raw_json FROM expense_types ORDER BY name COLLATE NOCASE;');
     return rows
         .map(
           (row) => LocalExpenseType(
@@ -593,7 +629,8 @@ class PosSyncLocalStore {
 
   Future<List<LocalCustomer>> loadCustomers() async {
     final db = await _database;
-    final rows = db.select('SELECT id, name, phone, raw_json FROM customers ORDER BY name COLLATE NOCASE;');
+    final rows = db.select(
+        'SELECT id, name, phone, raw_json FROM customers ORDER BY name COLLATE NOCASE;');
     return rows
         .map(
           (row) => LocalCustomer(
@@ -672,11 +709,16 @@ class PosSyncLocalStore {
         ''',
         [OutboxOperationStatus.sending.value, now, row['id']],
       );
-      return _recordFromRow({...row, 'status': OutboxOperationStatus.sending.value, 'updated_at': now});
+      return _recordFromRow({
+        ...row,
+        'status': OutboxOperationStatus.sending.value,
+        'updated_at': now
+      });
     });
   }
 
-  Future<List<OutboxOperationRecord>> claimPendingOperations({int limit = 5}) async {
+  Future<List<OutboxOperationRecord>> claimPendingOperations(
+      {int limit = 5}) async {
     final db = await _database;
     return _inTransaction<List<OutboxOperationRecord>>(db, () {
       final rows = db.select(
@@ -833,7 +875,8 @@ class PosSyncLocalStore {
       ],
     );
     return rows
-        .map((row) => _saleFromPayload(decodeJsonMap((row['payload_json'] ?? '{}').toString())))
+        .map((row) => _saleFromPayload(
+            decodeJsonMap((row['payload_json'] ?? '{}').toString())))
         .toList(growable: false);
   }
 
@@ -852,7 +895,9 @@ class PosSyncLocalStore {
         OutboxOperationStatus.manual.value,
       ],
     );
-    return rows.map((row) => _queueItemFromRow(_rowMap(row))).toList(growable: false);
+    return rows
+        .map((row) => _queueItemFromRow(_rowMap(row)))
+        .toList(growable: false);
   }
 
   void _applyPullChange(
@@ -866,7 +911,8 @@ class PosSyncLocalStore {
     final action = change.action.trim().toLowerCase();
     if (entity == _EntityKind.sale) {
       if (action == 'delete') {
-        _deleteSalePullRecord(db, change.targetId ?? change.payload?['id']?.toString() ?? '');
+        _deleteSalePullRecord(
+            db, change.targetId ?? change.payload?['id']?.toString() ?? '');
         return;
       }
       if (action == 'upsert' || action == 'insert' || action == 'update') {
@@ -881,7 +927,8 @@ class PosSyncLocalStore {
     }
     if (entity == _EntityKind.refund) {
       if (action == 'delete') {
-        _deleteRefundPullRecord(db, change.targetId ?? change.payload?['id']?.toString() ?? '');
+        _deleteRefundPullRecord(
+            db, change.targetId ?? change.payload?['id']?.toString() ?? '');
         return;
       }
       if (action == 'upsert' || action == 'insert' || action == 'update') {
@@ -896,7 +943,8 @@ class PosSyncLocalStore {
     }
 
     if (action == 'delete') {
-      final targetId = (change.targetId ?? change.payload?['id'])?.toString() ?? '';
+      final targetId =
+          (change.targetId ?? change.payload?['id'])?.toString() ?? '';
       if (targetId.isEmpty) return;
       db.execute('DELETE FROM ${entity.table} WHERE id = ?', [targetId]);
       return;
@@ -955,7 +1003,8 @@ class PosSyncLocalStore {
     );
 
     if (previousId.isNotEmpty && previousId != saleId) {
-      db.execute('UPDATE sale_items SET sale_id = ? WHERE sale_id = ?', [saleId, previousId]);
+      db.execute('UPDATE sale_items SET sale_id = ? WHERE sale_id = ?',
+          [saleId, previousId]);
       db.execute('DELETE FROM sales WHERE id = ?', [previousId]);
       db.execute('DELETE FROM sales_history WHERE id = ?', [previousId]);
     }
@@ -1057,7 +1106,8 @@ class PosSyncLocalStore {
     if (targetId.isEmpty) return;
 
     final existing = _firstRow(
-      db.select('SELECT client_sale_id FROM sales WHERE id = ? LIMIT 1', [targetId]),
+      db.select(
+          'SELECT client_sale_id FROM sales WHERE id = ? LIMIT 1', [targetId]),
     );
     final clientSaleId = _string(existing?['client_sale_id']);
 
@@ -1077,7 +1127,8 @@ class PosSyncLocalStore {
     final refundId = _string(payload['id']);
     if (refundId.isEmpty) return;
 
-    final clientRefundId = _string(payload['client_refund_id'], fallback: refundId);
+    final clientRefundId =
+        _string(payload['client_refund_id'], fallback: refundId);
     final existing = _firstRow(
       db.select(
         'SELECT id FROM refunds WHERE id = ? OR client_refund_id = ? LIMIT 1',
@@ -1087,7 +1138,8 @@ class PosSyncLocalStore {
     final previousId = _string(existing?['id']);
 
     if (previousId.isNotEmpty && previousId != refundId) {
-      db.execute('UPDATE refund_items SET refund_id = ? WHERE refund_id = ?', [refundId, previousId]);
+      db.execute('UPDATE refund_items SET refund_id = ? WHERE refund_id = ?',
+          [refundId, previousId]);
       db.execute('DELETE FROM refunds WHERE id = ?', [previousId]);
     }
 
@@ -1177,8 +1229,11 @@ class PosSyncLocalStore {
     db.execute('DELETE FROM refunds WHERE id = ?', [targetId]);
 
     final currentPosId = _currentPosId(db);
-    if (refundPosId.isEmpty || currentPosId.isEmpty || refundPosId == currentPosId) {
-      _clearRefundFromSaleHistory(db, saleId: saleId, clientSaleId: clientSaleId, now: _nowIso());
+    if (refundPosId.isEmpty ||
+        currentPosId.isEmpty ||
+        refundPosId == currentPosId) {
+      _clearRefundFromSaleHistory(db,
+          saleId: saleId, clientSaleId: clientSaleId, now: _nowIso());
     }
   }
 
@@ -1199,7 +1254,8 @@ class PosSyncLocalStore {
 
     if ((previousIdToReplace ?? '').trim().isNotEmpty &&
         previousIdToReplace!.trim() != saleId) {
-      db.execute('DELETE FROM sales_history WHERE id = ?', [previousIdToReplace.trim()]);
+      db.execute('DELETE FROM sales_history WHERE id = ?',
+          [previousIdToReplace.trim()]);
     }
 
     final clientSaleId = _string(salePayload['client_sale_id']);
@@ -1348,7 +1404,12 @@ class PosSyncLocalStore {
         raw_json = excluded.raw_json,
         updated_at_local = excluded.updated_at_local
       ''',
-      [historyId, updated.date.toIso8601String(), jsonEncode(updated.toJson()), now],
+      [
+        historyId,
+        updated.date.toIso8601String(),
+        jsonEncode(updated.toJson()),
+        now
+      ],
     );
   }
 
@@ -1385,7 +1446,12 @@ class PosSyncLocalStore {
         raw_json = excluded.raw_json,
         updated_at_local = excluded.updated_at_local
       ''',
-      [historyId, updated.date.toIso8601String(), jsonEncode(updated.toJson()), now],
+      [
+        historyId,
+        updated.date.toIso8601String(),
+        jsonEncode(updated.toJson()),
+        now
+      ],
     );
   }
 
@@ -1435,7 +1501,10 @@ class PosSyncLocalStore {
     final key = _string(raw['key']);
     final storeId = _string(raw['store_id']);
     final organizationId = _string(raw['organization_id']);
-    if (id.isEmpty || key.isEmpty || storeId.isEmpty || organizationId.isEmpty) {
+    if (id.isEmpty ||
+        key.isEmpty ||
+        storeId.isEmpty ||
+        organizationId.isEmpty) {
       return null;
     }
     return {
@@ -1455,7 +1524,9 @@ class PosSyncLocalStore {
     final id = _string(raw['id']);
     if (id.isEmpty) return null;
     final category = raw['category'];
-    final categoryName = category is Map ? _nullableString(category['name']) : _nullableString(raw['category_name']);
+    final categoryName = category is Map
+        ? _nullableString(category['name'])
+        : _nullableString(raw['category_name']);
     return {
       'id': id,
       'name': _string(raw['name'], fallback: id),
@@ -1469,6 +1540,9 @@ class PosSyncLocalStore {
       'wholesale_price': _asDouble(raw['wholesale_price']),
       'quantity': _asDouble(raw['quantity']),
       'measurement_unit': _nullableString(raw['measurement_unit']),
+      'conversion_value': raw['conversion_value'] == null
+          ? null
+          : _asDouble(raw['conversion_value']),
       'cover_url': _nullableString(raw['cover_url']),
       'is_favorite': _asBoolInt(raw['is_favorite']),
       'raw_json': jsonEncode(raw),
@@ -1485,14 +1559,16 @@ class PosSyncLocalStore {
       'type': _nullableString(raw['type']),
       'value': raw['value'] == null ? null : _asDouble(raw['value']),
       'allow_negative': _asBoolInt(raw['allow_negative']),
-      'visible_to_pos': raw['visible_to_pos'] == null ? 1 : _asBoolInt(raw['visible_to_pos']),
+      'visible_to_pos':
+          raw['visible_to_pos'] == null ? 1 : _asBoolInt(raw['visible_to_pos']),
       'organization_id': _nullableString(raw['organization_id']),
       'raw_json': jsonEncode(raw),
       'updated_at_local': now,
     };
   }
 
-  Map<String, dynamic>? _mapExpenseTypeRow(Map<String, dynamic> raw, String now) {
+  Map<String, dynamic>? _mapExpenseTypeRow(
+      Map<String, dynamic> raw, String now) {
     final id = _string(raw['id']);
     if (id.isEmpty) return null;
     return {
@@ -1520,7 +1596,8 @@ class PosSyncLocalStore {
     };
   }
 
-  Map<String, dynamic>? _mapReturnAccessKeyRow(Map<String, dynamic> raw, String now) {
+  Map<String, dynamic>? _mapReturnAccessKeyRow(
+      Map<String, dynamic> raw, String now) {
     final id = _string(raw['id']);
     final key = _string(raw['key']);
     if (id.isEmpty || key.isEmpty) return null;
@@ -1538,7 +1615,8 @@ class PosSyncLocalStore {
 
   /// Check if a return access key is valid locally.
   /// [checkExpiry] = false for offline refund scenarios.
-  Future<bool> checkReturnAccessKey(String key, {bool checkExpiry = true}) async {
+  Future<bool> checkReturnAccessKey(String key,
+      {bool checkExpiry = true}) async {
     final db = await _database;
     final rows = db.select(
       'SELECT * FROM return_access_keys WHERE key = ? AND is_active = 1 LIMIT 1',
@@ -1617,7 +1695,8 @@ class PosSyncLocalStore {
     return serverId == null || serverId.trim().isEmpty ? null : serverId.trim();
   }
 
-  Future<double> _resolveOpeningCashAmount(sqlite.Database db, String deviceId) async {
+  Future<double> _resolveOpeningCashAmount(
+      sqlite.Database db, String deviceId) async {
     final rows = db.select(
       '''
       SELECT closing_cash_amount
@@ -1740,7 +1819,7 @@ class PosSyncLocalStore {
     if (clientRefundId.isEmpty) return;
     _inTransaction<void>(db, () {
       db.execute(
-      '''
+        '''
       INSERT OR IGNORE INTO refunds (
           id, client_refund_id, pos_session_id, client_sale_id, sale_id, date, total_amount,
           pos_id, store_id, account_id, reason, note, return_key_used, synced
@@ -1788,22 +1867,26 @@ class PosSyncLocalStore {
 
   Future<void> markSaleSynced(String clientSaleId) async {
     final db = await _database;
-    db.execute('UPDATE sales SET synced = 1 WHERE client_sale_id = ?', [clientSaleId]);
+    db.execute(
+        'UPDATE sales SET synced = 1 WHERE client_sale_id = ?', [clientSaleId]);
   }
 
   Future<void> markSessionSynced(String clientSessionId) async {
     final db = await _database;
-    db.execute('UPDATE sessions SET synced = 1 WHERE client_session_id = ?', [clientSessionId]);
+    db.execute('UPDATE sessions SET synced = 1 WHERE client_session_id = ?',
+        [clientSessionId]);
   }
 
   Future<void> markPaymentSynced(String clientPaymentId) async {
     final db = await _database;
-    db.execute('UPDATE payments SET synced = 1 WHERE client_payment_id = ?', [clientPaymentId]);
+    db.execute('UPDATE payments SET synced = 1 WHERE client_payment_id = ?',
+        [clientPaymentId]);
   }
 
   Future<void> markRefundSynced(String clientRefundId) async {
     final db = await _database;
-    db.execute('UPDATE refunds SET synced = 1 WHERE client_refund_id = ?', [clientRefundId]);
+    db.execute('UPDATE refunds SET synced = 1 WHERE client_refund_id = ?',
+        [clientRefundId]);
   }
 
   Future<ShiftReportData?> loadShiftReport(String clientSessionId) async {
@@ -1881,7 +1964,8 @@ class PosSyncLocalStore {
     );
   }
 
-  Future<ShiftClosureSummaryData?> loadShiftClosureSummary(String clientSessionId) async {
+  Future<ShiftClosureSummaryData?> loadShiftClosureSummary(
+      String clientSessionId) async {
     final db = await _database;
     final sessionRow = _firstRow(
       db.select(
@@ -1935,12 +2019,19 @@ class PosSyncLocalStore {
     );
 
     final openingCashAmount = _asDouble(sessionRow['opening_cash_amount']);
-    final refundsTotal = refundsRow == null ? 0 : _asDouble(refundsRow['total']);
-    final incomeTotal = paymentsRow == null ? 0 : _asDouble(paymentsRow['income_total']);
-    final expenseTotal = paymentsRow == null ? 0 : _asDouble(paymentsRow['expense_total']);
-    final totalSalesAmount = cashSalesTotal + cardSalesTotal + transferSalesTotal;
-    final expectedCashAmount =
-        openingCashAmount + cashSalesTotal - refundsTotal + incomeTotal - expenseTotal;
+    final refundsTotal =
+        refundsRow == null ? 0 : _asDouble(refundsRow['total']);
+    final incomeTotal =
+        paymentsRow == null ? 0 : _asDouble(paymentsRow['income_total']);
+    final expenseTotal =
+        paymentsRow == null ? 0 : _asDouble(paymentsRow['expense_total']);
+    final totalSalesAmount =
+        cashSalesTotal + cardSalesTotal + transferSalesTotal;
+    final expectedCashAmount = openingCashAmount +
+        cashSalesTotal -
+        refundsTotal +
+        incomeTotal -
+        expenseTotal;
 
     return ShiftClosureSummaryData(
       sessionId: clientSessionId,
@@ -1957,19 +2048,22 @@ class PosSyncLocalStore {
   }
 
   QueueListItem _queueItemFromRow(Map<String, dynamic> row) {
-    final type = OutboxOperationTypeX.fromValue((row['type'] ?? '').toString()) ??
-        OutboxOperationType.sale;
+    final type =
+        OutboxOperationTypeX.fromValue((row['type'] ?? '').toString()) ??
+            OutboxOperationType.sale;
     final payload = decodeJsonMap((row['payload_json'] ?? '{}').toString());
     final title = switch (type) {
       OutboxOperationType.sale =>
         'Чек №${payload['local_number'] ?? payload['client_sale_id'] ?? row['client_id']}',
       OutboxOperationType.payment => 'Платеж ${payload['amount'] ?? ''}'.trim(),
-      OutboxOperationType.refund => 'Возврат ${payload['sale_id'] ?? row['client_id']}',
+      OutboxOperationType.refund =>
+        'Возврат ${payload['sale_id'] ?? row['client_id']}',
       OutboxOperationType.sessionOpen => 'Открытие смены',
       OutboxOperationType.sessionClose => 'Закрытие смены',
     };
     final subtitle = switch ((row['status'] ?? '').toString()) {
-      'manual' => (row['last_error_message'] ?? 'Требуется ручная обработка').toString(),
+      'manual' =>
+        (row['last_error_message'] ?? 'Требуется ручная обработка').toString(),
       'sending' => 'Отправляется...',
       _ => 'Ждет отправки',
     };
@@ -1978,8 +2072,9 @@ class PosSyncLocalStore {
       id: (row['id'] ?? '').toString(),
       type: type,
       clientId: (row['client_id'] ?? '').toString(),
-      status: OutboxOperationStatusX.fromValue((row['status'] ?? '').toString()) ??
-          OutboxOperationStatus.pending,
+      status:
+          OutboxOperationStatusX.fromValue((row['status'] ?? '').toString()) ??
+              OutboxOperationStatus.pending,
       createdAt: _parseDt(row['created_at']) ?? DateTime.now(),
       title: title,
       subtitle: subtitle,
@@ -1996,8 +2091,9 @@ class PosSyncLocalStore {
       clientId: (row['client_id'] ?? '').toString(),
       relatedClientId: row['related_client_id']?.toString(),
       payload: decodeJsonMap((row['payload_json'] ?? '{}').toString()),
-      status: OutboxOperationStatusX.fromValue((row['status'] ?? '').toString()) ??
-          OutboxOperationStatus.pending,
+      status:
+          OutboxOperationStatusX.fromValue((row['status'] ?? '').toString()) ??
+              OutboxOperationStatus.pending,
       retryCount: _asInt(row['retry_count']),
       lastErrorCode: row['last_error_code']?.toString(),
       lastErrorMessage: row['last_error_message']?.toString(),
@@ -2009,20 +2105,17 @@ class PosSyncLocalStore {
   SaleModel _saleFromPayload(Map<String, dynamic> payload) {
     final itemsRaw = payload['items'];
     final items = (itemsRaw is List)
-        ? itemsRaw
-            .whereType<Map>()
-            .map((item) {
-              final map = Map<String, dynamic>.from(item);
-              return SaleItemModel(
-                id: (map['sale_item_id'] ?? '').toString(),
-                saleId: (payload['client_sale_id'] ?? '').toString(),
-                productId: (map['product_id'] ?? '').toString(),
-                quantity: _asInt(map['quantity']),
-                price: _asInt(map['price']),
-                totalPrice: _asInt(map['total_price']),
-              );
-            })
-            .toList()
+        ? itemsRaw.whereType<Map>().map((item) {
+            final map = Map<String, dynamic>.from(item);
+            return SaleItemModel(
+              id: (map['sale_item_id'] ?? '').toString(),
+              saleId: (payload['client_sale_id'] ?? '').toString(),
+              productId: (map['product_id'] ?? '').toString(),
+              quantity: _asDouble(map['quantity']),
+              price: _asInt(map['price']),
+              totalPrice: _asInt(map['total_price']),
+            );
+          }).toList()
         : <SaleItemModel>[];
 
     return SaleModel(
@@ -2077,7 +2170,8 @@ class PosSyncLocalStore {
     int perPage = 15,
   }) async {
     final db = await _database;
-    final countRow = _firstRow(db.select('SELECT COUNT(*) AS c FROM sales_history'));
+    final countRow =
+        _firstRow(db.select('SELECT COUNT(*) AS c FROM sales_history'));
     final total = _asInt(countRow?['c']);
 
     final offset = (page - 1) * perPage;
@@ -2086,15 +2180,39 @@ class PosSyncLocalStore {
       [perPage, offset],
     );
 
-    final items = rows.map((row) {
-      try {
-        return SaleModel.fromJson(decodeJsonMap((row['raw_json'] ?? '{}').toString()));
-      } catch (_) {
-        return null;
-      }
-    }).whereType<SaleModel>().toList(growable: false);
+    final items = rows
+        .map((row) {
+          try {
+            return SaleModel.fromJson(
+                decodeJsonMap((row['raw_json'] ?? '{}').toString()));
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<SaleModel>()
+        .toList(growable: false);
 
     return (items: items, total: total);
+  }
+
+  Future<List<SaleModel>> loadAllSalesHistory() async {
+    final db = await _database;
+    final rows = db.select(
+      'SELECT raw_json FROM sales_history ORDER BY date DESC',
+    );
+
+    return rows
+        .map((row) {
+          try {
+            return SaleModel.fromJson(
+              decodeJsonMap((row['raw_json'] ?? '{}').toString()),
+            );
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<SaleModel>()
+        .toList(growable: false);
   }
 
   Map<String, dynamic>? _firstRow(sqlite.ResultSet result) {
@@ -2146,7 +2264,8 @@ class PosSyncLocalStore {
   DateTime? _parseDt(dynamic value) {
     final raw = value?.toString().trim() ?? '';
     if (raw.isEmpty) return null;
-    return DateTime.tryParse(raw.contains(' ') ? raw.replaceFirst(' ', 'T') : raw);
+    return DateTime.tryParse(
+        raw.contains(' ') ? raw.replaceFirst(' ', 'T') : raw);
   }
 
   String _nowIso() => DateTime.now().toIso8601String();

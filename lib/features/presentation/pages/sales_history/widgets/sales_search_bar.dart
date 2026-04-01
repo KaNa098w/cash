@@ -27,10 +27,10 @@ class SalesSearchBar extends StatelessWidget {
   final VoidCallback? onPickDate;
   final VoidCallback? onClearDate;
 
-  static const _blue = Color(0xFF2563EB);
-  static const _blueLight = Color(0xFFEFF6FF);
+  static const _accent = Color(0xFF456B5A);
+  static const _accentLight = Color(0xFFEAF1ED);
   static const _grey = Color(0xFF6B7280);
-  static const _greyBorder = Color(0xFFD1D5DB);
+  static const _greyBorder = Color(0xFFD7DED9);
 
   static const _months = [
     'янв',
@@ -69,7 +69,7 @@ class SalesSearchBar extends StatelessWidget {
                 Expanded(
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.grey[200],
+                      color: const Color(0xFFF0F2F1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     padding: const EdgeInsets.all(2),
@@ -151,9 +151,9 @@ class SalesSearchBar extends StatelessWidget {
             duration: const Duration(milliseconds: 180),
             height: 46,
             decoration: BoxDecoration(
-              color: hasDate ? _blueLight : Colors.white,
+              color: hasDate ? _accentLight : Colors.white,
               border: Border.all(
-                color: hasDate ? _blue : _greyBorder,
+                color: hasDate ? _accent : _greyBorder,
                 width: 1.4,
               ),
               borderRadius: BorderRadius.circular(10),
@@ -172,7 +172,7 @@ class SalesSearchBar extends StatelessWidget {
                       Icon(
                         Icons.calendar_today_rounded,
                         size: 16,
-                        color: hasDate ? _blue : _grey,
+                        color: hasDate ? _accent : _grey,
                       ),
                       const SizedBox(width: 7),
                       Text(
@@ -180,7 +180,7 @@ class SalesSearchBar extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: hasDate ? _blue : _grey,
+                          color: hasDate ? _accent : _grey,
                         ),
                       ),
                       if (hasDate) ...[
@@ -191,7 +191,7 @@ class SalesSearchBar extends StatelessWidget {
                           child: const Icon(
                             Icons.close_rounded,
                             size: 15,
-                            color: _blue,
+                            color: _accent,
                           ),
                         ),
                       ],

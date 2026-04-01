@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:leemon_app/core/models/product_response.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
@@ -17,6 +18,21 @@ class CartList extends StatelessWidget {
   Widget build(BuildContext context) {
     String formatQty(double v) {
       return v.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
+    }
+
+    double displayQty(double v, double? conversionValue, String unit) {
+      if (conversionValue != null && conversionValue > 0) {
+        return v * conversionValue;
+      }
+      return v;
+    }
+
+    String formatQtyByUnit(double v, String unit, {double? conversionValue}) {
+      final shown = displayQty(v, conversionValue, unit);
+      if (ProductModel.isPiecesMeasurementUnit(unit)) {
+        return shown.round().toString();
+      }
+      return formatQty(shown);
     }
 
     return DefaultTextStyle.merge(
@@ -80,7 +96,7 @@ class CartList extends StatelessWidget {
                                 // Наименование + метки
                                 Expanded(
                                   child: Text(
-                                    '${it.product.name} (${formatQty(it.product.quantity)})',
+                                    '${it.product.name} (${formatQtyByUnit(it.product.quantity, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit})',
                                     style: const TextStyle(
                                       fontSize: kCartFs,
                                       fontWeight: FontWeight.w500,
@@ -102,7 +118,7 @@ class CartList extends StatelessWidget {
                                 const SizedBox(width: 16),
 
                                 SizedBox(
-                                  width: 50,
+                                  width: 120,
                                   child: InkWell(
                                     onTap: () {
                                       context.read<PosCubit>().selectItem(i);
@@ -135,7 +151,7 @@ class CartList extends StatelessWidget {
                                       ),
                                       alignment: Alignment.center,
                                       child: Text(
-                                        formatQty(it.qty),
+                                        '${formatQtyByUnit(it.qty, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit}',
                                         textAlign: TextAlign.center,
                                         style:
                                             const TextStyle(fontSize: kCartFs),

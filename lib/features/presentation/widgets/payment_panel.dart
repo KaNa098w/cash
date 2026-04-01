@@ -268,6 +268,13 @@ class _PaymentPanelState extends State<PaymentPanel> {
             final cubit = context.read<PosCubit>();
             final total = cubit.total;
             final change = cubit.change.clamp(0, double.infinity);
+            final hasItems = state.items.isNotEmpty;
+            final hasSelectedPaymentMethod =
+                state.paymentKind == PaymentKind.card ||
+                state.paymentKind == PaymentKind.credit ||
+                state.received > 0;
+            final canSubmitPayment =
+                !_paying && hasItems && hasSelectedPaymentMethod;
 
             void setReceivedText(String text) {
               _cashCtrl.text = text;
@@ -403,7 +410,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                         text: 'Счета на\nоплату',
                                         height: 46,
                                         selected: false,
-                                        onTap: () {},
+                                        onTap: hasItems ? () {} : null,
                                       ),
                                     ),
                                     const SizedBox(width: 10),
@@ -413,8 +420,11 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                         height: 46,
                                         selected: state.paymentKind ==
                                             PaymentKind.credit,
-                                        onTap: () => cubit
-                                            .setPaymentKind(PaymentKind.credit),
+                                        onTap: hasItems
+                                            ? () => cubit.setPaymentKind(
+                                                PaymentKind.credit,
+                                              )
+                                            : null,
                                       ),
                                     ),
                                   ],
@@ -470,11 +480,11 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           child: _BottomButton(
                             text: 'ОПЛАТА',
                             bg: const Color(0xFF35C28A),
+                            disabledBg: const Color(0xFFA8DABD),
                             fg: Colors.white,
                             loading: _paying,
-                            onTap: _paying
-                                ? null
-                                : () async {
+                            onTap: canSubmitPayment
+                                ? () async {
                                     final posCubit = context.read<PosCubit>();
                                     final auth =
                                         context.read<AuthTokenProvider>();
@@ -489,90 +499,29 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                     final accountId =
                                         auth.accountId?.trim() ?? '';
 
-                                    if (key.isEmpty) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                            content:
-                                                Text('Нет ключа POS (posKey)')),
-                                      );
-                                      return;
-                                    }
-                                    if (deviceId.isEmpty) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                            content: Text('Нет deviceId')),
-                                      );
-                                      return;
-                                    }
-                                    if (storeId.isEmpty) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                            content: Text('Нет storeId')),
-                                      );
-                                      return;
-                                    }
-                                    if (posId.isEmpty) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                            content:
-                                                Text('Нет posId (accountId)')),
-                                      );
-                                      return;
-                                    }
-                                    if (userId.isEmpty) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                            content: Text('Нет userId')),
-                                      );
-                                      return;
-                                    }
-                                    if (accountId.isEmpty) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                            content: Text('Нет accountId')),
-                                      );
-                                      return;
-                                    }
-                                    if (posCubit.state.items.isEmpty) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                            content: Text('Корзина пустая')),
-                                      );
-                                      return;
-                                    }
+                                    if (key.isEmpty) return;
+                                    if (deviceId.isEmpty) return;
+                                    if (storeId.isEmpty) return;
+                                    if (posId.isEmpty) return;
+                                    if (userId.isEmpty) return;
+                                    if (accountId.isEmpty) return;
+                                    if (posCubit.state.items.isEmpty) return;
 
                                     if (posCubit.state.paymentKind ==
                                             PaymentKind.cash &&
                                         posCubit.state.received <
                                             posCubit.total) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                            content: Text(
-                                                'Недостаточно внесено наличных')),
-                                      );
                                       return;
                                     }
 
                                     final saleItems = <SaleItemModel>[];
                                     for (final it in posCubit.state.items) {
-                                      if (it.qty % 1 != 0) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                              content: Text(
-                                                  'Дробное количество не поддерживается: ${it.product.name}')),
-                                        );
-                                        return;
-                                      }
-                                      final qty = it.qty.toInt();
+                                      final cv = it.product.conversionValue;
+                                      // Для конвертируемых товаров отправляем количество
+                                      // в единице измерения товара, а не во внутренних штуках.
+                                      final qty = (cv != null && cv > 0)
+                                          ? (it.qty * cv)
+                                          : it.qty;
                                       final price = it.product.price.round();
                                       final totalPrice =
                                           (it.product.price * it.qty).round();
@@ -626,7 +575,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                                 name: posCubit.state.items[entry.key]
                                                     .product
                                                     .name,
-                                                measurementUnit: 'шт.',
+                                                measurementUnit: posCubit
+                                                    .state.items[entry.key].product
+                                                    .measurementUnit,
                                                 arrivalCost: 0,
                                                 sellingPrice: posCubit
                                                     .state.items[entry.key].product.price,
@@ -707,16 +658,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                       );
 
                                       if (!mounted) return;
-                                      if (result == CreateSaleResult.rejected) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                                'Продажа отклонена сервером'),
-                                          ),
-                                        );
-                                        return;
-                                      }
+                                      if (result == CreateSaleResult.rejected) return;
 
                                       final rootContext = Navigator.of(context,
                                               rootNavigator: true)
@@ -729,18 +671,15 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                         amountText: money(totalPaid),
                                         paymentKind: paymentKind,
                                       );
-                                    } catch (e) {
+                                    } catch (_) {
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                            content: Text('Ошибка оплаты: $e')),
-                                      );
                                     } finally {
-                                      if (mounted)
+                                      if (mounted) {
                                         setState(() => _paying = false);
+                                      }
                                     }
-                                  },
+                                  }
+                                : null,
                           ),
                         ),
                       ],
@@ -1032,7 +971,7 @@ class _GreyButton extends StatelessWidget {
   });
 
   final String text;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final double height;
   final bool selected;
 
@@ -1046,12 +985,19 @@ class _GreyButton extends StatelessWidget {
       height: height,
       child: TextButton(
           onPressed: onTap,
-          style: TextButton.styleFrom(
-            backgroundColor: bg,
-            foregroundColor: fg,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(6),
-              side: BorderSide(color: border, width: 1),
+          style: ButtonStyle(
+            backgroundColor: WidgetStateProperty.resolveWith((_) => bg),
+            foregroundColor: WidgetStateProperty.resolveWith((_) => fg),
+            overlayColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.pressed)
+                  ? fg.withOpacity(0.08)
+                  : null,
+            ),
+            shape: WidgetStateProperty.resolveWith(
+              (_) => RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(6),
+                side: BorderSide(color: border, width: 1),
+              ),
             ),
           ),
           child: Text(
@@ -1127,6 +1073,7 @@ class _BottomButton extends StatelessWidget {
     required this.bg,
     required this.fg,
     required this.onTap,
+    this.disabledBg,
     this.loading = false,
   });
 
@@ -1134,6 +1081,7 @@ class _BottomButton extends StatelessWidget {
   final Color bg;
   final Color fg;
   final VoidCallback? onTap;
+  final Color? disabledBg;
   final bool loading;
 
   @override
@@ -1142,12 +1090,26 @@ class _BottomButton extends StatelessWidget {
       height: 52,
       child: TextButton(
         onPressed: onTap,
-        style: TextButton.styleFrom(
-          backgroundColor: bg,
-          foregroundColor: fg,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-          minimumSize: const Size(0, 52),
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.disabled)) {
+              return disabledBg ?? bg;
+            }
+            return bg;
+          }),
+          foregroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.disabled)) {
+              return fg.withOpacity(0.88);
+            }
+            return fg;
+          }),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+          ),
+          minimumSize: const WidgetStatePropertyAll(Size(0, 52)),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           visualDensity: VisualDensity.compact,
         ),

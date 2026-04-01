@@ -18,6 +18,10 @@ class ProductModel {
   final String? categoryId;
   final String? globalProductId;
 
+  /// Сколько штук в 1 единице измерения.
+  /// null — если measurement_unit == штуки (конвертация не нужна).
+  final double? conversionValue;
+
   ProductModel({
     required this.id,
     required this.name,
@@ -33,7 +37,25 @@ class ProductModel {
     this.coverUrl,
     this.categoryId,
     this.globalProductId,
+    this.conversionValue,
   });
+
+  static String normalizeMeasurementUnit(String measurementUnit) {
+    return measurementUnit.toLowerCase().replaceAll('.', '').trim();
+  }
+
+  static bool isPiecesMeasurementUnit(String measurementUnit) {
+    const piecesAliases = {
+      'pieces',
+      'piece',
+      'pcs',
+      'pc',
+      'шт',
+      'штука',
+      'штук'
+    };
+    return piecesAliases.contains(normalizeMeasurementUnit(measurementUnit));
+  }
 
   static String? _asString(dynamic v) {
     if (v == null) return null;
@@ -47,26 +69,60 @@ class ProductModel {
     return double.tryParse(v.toString()) ?? 0.0;
   }
 
-  static double _asQuantity(dynamic v) {
+  static double? _asConversionValue(dynamic v, String measurementUnit) {
+    if (isPiecesMeasurementUnit(measurementUnit)) return null;
+    if (v == null) return null;
+    if (v is num) return v > 0 ? v.toDouble() : null;
+    final n = double.tryParse(v.toString().replaceAll(',', '.'));
+    return (n != null && n > 0) ? n : null;
+  }
+
+  static double _asQuantity(
+    dynamic v, {
+    required String measurementUnit,
+    required double? conversionValue,
+  }) {
     if (v == null) return 0.0;
-    if (v is num) return v.toDouble();
-    final s = v.toString().trim();
-    if (s.isEmpty) return 0.0;
-    final n = num.tryParse(s.replaceAll(',', '.'));
-    return n?.toDouble() ?? 0.0;
+    final rawQuantity = switch (v) {
+      num() => v.toDouble(),
+      _ => (() {
+          final s = v.toString().trim();
+          if (s.isEmpty) return 0.0;
+          final n = num.tryParse(s.replaceAll(',', '.'));
+          return n?.toDouble() ?? 0.0;
+        })(),
+    };
+
+    if (rawQuantity <= 0) return 0.0;
+    if (isPiecesMeasurementUnit(measurementUnit)) return rawQuantity;
+
+    final cv = conversionValue;
+    if (cv == null || cv <= 0) return rawQuantity;
+
+    // Сервер хранит остаток в штуках, а POS работает в единице товара:
+    // 36 шт / 12 шт. в упаковке = 3 уп.
+    return rawQuantity / cv;
   }
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
+    final measurementUnit = (json['measurement_unit'] ?? '').toString();
+    final conversionValue =
+        _asConversionValue(json['conversion_value'], measurementUnit);
+
     return ProductModel(
       id: (json['id'] != null) ? _asString(json['id']) : null,
       name: (json['name'] ?? '').toString(),
-      measurementUnit: (json['measurement_unit'] ?? '').toString(),
+      measurementUnit: measurementUnit,
       barcode: _asString(json['barcode']),
       localBarcode: _asString(json['local_barcode']),
       arrivalCost: _asDouble(json['arrival_cost']),
       sellingPrice: _asDouble(json['selling_price']),
       wholesalePrice: _asDouble(json['wholesale_price']),
-      quantity: _asQuantity(json['quantity']),
+      quantity: _asQuantity(
+        json['quantity'],
+        measurementUnit: measurementUnit,
+        conversionValue: conversionValue,
+      ),
       isFavorite: json['is_favorite'] == true ||
           json['is_favorite'] == 1 ||
           json['is_favorite']?.toString().trim() == '1',
@@ -74,6 +130,7 @@ class ProductModel {
       coverUrl: _asString(json['cover_url']),
       categoryId: _asString(json['category_id']),
       globalProductId: _asString(json['global_product_id']),
+      conversionValue: conversionValue,
     );
   }
 
@@ -93,6 +150,7 @@ class ProductModel {
       'cover_url': coverUrl,
       'category_id': categoryId,
       'global_product_id': globalProductId,
+      'conversion_value': conversionValue,
     };
   }
 }

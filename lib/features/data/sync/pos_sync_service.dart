@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:leemon_app/core/service/app_build_info.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:leemon_app/core/models/product_response.dart';
@@ -120,6 +121,10 @@ class PosSyncService {
     return _localStore.upsertSalesHistory(sales);
   }
 
+  Future<List<SaleModel>> loadAllSalesHistory() {
+    return _localStore.loadAllSalesHistory();
+  }
+
   Future<({List<SaleModel> items, int total})> loadSalesHistoryPage({
     int page = 1,
     int perPage = 15,
@@ -191,8 +196,19 @@ class PosSyncService {
             .map((e) => Map<String, dynamic>.from(e))
             .toList() ??
         <Map<String, dynamic>>[];
+    final rawSales = (snapshotFile['sales'] as List?)
+            ?.whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList() ??
+        <Map<String, dynamic>>[];
 
-    onProgress?.call(SyncProgress(progress: 0.30, stage: 'Загружаем счета...', detail: '${rawProducts.length} товаров'));
+    onProgress?.call(
+      SyncProgress(
+        progress: 0.30,
+        stage: 'Загружаем счета...',
+        detail: '${rawProducts.length} товаров, ${rawSales.length} продаж',
+      ),
+    );
     final accounts = await _remote.fetchAllAccounts(key: key);
 
     onProgress?.call(SyncProgress(progress: 0.45, stage: 'Загружаем типы расходов...', detail: '${accounts.length} счетов'));
@@ -211,6 +227,7 @@ class PosSyncService {
       cursorBefore: snapshotCursor,
       posInfo: posInfo,
       products: rawProducts,
+      sales: rawSales,
       accounts: accounts,
       expenseTypes: expenseTypes,
       customers: customers,
@@ -371,6 +388,7 @@ class PosSyncService {
     final localNumber = await _localStore.nextLocalSaleNumber();
     final payload = <String, dynamic>{
       'device_id': deviceId,
+      'app_version': AppBuildInfo.appVersion,
       'client_sale_id': sale.localId,
       'local_number': localNumber,
       if ((sale.posSessionId ?? '').trim().isNotEmpty)
@@ -429,6 +447,7 @@ class PosSyncService {
     final clientId = 'payment_${_uuid.v7()}';
     final payload = <String, dynamic>{
       'device_id': deviceId,
+      'app_version': AppBuildInfo.appVersion,
       'client_payment_id': clientId,
       'date': _formatDate(date),
       'is_expense': isExpense,
@@ -459,6 +478,7 @@ class PosSyncService {
     final clientId = 'session_${_uuid.v7()}';
     final payload = <String, dynamic>{
       'device_id': deviceId,
+      'app_version': AppBuildInfo.appVersion,
       'client_session_id': clientId,
       'opened_at': _formatDate(openedAt),
       'user_id': userId,
@@ -490,6 +510,7 @@ class PosSyncService {
   }) async {
     final payload = <String, dynamic>{
       'device_id': deviceId,
+      'app_version': AppBuildInfo.appVersion,
       'client_session_id': clientSessionId,
       'closed_at': _formatDate(closedAt),
       'user_id': userId,
@@ -529,6 +550,7 @@ class PosSyncService {
     final isOffline = saleId.isEmpty;
     final payload = <String, dynamic>{
       'device_id': deviceId,
+      'app_version': AppBuildInfo.appVersion,
       'client_refund_id': clientId,
       'pos_session_id': posSessionId,
       'date': _formatDate(date),
@@ -690,6 +712,7 @@ class PosSyncService {
 
   Future<Map<String, dynamic>> _preparePayloadForSend(OutboxOperationRecord record) async {
     final payload = Map<String, dynamic>.from(record.payload);
+    payload['app_version'] = AppBuildInfo.appVersion;
     switch (record.type) {
       case OutboxOperationType.sale:
       case OutboxOperationType.payment:

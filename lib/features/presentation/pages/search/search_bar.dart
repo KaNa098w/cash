@@ -14,6 +14,7 @@ import 'package:leemon_app/features/presentation/pages/products/product_bloc/pro
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_state.dart';
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_page.dart';
+import 'package:leemon_app/features/presentation/widgets/conversion_product_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 import '../products/state/pos_cubit.dart';
 
@@ -119,7 +120,10 @@ class _SearchBarState extends State<SearchBar> {
     _typingDebounce?.cancel();
   }
 
-  Future<T?> _runWithDialogFocus<T>(Future<T?> Function() open) async {
+  Future<T?> _runWithDialogFocus<T>(
+    Future<T?> Function() open, {
+    bool restoreFocus = true,
+  }) async {
     // Снимаем фокус и запрещаем авто-возврат фокуса
     _allowAutoRefocus = false;
     _removeChooser();
@@ -131,9 +135,9 @@ class _SearchBarState extends State<SearchBar> {
       return await open();
     } finally {
       // Возвращаем поведение обратно
-      _allowAutoRefocus = true;
+      _allowAutoRefocus = restoreFocus;
 
-      if (mounted) {
+      if (mounted && restoreFocus) {
         // Дать кадр на закрытие диалога
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && !_disableSearchFieldForIpad) {
@@ -241,7 +245,7 @@ class _SearchBarState extends State<SearchBar> {
     _chooserEntry = null;
   }
 
-  void _doSearch() {
+  Future<void> _doSearch() async {
     final query = _controller.text.trim();
     if (query.isEmpty) {
       _removeChooser();
@@ -293,11 +297,16 @@ class _SearchBarState extends State<SearchBar> {
     // ✅ если найден 1 товар — сразу добавляем в продажу
     if (matches.length == 1) {
       final p = matches.first;
-      context.read<PosCubit>().addFromProductModel(p);
+      _removeChooser();
+      final added = await _runWithDialogFocus(
+        () => addProductToCartWithConversionFlow(context, p),
+        restoreFocus: false,
+      );
+      if (!mounted) return;
+      if (added != true) return;
 
       _controller.clear();
       _removeChooser();
-      if (!_disableSearchFieldForIpad) _focusNode.requestFocus();
       return;
     }
 
@@ -367,7 +376,14 @@ class _SearchBarState extends State<SearchBar> {
                             return ListTile(
                               dense: true,
                               title: Text(
-                                '${p.name} (${p.quantity})',
+                                '${p.name} (${(() {
+                                  final shown = (p.conversionValue != null && p.conversionValue! > 0)
+                                      ? p.quantity * p.conversionValue!
+                                      : p.quantity;
+                                  return ProductModel.isPiecesMeasurementUnit(p.measurementUnit)
+                                      ? shown.round().toString()
+                                      : shown.toStringAsFixed(2).replaceFirst(RegExp(r'\\.?0+\$'), '');
+                                })()} ${p.measurementUnit})',
                                 style: const TextStyle(fontSize: 14),
                               ),
                               subtitle: Text(
@@ -386,8 +402,18 @@ class _SearchBarState extends State<SearchBar> {
                                   fontSize: 14,
                                 ),
                               ),
-                              onTap: () {
-                                context.read<PosCubit>().addFromProductModel(p);
+                              onTap: () async {
+                                _removeChooser();
+                                final added =
+                                    await _runWithDialogFocus(
+                                  () => addProductToCartWithConversionFlow(
+                                    context,
+                                    p,
+                                  ),
+                                  restoreFocus: false,
+                                );
+                                if (!mounted) return;
+                                if (added != true) return;
                                 _controller.clear();
                                 _removeChooser();
                               },

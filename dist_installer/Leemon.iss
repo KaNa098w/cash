@@ -19,7 +19,7 @@ AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppName}
-OutputDir=D:\Programs\pos_cash\cash\dist_installer
+OutputDir=.
 OutputBaseFilename={#OutputBaseFilename}
 Compression=lzma
 SolidCompression=yes
@@ -41,8 +41,8 @@ Name: "desktopicon"; Description: "Создать ярлык на рабочем
 
 [Files]
 ; Берем ВСЕ файлы из Flutter Release
-Source: "D:\Programs\pos_cash\cash\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "D:\Programs\pos_cash\cash\updater\bin\Release\net8.0-windows\win-x64\publish\*"; DestDir: "{app}\updater"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\updater\bin\Release\net8.0-windows\win-x64\publish\*"; DestDir: "{app}\updater"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

@@ -59,6 +59,12 @@ class SaleCard extends StatelessWidget {
       isReturned ? const Color(0xFFFFE6D6) : const Color(0xFFCBE9C5);
   Color get statusFg =>
       isReturned ? const Color(0xFFB54708) : const Color(0xFF258808);
+  Color get cardShadow => const Color(0x140F172A);
+  Color get dateBg => const Color(0xFFF3F5F4);
+  Color get dateBorder => const Color(0xFFD9E1DC);
+  Color get dateFg => const Color(0xFF425A4E);
+  Color get actionBlueMuted => const Color(0xFF6A8C84);
+  Color get actionDarkMuted => const Color(0xFF6F7671);
   String get cashierDisplayName {
     final name = cashierName.trim();
     if (name.isNotEmpty) return name;
@@ -90,11 +96,11 @@ class SaleCard extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: const Color(0xFFFFFEFC),
                   borderRadius: BorderRadius.circular(_radius),
                   boxShadow: [
                     BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
+                        color: cardShadow,
                         blurRadius: 18,
                         offset: const Offset(0, 6)),
                   ],
@@ -114,12 +120,11 @@ class SaleCard extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              Flexible(
-                                child: Text(
-                                  fmtSaleDate(sale.date),
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.right,
-                                ),
+                              _DateBadge(
+                                text: fmtSaleDate(sale.date),
+                                bg: dateBg,
+                                border: dateBorder,
+                                fg: dateFg,
                               ),
                             ],
                           ),
@@ -164,9 +169,17 @@ class SaleCard extends StatelessWidget {
                             ),
                           ),
                           SizedBox(
-                              width: dateWidth,
-                              child: Text(fmtSaleDate(sale.date),
-                                  overflow: TextOverflow.ellipsis)),
+                            width: dateWidth,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: _DateBadge(
+                                text: fmtSaleDate(sale.date),
+                                bg: dateBg,
+                                border: dateBorder,
+                                fg: dateFg,
+                              ),
+                            ),
+                          ),
                           SizedBox(
                             width: statusWidth,
                             child: Align(
@@ -193,7 +206,7 @@ class SaleCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 10),
                           Icon(Icons.more_horiz,
-                              size: 22, color: Colors.black.withOpacity(0.55)),
+                              size: 22, color: const Color(0xFF7A837E)),
                         ],
                       ),
               ),
@@ -203,11 +216,11 @@ class SaleCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: const Color(0xFFFFFEFC),
                   borderRadius: BorderRadius.circular(_radius),
                   boxShadow: [
                     BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
+                        color: cardShadow,
                         blurRadius: 18,
                         offset: const Offset(0, 6)),
                   ],
@@ -231,9 +244,10 @@ class SaleCard extends StatelessWidget {
                         label:
                             selectedCount == 0 ? 'Возврат' : 'Оформить возврат',
                         width: actionWidth,
+                        fontSize: 16,
                         bg: selectedCount == 0
                             ? const Color(0xFFB0B0B0)
-                            : const Color(0xFF7B7B7B),
+                            : actionDarkMuted,
                         onTap: (selectedCount == 0 || refundLoading)
                             ? null
                             : onSubmitRefund,
@@ -243,14 +257,16 @@ class SaleCard extends StatelessWidget {
                       BottomActionButton(
                         label: 'Накладная',
                         width: actionWidth,
-                        bg: const Color(0xFF21B3C0),
+                        fontSize: 16,
+                        bg: actionBlueMuted,
                         onTap: onPrintInvoice,
                       ),
                       const SizedBox(height: 12),
                       BottomActionButton(
                         label: 'Распечатать чек',
                         width: actionWidth,
-                        bg: const Color(0xFF21B3C0),
+                        fontSize: 16,
+                        bg: actionBlueMuted,
                         onTap: onPrintReceipt,
                       ),
                     ] else
@@ -265,9 +281,10 @@ class SaleCard extends StatelessWidget {
                                 ? 'Возврат'
                                 : 'Оформить возврат',
                             width: refundBtnWidth,
+                            fontSize: 16,
                             bg: selectedCount == 0
                                 ? const Color(0xFFB0B0B0)
-                                : const Color(0xFF7B7B7B),
+                                : actionDarkMuted,
                             onTap: (selectedCount == 0 || refundLoading)
                                 ? null
                                 : onSubmitRefund,
@@ -277,13 +294,15 @@ class SaleCard extends StatelessWidget {
                           BottomActionButton(
                               label: 'Накладная',
                               width: invoiceBtnWidth,
-                              bg: const Color(0xFF21B3C0),
+                              fontSize: 16,
+                              bg: actionBlueMuted,
                               onTap: onPrintInvoice),
                           const SizedBox(width: 12),
                           BottomActionButton(
                               label: 'Распечатать чек',
                               width: printBtnWidth,
-                              bg: const Color(0xFF21B3C0),
+                              fontSize: 16,
+                              bg: actionBlueMuted,
                               onTap: onPrintReceipt),
                         ],
                       ),
@@ -294,6 +313,41 @@ class SaleCard extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _DateBadge extends StatelessWidget {
+  const _DateBadge({
+    required this.text,
+    required this.bg,
+    required this.border,
+    required this.fg,
+  });
+
+  final String text;
+  final Color bg;
+  final Color border;
+  final Color fg;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        text,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: fg,
+        ),
+      ),
     );
   }
 }

@@ -79,7 +79,7 @@ class ProductChooserTileState extends State<ProductChooserTile> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${p.name} (${_formatQty(p.quantity)})',
+                      '${p.name} (${_formatQty(p.quantity)} ${p.measurementUnit})',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyMedium?.copyWith(
@@ -141,7 +141,14 @@ class ProductChooserTileState extends State<ProductChooserTile> {
   }
 
   String _formatQty(double v) {
-    return v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
+    final shown = (widget.product.conversionValue != null &&
+            widget.product.conversionValue! > 0)
+        ? v * widget.product.conversionValue!
+        : v;
+    if (ProductModel.isPiecesMeasurementUnit(widget.product.measurementUnit)) {
+      return shown.round().toString();
+    }
+    return shown.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
   }
 
   String _formatPrice(num value) {

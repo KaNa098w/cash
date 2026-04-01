@@ -6,7 +6,6 @@ import 'package:leemon_app/features/domain/entities/cart_item.dart';
 import 'package:leemon_app/features/domain/entities/payment.dart';
 import 'package:leemon_app/features/domain/entities/product.dart';
 import 'package:leemon_app/features/domain/repositories/pos_repository.dart';
-import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_dialog.dart';
 
 part 'pos_state.dart';
 
@@ -52,6 +51,8 @@ class PosCubit extends Cubit<PosState> {
       price: m.sellingPrice,
       vat: 0,
       quantity: m.quantity,
+      measurementUnit: m.measurementUnit,
+      conversionValue: m.conversionValue,
     );
   }
 
@@ -99,8 +100,12 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void add(Product p) {
+    addWithQty(p, 1);
+  }
+
+  void addWithQty(Product p, double qty) {
     final maxQty = _normalizedMaxQty(p);
-    if (maxQty <= 0) return;
+    if (maxQty <= 0 || qty <= 0 || qty.isNaN || qty.isInfinite) return;
 
     int? selectedIndex; // какой индекс выбрать после добавления/увеличения
 
@@ -110,11 +115,12 @@ class PosCubit extends Cubit<PosState> {
 
       if (idx >= 0) {
         final it = list[idx];
-        final nextQty = (it.qty + 1) > maxQty ? maxQty : (it.qty + 1);
+        final nextQty = (it.qty + qty) > maxQty ? maxQty : (it.qty + qty);
         list[idx] = it.copyWith(qty: nextQty);
         selectedIndex = idx;
       } else {
-        list.add(CartItem(product: p, qty: 1));
+        final initialQty = qty > maxQty ? maxQty : qty;
+        list.add(CartItem(product: p, qty: initialQty));
         selectedIndex = list.length - 1;
       }
 
@@ -127,9 +133,9 @@ class PosCubit extends Cubit<PosState> {
     ));
   }
 
-  void addFromProductModel(ProductModel m) {
+  void addFromProductModel(ProductModel m, {double qty = 1}) {
     final product = _mapProductModelToProduct(m);
-    add(product);
+    addWithQty(product, qty);
   }
 
   void removeAt(int index) {
@@ -179,7 +185,11 @@ class PosCubit extends Cubit<PosState> {
       if (index >= 0 && index < list.length) {
         final current = list[index];
         final maxQty = _normalizedMaxQty(current.product);
-        final nextQty = qty > maxQty ? maxQty : qty;
+        final normalizedQty =
+            ProductModel.isPiecesMeasurementUnit(current.product.measurementUnit)
+                ? qty.roundToDouble()
+                : qty;
+        final nextQty = normalizedQty > maxQty ? maxQty : normalizedQty;
         list[index] = current.copyWith(qty: nextQty);
       }
       return list;

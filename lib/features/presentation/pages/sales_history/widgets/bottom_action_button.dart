@@ -8,6 +8,7 @@ class BottomActionButton extends StatelessWidget {
     required this.onTap,
     this.width = 190,
     this.height = 49,
+    this.fontSize = 18,
     this.loading = false,
   });
 
@@ -16,6 +17,7 @@ class BottomActionButton extends StatelessWidget {
   final VoidCallback? onTap;
   final double width;
   final double height;
+  final double fontSize;
   final bool loading;
 
   @override
@@ -29,7 +31,7 @@ class BottomActionButton extends StatelessWidget {
           elevation: 0,
           backgroundColor: bg,
           foregroundColor: Colors.white,
-          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+          textStyle: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w500),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           padding: const EdgeInsets.symmetric(horizontal: 18),
         ),

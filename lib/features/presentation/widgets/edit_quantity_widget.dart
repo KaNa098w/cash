@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:leemon_app/core/models/product_response.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 import 'package:leemon_app/features/presentation/widgets/dialog_primary_button.dart';
@@ -16,9 +17,16 @@ Future<void> editSelectedQty(BuildContext context) async {
   if (idx == null || idx < 0 || idx >= state.items.length) return;
 
   final item = state.items[idx];
+  final unit = item.product.measurementUnit;
+  final isPieces = ProductModel.isPiecesMeasurementUnit(unit);
+  final conversionValue = item.product.conversionValue;
 
   String formatQty(num v) {
-    var s = v.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), '');
+    final shown = (conversionValue != null && conversionValue > 0)
+        ? v * conversionValue
+        : v.toDouble();
+    if (isPieces) return v.round().toString();
+    var s = shown.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), '');
     return s.isEmpty ? '0' : s;
   }
 
@@ -37,7 +45,10 @@ Future<void> editSelectedQty(BuildContext context) async {
         double? parseQty(String raw) {
           final t = raw.trim().replaceAll(',', '.');
           if (t.isEmpty) return 0;
-          return double.tryParse(t);
+          final parsed = double.tryParse(t);
+          if (parsed == null) return null;
+          if (isPieces && parsed % 1 != 0) return null;
+          return parsed;
         }
 
         void setControllerText(StateSetter setState, String next) {
@@ -61,8 +72,11 @@ Future<void> editSelectedQty(BuildContext context) async {
               builder: (ctx, setState) {
                 final value = parseQty(controller.text);
                 final isValid = value != null && value >= 0;
-                final errorText =
-                    (!isValid) ? 'Введите корректное число (≥ 0)' : null;
+                final errorText = !isValid
+                    ? isPieces
+                        ? 'Для товара в штуках вводите только целое число'
+                        : 'Введите корректное число (≥ 0)'
+                    : null;
 
                 return ClipRRect(
                   borderRadius: BorderRadius.circular(18),
@@ -102,8 +116,8 @@ Future<void> editSelectedQty(BuildContext context) async {
                             // Optional: информация по позиции (если у модели есть название)
                             // Подстрой под свою модель item (name/title/sku и т.д.)
                             _ItemHintCard(
-                              title: (item.product.name ?? 'Товар').toString(),
-                              subtitle: 'Текущее: ${formatQty(item.qty)}',
+                              title: item.product.name,
+                              subtitle: 'Текущее: ${formatQty(item.qty)} $unit',
                             ),
 
                             const SizedBox(height: 12),
@@ -113,6 +127,7 @@ Future<void> editSelectedQty(BuildContext context) async {
                               controller: controller,
                               readOnly:
                                   isMobile, // на мобиле не открываем системную клаву
+                              allowDecimal: !isPieces,
                               errorText: errorText,
                               onClear: () => setControllerText(setState, '0'),
                               onBackspace: () {
@@ -128,7 +143,7 @@ Future<void> editSelectedQty(BuildContext context) async {
                             // Keypad
                             AmountKeypad(
                               text: controller.text,
-                              allowDecimal: true,
+                              allowDecimal: !isPieces,
                               showQuickRows: true,
                               // Для qty обычно лучше небольшие шаги (а не +200/+500)
                               rows: const [
@@ -157,8 +172,9 @@ Future<void> editSelectedQty(BuildContext context) async {
                                     enabled: isValid,
                                     onPressed: () async {
                                       final v = parseQty(controller.text) ?? 0;
-                                      final normalized =
-                                          (v * 100).round() / 100;
+                                      final normalized = isPieces
+                                          ? v.roundToDouble()
+                                          : (v * 100).round() / 100;
 
                                       if (normalized <= 0) {
                                         final confirmed =
@@ -240,6 +256,7 @@ class _QtyDisplayCard extends StatelessWidget {
   const _QtyDisplayCard({
     required this.controller,
     required this.readOnly,
+    required this.allowDecimal,
     required this.errorText,
     required this.onClear,
     required this.onBackspace,
@@ -247,6 +264,7 @@ class _QtyDisplayCard extends StatelessWidget {
 
   final TextEditingController controller;
   final bool readOnly;
+  final bool allowDecimal;
   final String? errorText;
   final VoidCallback onClear;
   final VoidCallback onBackspace;
@@ -277,10 +295,13 @@ class _QtyDisplayCard extends StatelessWidget {
                   controller: controller,
                   readOnly: readOnly,
                   keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                      TextInputType.numberWithOptions(decimal: allowDecimal),
                   inputFormatters: [
                     FilteringTextInputFormatter.allow(
-                        RegExp(r'^[0-9]*[.,]?[0-9]*$')),
+                      allowDecimal
+                          ? RegExp(r'^[0-9]*[.,]?[0-9]*$')
+                          : RegExp(r'^[0-9]*$'),
+                    ),
                   ],
                   style: Theme.of(context)
                       .textTheme

@@ -44,7 +44,15 @@ Future<ProductModel?> showQuickProductsDialog(
                         itemBuilder: (context, i) {
                           final p = products[i];
                           return _QuickProductTile(
-                            title: '${p.name} (${p.quantity})',
+                            title:
+                                '${p.name} (${(() {
+                                  final shown = (p.conversionValue != null && p.conversionValue! > 0)
+                                      ? p.quantity * p.conversionValue!
+                                      : p.quantity;
+                                  return ProductModel.isPiecesMeasurementUnit(p.measurementUnit)
+                                      ? shown.round().toString()
+                                      : shown.toStringAsFixed(2).replaceFirst(RegExp(r'\\.?0+\$'), '');
+                                })()} ${p.measurementUnit})',
                             price: p.sellingPrice,
                             onTap: () => Navigator.of(ctx).pop(p),
                           );
@@ -190,5 +198,3 @@ class _ProductCard extends StatelessWidget {
     );
   }
 }
-
-

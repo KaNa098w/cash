@@ -318,6 +318,7 @@ class _PayBtn extends StatelessWidget {
   final double fontSize;
 
   static const _btnGreen = Color(0xFF4BCA9B);
+  static const _btnDisabled = Color.fromARGB(255, 132, 186, 163);
 
   static const double _w = FooterControlsOnly._totalW -
       FooterControlsOnly._kSmallBtnW -
@@ -333,6 +334,7 @@ class _PayBtn extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           elevation: 0,
           backgroundColor: _btnGreen,
+          disabledBackgroundColor: _btnDisabled,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(radius),
           ),
@@ -342,7 +344,7 @@ class _PayBtn extends StatelessWidget {
           style: GoogleFonts.inter(
             fontSize: fontSize,
             fontWeight: FontWeight.w800,
-            color: Colors.white,
+            color: onTap == null ? Colors.white70 : Colors.white,
             letterSpacing: 0.3,
           ),
         ),

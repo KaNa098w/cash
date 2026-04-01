@@ -3,7 +3,13 @@ import '../../domain/entities/product.dart';
 class LocalPosDataSource {
   final List<Product> _items = List.generate(
     12,
-    (i) => Product(id: 'p$i', name: 'Типа товаргой', price: 2000, vat: i.isEven ? 20 : 10),
+    (i) => Product(
+      id: 'p$i',
+      name: 'Типа товаргой',
+      price: 2000,
+      vat: i.isEven ? 20 : 10,
+      measurementUnit: 'шт.',
+    ),
   );
 
   Future<List<Product>> search(String q) async {

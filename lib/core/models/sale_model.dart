@@ -1,6 +1,4 @@
 // lib/core/models/sale_model.dart
-
-import 'package:intl/intl.dart';
 import 'refund_model.dart';
 
 class SaleModel {
@@ -190,6 +188,21 @@ class SaleModel {
     return n.round();
   }
 
+  static double _toDouble(dynamic v) {
+    if (v == null) return 0;
+    if (v is double) return v;
+    if (v is num) return v.toDouble();
+
+    final s = v.toString().trim();
+    if (s.isEmpty) return 0;
+
+    final normalized = s.replaceAll(',', '.');
+    final n = num.tryParse(normalized);
+    if (n == null) return 0;
+
+    return n.toDouble();
+  }
+
   static int _toIntMoney(dynamic v) => _toInt(v);
 
   static DateTime _parseApiDate(dynamic v) {
@@ -216,7 +229,7 @@ class SaleItemModel {
   final ProductModel? product;
 
   /// ✅ исходное кол-во в продаже
-  final int quantity;
+  final double quantity;
 
   final int price;
   final int totalPrice;
@@ -240,7 +253,7 @@ class SaleItemModel {
     String? saleId,
     String? productId,
     ProductModel? product,
-    int? quantity,
+    double? quantity,
     int? price,
     int? totalPrice,
     int? refund_quantity,
@@ -278,7 +291,7 @@ class SaleItemModel {
       saleId: (json["sale_id"] ?? "").toString(),
       productId: (json["product_id"] ?? "").toString(),
       product: product,
-      quantity: SaleModel._toInt(json["quantity"]),
+      quantity: SaleModel._toDouble(json["quantity"]),
       price: SaleModel._toIntMoney(json["price"]),
       totalPrice: SaleModel._toIntMoney(json["total_price"]),
       refund_quantity: json["refund_quantity"] == null
@@ -311,7 +324,7 @@ class SaleItemModel {
       saleId: (json["saleId"] ?? "").toString(),
       productId: (json["productId"] ?? "").toString(),
       product: product,
-      quantity: SaleModel._toInt(json["quantity"]),
+      quantity: SaleModel._toDouble(json["quantity"]),
       price: SaleModel._toInt(json["price"]),
       totalPrice: SaleModel._toInt(json["totalPrice"]),
       refund_quantity: json["refund_quantity"] == null
