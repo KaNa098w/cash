@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class StatusChip extends StatelessWidget {
   const StatusChip({super.key, required this.label, required this.bg, required this.fg});
@@ -14,7 +15,11 @@ class StatusChip extends StatelessWidget {
       decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
       child: Text(
         label,
-        style: TextStyle(fontSize: 16, color: fg, fontWeight: FontWeight.w700),
+        style: GoogleFonts.inter(
+          fontSize: 14,
+          color: fg,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

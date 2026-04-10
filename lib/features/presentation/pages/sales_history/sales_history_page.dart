@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:pdf/pdf.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
@@ -370,7 +371,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       context: context,
       barrierDismissible: true,
       barrierLabel: 'refund-success',
-      barrierColor: Colors.black.withOpacity(0.45),
+      barrierColor: Colors.black.withValues(alpha: 0.45),
       transitionDuration: const Duration(milliseconds: 220),
       pageBuilder: (ctx, _, __) {
         return SafeArea(
@@ -386,7 +387,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.14),
+                      color: Colors.black.withValues(alpha: 0.14),
                       blurRadius: 22,
                       offset: const Offset(0, 10),
                     ),
@@ -553,7 +554,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        barrierColor: Colors.black.withOpacity(0.15),
+        barrierColor: Colors.black.withValues(alpha: 0.15),
         builder: (ctx) {
           return OnScreenKeyboardSheet(
             controllerGetter: () => _saleSearchCtrl,
@@ -698,7 +699,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       onPointerDown: (_) => _trackUserActivity(),
       onPointerSignal: (_) => _trackUserActivity(),
       child: DefaultTextStyle.merge(
-        style: const TextStyle(fontSize: _fs, color: Colors.black),
+        style: GoogleFonts.inter(fontSize: _fs, color: Colors.black),
         child: BlocProvider.value(
           value: _cubit,
           child: BlocBuilder<SalesHistoryCubit, SalesHistoryState>(

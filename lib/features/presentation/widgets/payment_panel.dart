@@ -15,6 +15,7 @@ import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_page.dart';
+import 'package:leemon_app/features/presentation/widgets/last_sale_amount_notifier.dart';
 import 'package:uuid/uuid.dart';
 import '../../data/utils/money.dart';
 import '../../domain/entities/payment.dart';
@@ -32,6 +33,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
   final _cashFocusNode = FocusNode();
   final _cardFocusNode = FocusNode();
   bool _paying = false;
+  bool _paymentSuccess = false;
   bool _openingCustomerPicker = false;
   bool _isMixedPayment = false;
 
@@ -141,149 +143,6 @@ class _PaymentPanelState extends State<PaymentPanel> {
   }
 
   final _printService = PrintService();
-
-  Future<void> _showPaymentSuccessDialog(
-    BuildContext context, {
-    required CreateSaleResult result,
-    required String amountText,
-    required PaymentKind paymentKind,
-  }) async {
-    await showGeneralDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'payment-success',
-      barrierColor: Colors.black.withValues(alpha: 0.48),
-      transitionDuration: const Duration(milliseconds: 260),
-      pageBuilder: (ctx, _, __) {
-        return SafeArea(
-          child: Center(
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                width: 420,
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFFECFDF3), Color(0xFFFFFFFF)],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF15803D).withValues(alpha: 0.18),
-                      blurRadius: 28,
-                      offset: const Offset(0, 16),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 72,
-                      height: 72,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFFDCFCE7),
-                        border: Border.all(
-                          color: const Color(0xFF86EFAC),
-                          width: 2,
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.check_rounded,
-                        size: 42,
-                        color: Color(0xFF15803D),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      'Оплата прошла успешно',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF14532D),
-                        height: 1.05,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFFBBF7D0)),
-                      ),
-                      child: Column(
-                        children: [
-                          Text(
-                            amountText,
-                            style: GoogleFonts.inter(
-                              fontSize: 28,
-                              fontWeight: FontWeight.w900,
-                              color: const Color(0xFF111827),
-                              height: 1,
-                            ),
-                          ),
-                          // const SizedBox(height: 4),
-                          // Text(
-                          //   '$methodLabel • $subtitle',
-                          //   textAlign: TextAlign.center,
-                          //   style: GoogleFonts.inter(
-                          //     fontSize: 13,
-                          //     fontWeight: FontWeight.w600,
-                          //     color: const Color(0xFF374151),
-                          //   ),
-                          // ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 46,
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.of(ctx).pop(),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF16A34A),
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(
-                          'Готово',
-                          style: GoogleFonts.inter(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-      transitionBuilder: (ctx, anim, _, child) {
-        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutBack);
-        return ScaleTransition(
-          scale: Tween<double>(begin: 0.88, end: 1).animate(curved),
-          child: FadeTransition(opacity: anim, child: child),
-        );
-      },
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -408,12 +267,15 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
               final repo = GetIt.I<SaleRepository>();
 
-              setState(() => _paying = true);
+              setState(() {
+                _paying = true;
+                _paymentSuccess = false;
+              });
+              var saleCompleted = false;
               try {
                 final pageFormat = auth.receiptPaperMm == 57
                     ? PdfPageFormat.roll57
                     : PdfPageFormat.roll80;
-                final totalPaid = posCubit.total;
                 final paymentKind = posCubit.state.paymentKind;
                 final outcome = await repo.createSale(
                   key: key,
@@ -472,21 +334,20 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
                 if (!context.mounted) return;
                 if (result == CreateSaleResult.rejected) return;
-
-                final rootContext =
-                    Navigator.of(context, rootNavigator: true).context;
-                Navigator.of(context).pop();
+                saleCompleted = true;
+                lastSaleAmountNotifier.value = printedSale.totalAmount;
+                setState(() {
+                  _paying = false;
+                  _paymentSuccess = true;
+                });
+                await Future.delayed(const Duration(milliseconds: 950));
+                if (!mounted) return;
+                Navigator.of(this.context).pop();
                 posCubit.clearAfterPayment();
-                await _showPaymentSuccessDialog(
-                  rootContext,
-                  result: result,
-                  amountText: money(totalPaid),
-                  paymentKind: paymentKind,
-                );
               } catch (_) {
                 if (!mounted) return;
               } finally {
-                if (mounted) {
+                if (mounted && !saleCompleted) {
                   setState(() => _paying = false);
                 }
               }
@@ -959,9 +820,13 @@ class _PaymentPanelState extends State<PaymentPanel> {
                             text: 'ОПЛАТА',
                             bg: const Color(0xFF33CC99),
                             disabledBg: const Color(0xFFA8DABD),
+                            successBg: const Color(0xFF179D72),
                             fg: Colors.white,
                             loading: _paying,
-                            onTap: canSubmitPayment ? submitPayment : null,
+                            success: _paymentSuccess,
+                            onTap: canSubmitPayment && !_paymentSuccess
+                                ? submitPayment
+                                : null,
                           ),
                         ),
                       ],
@@ -1363,7 +1228,9 @@ class _BottomButton extends StatelessWidget {
     required this.fg,
     required this.onTap,
     this.disabledBg,
+    this.successBg,
     this.loading = false,
+    this.success = false,
   });
 
   final String text;
@@ -1371,7 +1238,9 @@ class _BottomButton extends StatelessWidget {
   final Color fg;
   final VoidCallback? onTap;
   final Color? disabledBg;
+  final Color? successBg;
   final bool loading;
+  final bool success;
 
   @override
   Widget build(BuildContext context) {
@@ -1380,6 +1249,9 @@ class _BottomButton extends StatelessWidget {
         onPressed: onTap,
         style: ButtonStyle(
           backgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (success) {
+              return successBg ?? bg;
+            }
             if (states.contains(WidgetState.disabled)) {
               return disabledBg ?? bg;
             }
@@ -1401,25 +1273,55 @@ class _BottomButton extends StatelessWidget {
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           visualDensity: VisualDensity.compact,
         ),
-        child: loading
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.white),
-              )
-            : Text(
-                text,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.3,
-                ),
-              ),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          transitionBuilder: (child, animation) =>
+              FadeTransition(opacity: animation, child: child),
+          child: loading
+              ? const SizedBox(
+                  key: ValueKey('loading'),
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : success
+                  ? Row(
+                      key: const ValueKey('success'),
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.check_rounded, size: 18),
+                        const SizedBox(width: 6),
+                        Text(
+                          'ГОТОВО',
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      key: const ValueKey('idle'),
+                      text,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+        ),
       ),
     );
   }

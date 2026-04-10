@@ -79,7 +79,7 @@ class CartList extends StatelessWidget {
                 child: BlocBuilder<PosCubit, PosState>(
                   builder: (context, state) {
                     final visibleRows =
-                        state.items.length < 7 ? 7 : state.items.length;
+                        state.items.length < 6 ? 6 : state.items.length;
                     return ListView.separated(
                       padding: const EdgeInsets.all(8),
                       itemCount: visibleRows,

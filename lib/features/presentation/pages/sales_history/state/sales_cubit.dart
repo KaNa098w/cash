@@ -20,8 +20,6 @@ class SalesHistoryCubit extends Cubit<SalesHistoryState> {
         state.copyWith(loading: false, loadingMore: false, error: message));
   }
 
-  /// Merges API/local history with unsynced pending outbox sales.
-  /// Pending sales not yet in [history] are prepended and sorted by date DESC.
   List<SaleModel> _mergeWithPending(
     List<SaleModel> history,
     List<SaleModel> pending,

@@ -11,12 +11,15 @@ import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/product_response.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
+import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
+import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_state.dart';
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_page.dart';
 import 'package:leemon_app/features/presentation/pages/search/search_keyboard_controller.dart';
 import 'package:leemon_app/features/presentation/widgets/conversion_product_dialog.dart';
+import 'package:leemon_app/features/presentation/widgets/last_sale_amount_notifier.dart';
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 import '../products/state/pos_cubit.dart';
 
@@ -48,6 +51,7 @@ class _SearchBarState extends State<SearchBar> {
   Timer? _routeFocusRestoreTimer;
   List<ProductModel> _chooserProducts = const [];
   int _chooserSelectedIndex = 0;
+  bool _loadingLastSale = true;
 
   @override
   void didChangeDependencies() {
@@ -69,6 +73,7 @@ class _SearchBarState extends State<SearchBar> {
         _focusNode.requestFocus();
       }
       _ensureValidSelection();
+      _loadLastSaleAmount();
     });
     _focusNode.addListener(() {
       if (_disableSearchFieldForIpad || !_allowAutoRefocus) return;
@@ -84,6 +89,31 @@ class _SearchBarState extends State<SearchBar> {
       }
     });
     searchKeyboardCloseSignal.addListener(_handleExternalKeyboardCloseRequest);
+  }
+
+  Future<void> _loadLastSaleAmount() async {
+    final auth = context.read<AuthTokenProvider>();
+    final posKey = auth.posKey?.trim() ?? '';
+
+    if (posKey.isEmpty) {
+      if (mounted) {
+        setState(() => _loadingLastSale = false);
+      }
+      return;
+    }
+
+    try {
+      final sale = await sl<SaleRemoteDataSource>().getLastSale(key: posKey);
+      if (sale != null) {
+        lastSaleAmountNotifier.value = sale.totalAmount;
+      }
+    } catch (_) {
+      // Ignore: the optimistic UI value may already be available locally.
+    } finally {
+      if (mounted) {
+        setState(() => _loadingLastSale = false);
+      }
+    }
   }
 
   void _onControllerTextChanged() {
@@ -665,7 +695,7 @@ class _SearchBarState extends State<SearchBar> {
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.15),
+                        color: Colors.black.withValues(alpha: 0.15),
                         blurRadius: 5,
                         offset: const Offset(0, 2),
                       ),
@@ -872,7 +902,7 @@ class _SearchBarState extends State<SearchBar> {
             ),
           ),
         ),
-        SizedBox(width: 8),
+        const SizedBox(width: 8),
         Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -941,8 +971,9 @@ class _SearchBarState extends State<SearchBar> {
                 );
               });
 
+              if (!mounted) return;
               if (selected == null) return;
-              context.read<PosCubit>().setCustomerForActiveTicket(
+              this.context.read<PosCubit>().setCustomerForActiveTicket(
                     PosCustomer(
                       id: selected.id,
                       name: selected.name,
@@ -950,7 +981,8 @@ class _SearchBarState extends State<SearchBar> {
                     ),
                   );
             } catch (e) {
-              ScaffoldMessenger.of(context).showSnackBar(
+              if (!mounted) return;
+              ScaffoldMessenger.of(this.context).showSnackBar(
                 SnackBar(
                   content: Text('Не удалось загрузить клиентов: $e'),
                   behavior: SnackBarBehavior.floating,
@@ -976,56 +1008,95 @@ class _SearchBarState extends State<SearchBar> {
             style: TextStyle(fontSize: buyerBtnFontSize),
           ),
         ),
-        SizedBox(width: 200),
+        SizedBox(width: customerGapWidth),
+        ValueListenableBuilder<int?>(
+          valueListenable: lastSaleAmountNotifier,
+          builder: (context, lastSaleAmount, _) {
+            final amountLabel = _loadingLastSale
+                ? 'Загрузка...'
+                : lastSaleAmount == null
+                    ? 'Нет данных'
+                    : money(lastSaleAmount);
+
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFD9E2EC)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Последняя продажа',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.black54,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    amountLabel,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.black,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
         BlocBuilder<PosCubit, PosState>(
           buildWhen: (prev, next) =>
               prev.activeTicket.customer != next.activeTicket.customer,
           builder: (context, state) {
             final c = state.activeTicket.customer;
             if (c == null) {
-              return const Text(
-                ' ',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.black54,
-                  fontWeight: FontWeight.w600,
-                ),
-              );
+              return const SizedBox.shrink();
             }
 
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEAF2FF),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFBBD7FF)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.person, size: 18),
-                  const SizedBox(width: 8),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 260),
-                    child: Text(
-                      c.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
+            return Padding(
+              padding: EdgeInsets.only(left: customerGapWidth),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF2FF),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFBBD7FF)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.person, size: 18),
+                    const SizedBox(width: 8),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 260),
+                      child: Text(
+                        c.name,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  InkWell(
-                    onTap: () =>
-                        context.read<PosCubit>().clearCustomerForActiveTicket(),
-                    child: const Padding(
-                      padding: EdgeInsets.all(2),
-                      child: Icon(Icons.close, size: 18),
+                    const SizedBox(width: 6),
+                    InkWell(
+                      onTap: () =>
+                          context.read<PosCubit>().clearCustomerForActiveTicket(),
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(Icons.close, size: 18),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },
