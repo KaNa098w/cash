@@ -212,6 +212,36 @@ class QueueListItem {
   final String? errorMessage;
 }
 
+class QueueItemDetails {
+  const QueueItemDetails({
+    required this.id,
+    required this.type,
+    required this.clientId,
+    required this.status,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.payload,
+    this.title,
+    this.subtitle,
+    this.errorCode,
+    this.errorMessage,
+    this.lastErrorDetails,
+  });
+
+  final String id;
+  final OutboxOperationType type;
+  final String clientId;
+  final OutboxOperationStatus status;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final Map<String, dynamic> payload;
+  final String? title;
+  final String? subtitle;
+  final String? errorCode;
+  final String? errorMessage;
+  final Map<String, dynamic>? lastErrorDetails;
+}
+
 class LocalExpenseType {
   const LocalExpenseType({
     required this.id,
@@ -261,7 +291,12 @@ class ShiftReportData {
     required this.cashTotal,
     required this.cardTotal,
     required this.transferTotal,
+    required this.creditTotal,
     required this.grandTotal,
+    required this.refundsTotal,
+    required this.incomeTotal,
+    required this.expenseTotal,
+    required this.expectedCashAmount,
     required this.items,
   });
 
@@ -274,7 +309,12 @@ class ShiftReportData {
   final num cashTotal;
   final num cardTotal;
   final num transferTotal;
+  final num creditTotal;
   final num grandTotal;
+  final num refundsTotal;
+  final num incomeTotal;
+  final num expenseTotal;
+  final num expectedCashAmount;
   final List<ShiftReportItem> items;
 }
 
@@ -285,6 +325,7 @@ class ShiftClosureSummaryData {
     required this.cashSalesTotal,
     required this.cardSalesTotal,
     required this.transferSalesTotal,
+    required this.creditSalesTotal,
     required this.refundsTotal,
     required this.incomeTotal,
     required this.expenseTotal,
@@ -297,6 +338,7 @@ class ShiftClosureSummaryData {
   final num cashSalesTotal;
   final num cardSalesTotal;
   final num transferSalesTotal;
+  final num creditSalesTotal;
   final num refundsTotal;
   final num incomeTotal;
   final num expenseTotal;

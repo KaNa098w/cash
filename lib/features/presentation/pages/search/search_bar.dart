@@ -15,6 +15,7 @@ import 'package:leemon_app/features/presentation/pages/products/product_bloc/pro
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_state.dart';
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_page.dart';
+import 'package:leemon_app/features/presentation/pages/search/search_keyboard_controller.dart';
 import 'package:leemon_app/features/presentation/widgets/conversion_product_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 import '../products/state/pos_cubit.dart';
@@ -40,9 +41,13 @@ class _SearchBarState extends State<SearchBar> {
   final _layerLink = LayerLink();
   final _fieldKey = GlobalKey();
   bool _keyboardOpen = false;
+  OverlayEntry? _keyboardEntry;
   Timer? _scanDebounce;
   Timer? _typingDebounce;
   OverlayEntry? _chooserEntry;
+  Timer? _routeFocusRestoreTimer;
+  List<ProductModel> _chooserProducts = const [];
+  int _chooserSelectedIndex = 0;
 
   @override
   void didChangeDependencies() {
@@ -69,15 +74,16 @@ class _SearchBarState extends State<SearchBar> {
       if (_disableSearchFieldForIpad || !_allowAutoRefocus) return;
 
       if (_focusNode.hasFocus) {
+        _routeFocusRestoreTimer?.cancel();
+        _routeFocusRestoreTimer = null;
         _ensureValidSelection();
       } else {
-        Future.microtask(() {
-          if (mounted && _allowAutoRefocus && !_focusNode.hasFocus) {
-            _focusNode.requestFocus();
-          }
-        });
+        _closeKeyboard();
+        _removeChooser();
+        _scheduleSearchFocusRestore();
       }
     });
+    searchKeyboardCloseSignal.addListener(_handleExternalKeyboardCloseRequest);
   }
 
   void _onControllerTextChanged() {
@@ -118,6 +124,10 @@ class _SearchBarState extends State<SearchBar> {
   @override
   void dispose() {
     _controller.removeListener(_onControllerTextChanged);
+    searchKeyboardCloseSignal.removeListener(
+      _handleExternalKeyboardCloseRequest,
+    );
+    _closeKeyboard();
     _controller.dispose();
     _focusNode.dispose();
     _removeChooser();
@@ -125,6 +135,57 @@ class _SearchBarState extends State<SearchBar> {
     _scanDebounce?.cancel();
     _typingDebounce?.cancel();
     _hardwareScanResetTimer?.cancel();
+    _routeFocusRestoreTimer?.cancel();
+  }
+
+  void _handleExternalKeyboardCloseRequest() {
+    if (!mounted) return;
+    _dismissSearchKeyboard();
+  }
+
+  bool get _isRouteCurrent => ModalRoute.of(context)?.isCurrent ?? true;
+  bool get _isHistoryMode => context.read<PosCubit>().state.isHistoryMode;
+
+  void _scheduleSearchFocusRestore() {
+    if (!mounted ||
+        _disableSearchFieldForIpad ||
+        !_allowAutoRefocus ||
+        _isHistoryMode) {
+      return;
+    }
+
+    if (_isRouteCurrent) {
+      _routeFocusRestoreTimer?.cancel();
+      _routeFocusRestoreTimer = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            _disableSearchFieldForIpad ||
+            !_allowAutoRefocus ||
+            _isHistoryMode ||
+            !_isRouteCurrent ||
+            _focusNode.hasFocus) {
+          return;
+        }
+        _focusNode.requestFocus();
+        _ensureValidSelection();
+      });
+      return;
+    }
+
+    _routeFocusRestoreTimer ??=
+        Timer.periodic(const Duration(milliseconds: 120), (timer) {
+      if (!mounted || _disableSearchFieldForIpad || !_allowAutoRefocus) {
+        timer.cancel();
+        _routeFocusRestoreTimer = null;
+        return;
+      }
+      if (_isHistoryMode || !_isRouteCurrent) return;
+      timer.cancel();
+      _routeFocusRestoreTimer = null;
+      if (_focusNode.hasFocus) return;
+      _focusNode.requestFocus();
+      _ensureValidSelection();
+    });
   }
 
   Future<T?> _runWithDialogFocus<T>(
@@ -157,26 +218,43 @@ class _SearchBarState extends State<SearchBar> {
   }
 
   void _openKeyboard() {
+    _allowAutoRefocus = true;
+    if (!_focusNode.hasFocus) {
+      _focusNode.requestFocus();
+      _ensureValidSelection();
+    }
     if (_keyboardOpen) return;
     _keyboardOpen = true;
 
-    _runWithDialogFocus(() {
-      return showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        barrierColor: Colors.black.withOpacity(0.15),
-        builder: (ctx) {
-          return OnScreenKeyboardSheet(
-            controllerGetter: () => _controller,
-            onEnter: _doSearch,
-            onClose: () => Navigator.of(ctx).pop(),
-          );
-        },
-      );
-    }).whenComplete(() {
-      _keyboardOpen = false;
-    });
+    _keyboardEntry = OverlayEntry(
+      builder: (ctx) {
+        return Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: Material(
+            color: Colors.transparent,
+            child: SizedBox(
+              width: double.infinity,
+              child: OnScreenKeyboardSheet(
+                controllerGetter: () => _controller,
+                onEnter: _doSearch,
+                onClose: _dismissSearchKeyboard,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    Overlay.of(context).insert(_keyboardEntry!);
+  }
+
+  void _closeKeyboard() {
+    if (!_keyboardOpen && _keyboardEntry == null) return;
+    _keyboardOpen = false;
+    _keyboardEntry?.remove();
+    _keyboardEntry = null;
   }
 
   Future<void> _openCameraScanner() async {
@@ -250,11 +328,15 @@ class _SearchBarState extends State<SearchBar> {
   void _restoreSearchFocus() {
     if (!mounted || _disableSearchFieldForIpad) return;
     _allowAutoRefocus = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _disableSearchFieldForIpad) return;
-      _focusNode.requestFocus();
-      _ensureValidSelection();
-    });
+    _scheduleSearchFocusRestore();
+  }
+
+  void _dismissSearchKeyboard() {
+    _allowAutoRefocus = false;
+    _closeKeyboard();
+    FocusManager.instance.primaryFocus?.unfocus();
+    _focusNode.unfocus();
+    _removeChooser();
   }
 
   void _insertSearchText(String text) {
@@ -355,17 +437,41 @@ class _SearchBarState extends State<SearchBar> {
   }
 
   KeyEventResult _handleSearchKeyEvent(FocusNode node, KeyEvent event) {
-    if (_disableSearchFieldForIpad || !_focusNode.hasFocus) {
+    if (_disableSearchFieldForIpad ||
+        !_focusNode.hasFocus ||
+        !_isRouteCurrent ||
+        _isHistoryMode) {
       return KeyEventResult.ignored;
     }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    final logicalKey = event.logicalKey;
+    if (_chooserEntry != null && _chooserProducts.isNotEmpty) {
+      if (logicalKey == LogicalKeyboardKey.arrowDown) {
+        _moveChooserSelection(1);
+        return KeyEventResult.handled;
+      }
+
+      if (logicalKey == LogicalKeyboardKey.arrowUp) {
+        _moveChooserSelection(-1);
+        return KeyEventResult.handled;
+      }
+
+      if (logicalKey == LogicalKeyboardKey.enter ||
+          logicalKey == LogicalKeyboardKey.numpadEnter) {
+        _resetHardwareScanState();
+        final product = _chooserProducts[_chooserSelectedIndex];
+        unawaited(_selectChooserProduct(product));
+        return KeyEventResult.handled;
+      }
+    }
 
     final digit = _digitFromPhysicalKey(event.physicalKey);
     if (digit != null) {
       final now = DateTime.now();
       final last = _lastHardwareDigitAt;
-      final isRapidContinuation =
-          last != null && now.difference(last) <= const Duration(milliseconds: 45);
+      final isRapidContinuation = last != null &&
+          now.difference(last) <= const Duration(milliseconds: 45);
 
       if (_hardwareScanMode) {
         _lastHardwareDigitAt = now;
@@ -413,6 +519,36 @@ class _SearchBarState extends State<SearchBar> {
   void _removeChooser() {
     _chooserEntry?.remove();
     _chooserEntry = null;
+    _chooserProducts = const [];
+    _chooserSelectedIndex = 0;
+  }
+
+  void _moveChooserSelection(int delta) {
+    if (_chooserEntry == null || _chooserProducts.isEmpty) return;
+
+    final nextIndex = (_chooserSelectedIndex + delta).clamp(
+      0,
+      _chooserProducts.length - 1,
+    );
+    if (nextIndex == _chooserSelectedIndex) return;
+
+    _chooserSelectedIndex = nextIndex;
+    _chooserEntry?.markNeedsBuild();
+  }
+
+  Future<void> _selectChooserProduct(ProductModel product) async {
+    _removeChooser();
+    _closeKeyboard();
+    final added = await _runWithDialogFocus(
+      () => addProductToCartWithConversionFlow(context, product),
+      restoreFocus: false,
+    );
+    if (!mounted) return;
+    if (added != true) return;
+
+    _controller.clear();
+    _removeChooser();
+    _restoreSearchFocus();
   }
 
   Future<void> _doSearch() async {
@@ -468,6 +604,7 @@ class _SearchBarState extends State<SearchBar> {
     if (matches.length == 1) {
       final p = matches.first;
       _removeChooser();
+      _closeKeyboard();
       final added = await _runWithDialogFocus(
         () => addProductToCartWithConversionFlow(context, p),
         restoreFocus: false,
@@ -487,6 +624,8 @@ class _SearchBarState extends State<SearchBar> {
 
   void _showProductChooser(List<ProductModel> products) {
     _removeChooser();
+    _chooserProducts = products;
+    _chooserSelectedIndex = 0;
 
     final overlay = Overlay.of(context);
 
@@ -544,6 +683,7 @@ class _SearchBarState extends State<SearchBar> {
                               const Divider(height: 0.1),
                           itemBuilder: (_, index) {
                             final p = products[index];
+                            final selected = index == _chooserSelectedIndex;
                             final qtyLabel = (() {
                               final shown = (p.conversionValue != null &&
                                       p.conversionValue! > 0)
@@ -557,18 +697,32 @@ class _SearchBarState extends State<SearchBar> {
                                       .toStringAsFixed(2)
                                       .replaceFirst(RegExp(r'\\.?0+\$'), '');
                             })();
-                            return ListTile(
-                              dense: true,
-                              title: Text(
-                                '${_shortProductNameKeepEnd(p.name, maxChars: 42)} ($qtyLabel ${p.measurementUnit})',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              subtitle: Text(
+                            return MouseRegion(
+                              onEnter: (_) {
+                                if (_chooserSelectedIndex == index) return;
+                                _chooserSelectedIndex = index;
+                                _chooserEntry?.markNeedsBuild();
+                              },
+                              child: Container(
+                                color: Colors.transparent,
+                                child: ListTile(
+                                  dense: true,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  title: Text(
+                                    '${_shortProductNameKeepEnd(p.name, maxChars: 42)} ($qtyLabel ${p.measurementUnit})',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: selected
+                                          ? FontWeight.w800
+                                          : FontWeight.w600,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                  /* subtitle: Text(
                                 [
                                   if (p.barcode != null) '${p.barcode}',
                                   // if (p.localBarcode != null)
@@ -576,30 +730,26 @@ class _SearchBarState extends State<SearchBar> {
                                   // 'Ед.: ${p.measurementUnit}',
                                 ].where((e) => e.isNotEmpty).join(' • '),
                                 style: const TextStyle(fontSize: 11),
-                              ),
-                              trailing: Text(
-                                '${p.sellingPrice.toStringAsFixed(2)} т',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 16,
+                              ), */
+                                  trailing: Text(
+                                    '${p.sellingPrice.toStringAsFixed(2)} т',
+                                    style: TextStyle(
+                                      fontWeight: selected
+                                          ? FontWeight.w800
+                                          : FontWeight.w600,
+                                      fontSize: 16,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                  onTap: () async {
+                                    await _selectChooserProduct(p);
+                                  },
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 2,
+                                  ),
                                 ),
                               ),
-                              onTap: () async {
-                                _removeChooser();
-                                final added =
-                                    await _runWithDialogFocus(
-                                  () => addProductToCartWithConversionFlow(
-                                    context,
-                                    p,
-                                  ),
-                                  restoreFocus: false,
-                                );
-                                if (!mounted) return;
-                                if (added != true) return;
-                                _controller.clear();
-                                _removeChooser();
-                                _restoreSearchFocus();
-                              },
                             );
                           },
                         ),
@@ -614,11 +764,29 @@ class _SearchBarState extends State<SearchBar> {
       },
     );
 
-    overlay.insert(_chooserEntry!);
+    final routeEntries = ModalRoute.of(context)?.overlayEntries;
+    final currentRouteTopEntry =
+        routeEntries?.isNotEmpty == true ? routeEntries!.last : null;
+
+    if (_keyboardEntry != null) {
+      overlay.insert(_chooserEntry!, below: _keyboardEntry);
+    } else if (_keyboardOpen && currentRouteTopEntry != null) {
+      overlay.insert(_chooserEntry!, above: currentRouteTopEntry);
+    } else {
+      overlay.insert(_chooserEntry!);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isHistoryMode =
+        context.select((PosCubit cubit) => cubit.state.isHistoryMode);
+    final searchCanRequestFocus = !_disableSearchFieldForIpad && !isHistoryMode;
+
+    if (searchCanRequestFocus && !_focusNode.hasFocus) {
+      _scheduleSearchFocusRestore();
+    }
+
     final isMobileCameraCapable = !kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.iOS ||
             defaultTargetPlatform == TargetPlatform.android);
@@ -648,55 +816,57 @@ class _SearchBarState extends State<SearchBar> {
                 child: Focus(
                   onKeyEvent: _handleSearchKeyEvent,
                   child: TextField(
-                  controller: _controller,
-                  focusNode: _focusNode,
-                  autofocus: !_disableSearchFieldForIpad,
-                  canRequestFocus: !_disableSearchFieldForIpad,
-                  readOnly: _disableSearchFieldForIpad,
-                  showCursor: !_disableSearchFieldForIpad,
-                  enableInteractiveSelection: !_disableSearchFieldForIpad,
-                  onTapOutside: (_) => _restoreSearchFocus(),
-                  onSubmitted: (_) => _doSearch(),
-                  textInputAction: TextInputAction.search,
-                  style: const TextStyle(fontSize: 18),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      vertical: 12,
-                      horizontal: 0,
-                    ),
-                    hintText: 'Введите наименование товара или код товара',
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    suffixIconConstraints: const BoxConstraints(
-                      minHeight: 42,
-                      minWidth: 42,
-                    ),
-                    suffixIcon: SizedBox(
-                      // width: 80,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // IconButton(
-                          //   tooltip: 'Экранная клавиатура',
-                          //   icon: const Icon(Icons.keyboard),
-                          //   onPressed: _openKeyboard,
-                          // ),
-                          IconButton(
-                            tooltip: 'Найти',
-                            icon: SvgPicture.asset(
-                              'assets/svg/search.svg',
-                              width: 20,
-                              height: 20,
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    autofocus: searchCanRequestFocus,
+                    canRequestFocus: searchCanRequestFocus,
+                    readOnly: _disableSearchFieldForIpad || isHistoryMode,
+                    showCursor: searchCanRequestFocus,
+                    enableInteractiveSelection:
+                        !_disableSearchFieldForIpad && !isHistoryMode,
+                    onTap: _restoreSearchFocus,
+                    onTapOutside: (_) => _restoreSearchFocus(),
+                    onSubmitted: (_) => _doSearch(),
+                    textInputAction: TextInputAction.search,
+                    style: const TextStyle(fontSize: 18),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 0,
+                      ),
+                      hintText: 'Введите наименование товара или код товара',
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      suffixIconConstraints: const BoxConstraints(
+                        minHeight: 42,
+                        minWidth: 42,
+                      ),
+                      suffixIcon: SizedBox(
+                        // width: 80,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // IconButton(
+                            //   tooltip: 'Экранная клавиатура',
+                            //   icon: const Icon(Icons.keyboard),
+                            //   onPressed: _openKeyboard,
+                            // ),
+                            IconButton(
+                              tooltip: 'Найти',
+                              icon: SvgPicture.asset(
+                                'assets/svg/search.svg',
+                                width: 20,
+                                height: 20,
+                              ),
+                              onPressed: _doSearch,
                             ),
-                            onPressed: _doSearch,
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
                 ),
               ),
             ),

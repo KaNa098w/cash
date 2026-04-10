@@ -11,7 +11,12 @@ class PosSyncRemoteDataSource {
 
   // Sync requests can transfer large batches — use a longer timeout.
   static const _syncReceiveTimeout = Duration(seconds: 90);
-  Options get _syncOptions => Options(receiveTimeout: _syncReceiveTimeout);
+  static const _silentDioLogExtra = {'silentDioLog': true};
+  Options get _syncOptions => Options(
+        receiveTimeout: _syncReceiveTimeout,
+        extra: _silentDioLogExtra,
+      );
+  Options get _silentOptions => Options(extra: _silentDioLogExtra);
 
   Future<int> fetchServerCursor({
     required String key,
@@ -20,7 +25,10 @@ class PosSyncRemoteDataSource {
     final body = _asMap(response.data);
     final data = _nestedMap(body['data']) ?? const <String, dynamic>{};
     return _readInt(
-      data['cursor'] ?? body['cursor'] ?? data['next_cursor'] ?? body['next_cursor'],
+      data['cursor'] ??
+          body['cursor'] ??
+          data['next_cursor'] ??
+          body['next_cursor'],
     );
   }
 
@@ -108,10 +116,16 @@ class PosSyncRemoteDataSource {
         .toList(growable: false);
 
     final nextCursor = _readInt(
-      data['next_cursor'] ?? body['next_cursor'] ?? data['cursor'] ?? body['cursor'] ?? cursor,
+      data['next_cursor'] ??
+          body['next_cursor'] ??
+          data['cursor'] ??
+          body['cursor'] ??
+          cursor,
     );
     final hasMore = _readBool(
-      data['has_more'] ?? body['has_more'] ?? (items.isNotEmpty && nextCursor > cursor),
+      data['has_more'] ??
+          body['has_more'] ??
+          (items.isNotEmpty && nextCursor > cursor),
     );
 
     return SyncPullBatch(
@@ -129,32 +143,50 @@ class PosSyncRemoteDataSource {
     switch (type) {
       case OutboxOperationType.sale:
         return _extractResponseData(
-          await _dio.post('/organizations/pos/$key/sales', data: payload),
+          await _dio.post(
+            '/organizations/pos/$key/sales',
+            data: payload,
+            options: _silentOptions,
+          ),
         );
       case OutboxOperationType.payment:
         return _extractResponseData(
-          await _dio.post('/organizations/pos/$key/payments', data: payload),
+          await _dio.post(
+            '/organizations/pos/$key/payments',
+            data: payload,
+            options: _silentOptions,
+          ),
         );
       case OutboxOperationType.refund:
-        final returnAccessKey = (payload['return_access_key'] ?? '').toString().trim();
+        final returnAccessKey =
+            (payload['return_access_key'] ?? '').toString().trim();
         final headers = returnAccessKey.isNotEmpty
             ? <String, dynamic>{'X-Return-Access-Key': returnAccessKey}
             : null;
-        final body = Map<String, dynamic>.from(payload)..remove('return_access_key');
+        final body = Map<String, dynamic>.from(payload)
+          ..remove('return_access_key');
         return _extractResponseData(
           await _dio.post(
             '/organizations/pos/$key/refunds',
-            options: Options(headers: headers),
+            options: Options(headers: headers, extra: _silentDioLogExtra),
             data: body,
           ),
         );
       case OutboxOperationType.sessionOpen:
         return _extractResponseData(
-          await _dio.post('/organizations/pos/$key/open-session', data: payload),
+          await _dio.post(
+            '/organizations/pos/$key/open-session',
+            data: payload,
+            options: _silentOptions,
+          ),
         );
       case OutboxOperationType.sessionClose:
         return _extractResponseData(
-          await _dio.put('/organizations/pos/$key/close-session', data: payload),
+          await _dio.put(
+            '/organizations/pos/$key/close-session',
+            data: payload,
+            options: _silentOptions,
+          ),
         );
     }
   }
@@ -196,7 +228,9 @@ class PosSyncRemoteDataSource {
         data?['error_message'] ??
         error.message;
     final normalized = message?.toString().trim();
-    return (normalized == null || normalized.isEmpty) ? error.toString() : normalized;
+    return (normalized == null || normalized.isEmpty)
+        ? error.toString()
+        : normalized;
   }
 
   bool isManualErrorCode(String code) {
@@ -209,6 +243,38 @@ class PosSyncRemoteDataSource {
       default:
         return false;
     }
+  }
+
+  Map<String, dynamic>? extractErrorDetails(Object error) {
+    if (error is! DioException) return null;
+
+    final requestData = error.requestOptions.data;
+    final responseBody = error.response?.data;
+
+    return <String, dynamic>{
+      'dio_type': error.type.name,
+      'message': extractErrorMessage(error),
+      'code': extractErrorCode(error),
+      'request': <String, dynamic>{
+        'method': error.requestOptions.method,
+        'path': error.requestOptions.path,
+        'query': error.requestOptions.queryParameters,
+        'data': requestData is Map
+            ? Map<String, dynamic>.from(requestData)
+            : requestData is List
+                ? List<dynamic>.from(requestData)
+                : requestData,
+      },
+      'response': <String, dynamic>{
+        'status_code': error.response?.statusCode,
+        'status_message': error.response?.statusMessage,
+        'data': responseBody is Map
+            ? Map<String, dynamic>.from(responseBody)
+            : responseBody is List
+                ? List<dynamic>.from(responseBody)
+                : responseBody,
+      },
+    };
   }
 
   Future<List<Map<String, dynamic>>> _fetchPaginatedList(String path) async {
@@ -235,15 +301,21 @@ class PosSyncRemoteDataSource {
         items = data.map(_asMap).toList(growable: false);
       } else {
         final map = _nestedMap(data) ?? const <String, dynamic>{};
-        final list = _nestedList(map['items']) ?? _nestedList(map['data']) ?? const <dynamic>[];
+        final list = _nestedList(map['items']) ??
+            _nestedList(map['data']) ??
+            const <dynamic>[];
         items = list.map(_asMap).toList(growable: false);
       }
 
       all.addAll(items);
 
-      final meta = _nestedMap(body['meta']) ?? _nestedMap(body['pagination']) ?? const <String, dynamic>{};
-      final currentPage = _readInt(meta['current_page'] ?? meta['page'] ?? page);
-      final lastPage = _readInt(meta['last_page'] ?? meta['total_pages'] ?? currentPage);
+      final meta = _nestedMap(body['meta']) ??
+          _nestedMap(body['pagination']) ??
+          const <String, dynamic>{};
+      final currentPage =
+          _readInt(meta['current_page'] ?? meta['page'] ?? page);
+      final lastPage =
+          _readInt(meta['last_page'] ?? meta['total_pages'] ?? currentPage);
       if (items.isEmpty || currentPage >= lastPage) {
         break;
       }
@@ -256,7 +328,8 @@ class PosSyncRemoteDataSource {
   SnapshotStatus _parseSnapshotStatus(dynamic body) {
     final map = _asMap(body);
     final data = _nestedMap(map['data']) ?? map;
-    final status = (data['status'] ?? 'pending').toString().trim().toLowerCase();
+    final status =
+        (data['status'] ?? 'pending').toString().trim().toLowerCase();
     final urlRaw = data['url']?.toString().trim() ?? '';
     return SnapshotStatus(
       status: status,
@@ -275,8 +348,13 @@ class PosSyncRemoteDataSource {
             map['collection'] ??
             map['model'])
         ?.toString();
-    final action = (map['action'] ?? map['type'] ?? map['operation'] ?? map['op'])?.toString();
-    if (entity == null || entity.trim().isEmpty || action == null || action.trim().isEmpty) {
+    final action =
+        (map['action'] ?? map['type'] ?? map['operation'] ?? map['op'])
+            ?.toString();
+    if (entity == null ||
+        entity.trim().isEmpty ||
+        action == null ||
+        action.trim().isEmpty) {
       return null;
     }
 
@@ -284,7 +362,8 @@ class PosSyncRemoteDataSource {
         _nestedMap(map['data']) ??
         _nestedMap(map['record']) ??
         _nestedMap(map['item']);
-    final targetId = (map['id'] ?? map['resource_id'] ?? payload?['id'])?.toString();
+    final targetId =
+        (map['id'] ?? map['resource_id'] ?? payload?['id'])?.toString();
 
     return SyncPullChange(
       entity: entity,

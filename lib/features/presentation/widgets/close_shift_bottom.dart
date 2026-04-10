@@ -3,7 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:get_it/get_it.dart';
+import 'package:pdf/pdf.dart';
 
+import 'package:leemon_app/core/print/print_service.dart';
+import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
@@ -25,6 +28,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
   bool _submitting = false;
   bool _showSuccessState = false;
   bool _summaryExpanded = false;
+  bool _printingXReport = false;
   late final Future<ShiftClosureSummaryData?> _summaryFuture;
 
   @override
@@ -78,13 +82,84 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
     if (mounted) setState(() => _submitting = false);
   }
 
-  void _closePage() {
-    final navigator = Navigator.of(context);
-    if (navigator.canPop()) {
-      navigator.pop();
-      return;
+  Future<void> _printXReport() async {
+    if (_printingXReport || _submitting || _showSuccessState) return;
+
+    final tokenProvider = context.read<AuthTokenProvider>();
+    final sessionId = tokenProvider.shiftId?.trim() ?? '';
+    if (sessionId.isEmpty) return;
+
+    setState(() => _printingXReport = true);
+    try {
+      final report = await GetIt.I<PosSyncService>().loadShiftReport(sessionId);
+      if (report == null || !mounted) return;
+
+      final storeName = (tokenProvider.storeName ?? '').trim().isEmpty
+          ? ((tokenProvider.posName ?? '').trim().isEmpty
+              ? 'Магазин'
+              : tokenProvider.posName!.trim())
+          : tokenProvider.storeName!.trim();
+      final posName = (tokenProvider.posName ?? '').trim().isEmpty
+          ? 'POS'
+          : tokenProvider.posName!.trim();
+      final cashierName = (tokenProvider.activeUserName ?? '').trim().isEmpty
+          ? 'Кассир'
+          : tokenProvider.activeUserName!.trim();
+      final pageFormat = tokenProvider.receiptPaperMm == 57
+          ? PdfPageFormat.roll57
+          : PdfPageFormat.roll80;
+
+      await PrintService().print80mmSilently(
+        () => buildShiftReportPdf(
+          ShiftReportPdfData(
+            pageFormat: pageFormat,
+            money: money,
+            storeName: storeName,
+            posName: posName,
+            cashierName: cashierName,
+            sessionId: report.sessionId,
+            openedAt: report.openedAt,
+            closedAt: null,
+            openingCashAmount: report.openingCashAmount,
+            closingCashAmount: report.closingCashAmount,
+            salesCount: report.salesCount,
+            cashTotal: report.cashTotal,
+            cardTotal: report.cardTotal,
+            transferTotal: report.transferTotal,
+            creditTotal: report.creditTotal,
+            grandTotal: report.grandTotal,
+            refundsTotal: report.refundsTotal,
+            incomeTotal: report.incomeTotal,
+            expenseTotal: report.expenseTotal,
+            expectedCashAmount: report.expectedCashAmount,
+            reportTitle: 'X-ОТЧЕТ',
+            reportSubtitle: 'Текущая сводка смены',
+            footerText: 'Смена открыта',
+            items: report.items
+                .map(
+                  (item) => ReceiptPdfItem(
+                    name: item.name,
+                    quantity: item.quantity,
+                    unitPrice: 0,
+                    lineTotal: item.totalSum,
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+        format: pageFormat,
+        printerName: tokenProvider.receiptPrinterName,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _printingXReport = false);
+      }
     }
-    context.go('/pos');
+  }
+
+  void _closePage() {
+    final hasShift = context.read<AuthTokenProvider>().hasShiftId;
+    context.go(hasShift ? '/pos' : '/login');
   }
 
   @override
@@ -121,8 +196,9 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
         if (_showSuccessState) return;
       },
       builder: (context, state) {
-        final isLoading =
+        final isClosingFlow =
             state is AuthClosingSession || _submitting || _showSuccessState;
+        final isBusy = isClosingFlow || _printingXReport;
         final loadingState = state is AuthClosingSession ? state : null;
 
         return Scaffold(
@@ -148,7 +224,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                         child: Row(
                           children: [
                             IconButton(
-                              onPressed: isLoading ? null : _closePage,
+                              onPressed: isBusy ? null : _closePage,
                               style: IconButton.styleFrom(
                                 backgroundColor: Colors.white,
                                 foregroundColor: const Color(0xFF111827),
@@ -379,49 +455,14 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                                               ),
                                             ),
                                             const SizedBox(height: 16),
-                                            Row(
+                                            Column(
                                               children: [
-                                                Expanded(
-                                                  child: OutlinedButton(
-                                                    onPressed: isLoading
-                                                        ? null
-                                                        : _closePage,
-                                                    style: OutlinedButton
-                                                        .styleFrom(
-                                                      padding: const EdgeInsets
-                                                          .symmetric(
-                                                        vertical: 18,
-                                                      ),
-                                                      side: const BorderSide(
-                                                        color:
-                                                            Color(0xFFD1D5DB),
-                                                      ),
-                                                      shape:
-                                                          RoundedRectangleBorder(
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(
-                                                          18,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    child: const Text(
-                                                      'Отмена',
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w800,
-                                                        color:
-                                                            Color(0xFF374151),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 14),
-                                                Expanded(
+                                                SizedBox(
+                                                  width: double.infinity,
                                                   child: ElevatedButton(
-                                                    onPressed: isLoading
+                                                    onPressed: isBusy
                                                         ? null
-                                                        : _submit,
+                                                        : _printXReport,
                                                     style: ElevatedButton
                                                         .styleFrom(
                                                       elevation: 0,
@@ -443,7 +484,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                                                         ),
                                                       ),
                                                     ),
-                                                    child: isLoading
+                                                    child: _printingXReport
                                                         ? const SizedBox(
                                                             width: 20,
                                                             height: 20,
@@ -455,7 +496,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                                                             ),
                                                           )
                                                         : const Text(
-                                                            'Сдать смену',
+                                                            'РАСПЕЧАТАТЬ X-ОТЧЕТ',
                                                             style: TextStyle(
                                                               fontWeight:
                                                                   FontWeight
@@ -463,6 +504,99 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                                                             ),
                                                           ),
                                                   ),
+                                                ),
+                                                const SizedBox(height: 14),
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: OutlinedButton(
+                                                        onPressed: isBusy
+                                                            ? null
+                                                            : _closePage,
+                                                        style: OutlinedButton
+                                                            .styleFrom(
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                            vertical: 18,
+                                                          ),
+                                                          side:
+                                                              const BorderSide(
+                                                            color: Color(
+                                                                0xFFD1D5DB),
+                                                          ),
+                                                          shape:
+                                                              RoundedRectangleBorder(
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                              18,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        child: const Text(
+                                                          'Отмена',
+                                                          style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                            color: Color(
+                                                                0xFF374151),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 14),
+                                                    Expanded(
+                                                      child: ElevatedButton(
+                                                        onPressed: isBusy
+                                                            ? null
+                                                            : _submit,
+                                                        style: ElevatedButton
+                                                            .styleFrom(
+                                                          elevation: 0,
+                                                          backgroundColor:
+                                                              const Color(
+                                                                  0xFFBE3A14),
+                                                          foregroundColor:
+                                                              Colors.white,
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                            vertical: 18,
+                                                          ),
+                                                          shape:
+                                                              RoundedRectangleBorder(
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                              18,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        child: isClosingFlow
+                                                            ? const SizedBox(
+                                                                width: 20,
+                                                                height: 20,
+                                                                child:
+                                                                    CircularProgressIndicator(
+                                                                  strokeWidth:
+                                                                      2,
+                                                                  color: Colors
+                                                                      .white,
+                                                                ),
+                                                              )
+                                                            : const Text(
+                                                                'Сдать смену',
+                                                                style:
+                                                                    TextStyle(
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w900,
+                                                                ),
+                                                              ),
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
                                               ],
                                             ),
@@ -525,9 +659,9 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                               Expanded(
                                 flex: 4,
                                 child: IgnorePointer(
-                                  ignoring: isLoading,
+                                  ignoring: isBusy,
                                   child: Opacity(
-                                    opacity: isLoading ? 0.55 : 1,
+                                    opacity: isBusy ? 0.55 : 1,
                                     child: Container(
                                       padding: const EdgeInsets.all(20),
                                       decoration: BoxDecoration(
@@ -592,7 +726,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                     ],
                   ),
                 ),
-                if (isLoading)
+                if (isClosingFlow)
                   Positioned.fill(
                     child: Container(
                       color: const Color(0xAA111827),
@@ -945,3 +1079,4 @@ class _LoadingOrSuccessIcon extends StatelessWidget {
     );
   }
 }
+

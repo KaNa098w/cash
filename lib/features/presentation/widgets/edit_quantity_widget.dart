@@ -305,8 +305,12 @@ class _QtyDisplayCard extends StatelessWidget {
                   ],
                   style: Theme.of(context)
                       .textTheme
-                      .headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.w800),
+                      .displaySmall
+                      ?.copyWith(
+                        fontSize: 42,
+                        fontWeight: FontWeight.w900,
+                        height: 1.0,
+                      ),
                   textAlign: TextAlign.center,
                   decoration: InputDecoration(
                     isDense: true,
@@ -314,8 +318,10 @@ class _QtyDisplayCard extends StatelessWidget {
                     hintText: '0',
                     hintTextDirection: TextDirection.ltr,
                     hintStyle:
-                        Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
+                        Theme.of(context).textTheme.displaySmall?.copyWith(
+                              fontSize: 42,
+                              fontWeight: FontWeight.w900,
+                              height: 1.0,
                               color: cs.onSurfaceVariant.withOpacity(0.6),
                             ),
                   ),

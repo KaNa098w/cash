@@ -9,6 +9,8 @@ import 'package:leemon_app/core/models/refund_model.dart';
 import 'package:leemon_app/core/models/product_response.dart';
 import 'package:leemon_app/core/models/sale_model.dart'
     show SaleItemModel, SaleModel;
+import 'package:leemon_app/core/models/sale_model.dart' as sale_models
+    show ProductModel;
 
 import 'pos_sync_models.dart';
 
@@ -453,25 +455,14 @@ class PosSyncLocalStore {
   /// Returns what the NEXT receipt number will be (current + 1), without incrementing.
   Future<int> peekNextLocalSaleNumber() async {
     final db = await _database;
-    final row = _firstRow(
-      db.select(
-        'SELECT value FROM local_counters WHERE name = ? LIMIT 1',
-        ['sale_local_number'],
-      ),
-    );
-    return _asInt(row?['value']) + 1;
+    return _readSaleLocalCounter(db) + 1;
   }
 
   Future<int> nextLocalSaleNumber() async {
     final db = await _database;
     return _inTransaction<int>(db, () {
-      final row = _firstRow(
-        db.select(
-          'SELECT value FROM local_counters WHERE name = ? LIMIT 1',
-          ['sale_local_number'],
-        ),
-      );
-      final next = _asInt(row?['value']) + 1;
+      _syncSaleLocalCounter(db);
+      final next = _readSaleLocalCounter(db) + 1;
       db.execute(
         '''
         INSERT INTO local_counters (name, value)
@@ -481,6 +472,88 @@ class PosSyncLocalStore {
         ['sale_local_number', next],
       );
       return next;
+    });
+  }
+
+  int _readSaleLocalCounter(sqlite.Database db) {
+    final row = _firstRow(
+      db.select(
+        'SELECT value FROM local_counters WHERE name = ? LIMIT 1',
+        ['sale_local_number'],
+      ),
+    );
+    return _asInt(row?['value']);
+  }
+
+  int _parseLocalSaleNumber(dynamic raw) {
+    final value = (raw ?? '').toString().trim();
+    if (value.isEmpty) return 0;
+
+    final matches = RegExp(r'\d+').allMatches(value).toList(growable: false);
+    if (matches.isEmpty) return 0;
+
+    final lastDigits = matches.last.group(0) ?? '';
+    return int.tryParse(lastDigits) ?? 0;
+  }
+
+  int _resolveMaxKnownSaleNumber(sqlite.Database db) {
+    final salesRow = _firstRow(
+      db.select(
+        '''
+        SELECT
+          MAX(local_number) AS max_local_number
+        FROM sales
+        ''',
+      ),
+    );
+
+    var maxKnown = _asInt(salesRow?['max_local_number']);
+
+    final saleNumberRows = db.select('SELECT number FROM sales');
+    for (final row in saleNumberRows) {
+      final parsed = _parseLocalSaleNumber(row['number']);
+      if (parsed > maxKnown) {
+        maxKnown = parsed;
+      }
+    }
+
+    final historyRows = db.select('SELECT raw_json FROM sales_history');
+    for (final row in historyRows) {
+      final raw = (row['raw_json'] ?? '').toString();
+      if (raw.isEmpty) continue;
+      try {
+        final json = decodeJsonMap(raw);
+        final parsed = _parseLocalSaleNumber(json['number']);
+        if (parsed > maxKnown) {
+          maxKnown = parsed;
+        }
+      } catch (_) {
+        // Ignore malformed cached rows and keep the best known number.
+      }
+    }
+
+    return maxKnown;
+  }
+
+  void _syncSaleLocalCounter(sqlite.Database db) {
+    final current = _readSaleLocalCounter(db);
+    final maxKnown = _resolveMaxKnownSaleNumber(db);
+    if (maxKnown <= current) return;
+
+    db.execute(
+      '''
+      INSERT INTO local_counters (name, value)
+      VALUES (?, ?)
+      ON CONFLICT(name) DO UPDATE SET value = excluded.value
+      ''',
+      ['sale_local_number', maxKnown],
+    );
+  }
+
+  Future<void> syncSaleLocalCounter() async {
+    final db = await _database;
+    _inTransaction<void>(db, () {
+      _syncSaleLocalCounter(db);
     });
   }
 
@@ -497,6 +570,7 @@ class PosSyncLocalStore {
   }) async {
     final db = await _database;
     final now = _nowIso();
+    var maxBootstrapSaleNumber = 0;
     _inTransaction<void>(db, () {
       db.execute('DELETE FROM pos_info;');
       db.execute('DELETE FROM products;');
@@ -520,6 +594,10 @@ class PosSyncLocalStore {
           final sale = SaleModel.fromApiJson(raw);
           final saleId = sale.localId.trim();
           if (saleId.isEmpty) continue;
+          final saleNumber = _parseLocalSaleNumber(sale.number);
+          if (saleNumber > maxBootstrapSaleNumber) {
+            maxBootstrapSaleNumber = saleNumber;
+          }
           db.execute(
             '''
             INSERT INTO sales_history (id, date, raw_json, updated_at_local)
@@ -529,7 +607,12 @@ class PosSyncLocalStore {
               raw_json = excluded.raw_json,
               updated_at_local = excluded.updated_at_local
             ''',
-            [saleId, sale.date.toIso8601String(), jsonEncode(sale.toJson()), now],
+            [
+              saleId,
+              sale.date.toIso8601String(),
+              jsonEncode(sale.toJson()),
+              now
+            ],
           );
         } catch (_) {
           // Ignore malformed snapshot records and keep bootstrapping.
@@ -561,6 +644,20 @@ class PosSyncLocalStore {
         ''',
         [posKey, deviceId, cursorBefore, now],
       );
+
+      if (maxBootstrapSaleNumber > 0) {
+        final currentCounter = _readSaleLocalCounter(db);
+        if (maxBootstrapSaleNumber > currentCounter) {
+          db.execute(
+            '''
+            INSERT INTO local_counters (name, value)
+            VALUES (?, ?)
+            ON CONFLICT(name) DO UPDATE SET value = excluded.value
+            ''',
+            ['sale_local_number', maxBootstrapSaleNumber],
+          );
+        }
+      }
     });
   }
 
@@ -575,6 +672,7 @@ class PosSyncLocalStore {
       for (final change in changes) {
         _applyPullChange(db, change, now);
       }
+      _syncSaleLocalCounter(db);
       db.execute(
         '''
         UPDATE sync_state
@@ -783,27 +881,52 @@ class PosSyncLocalStore {
     required String operationId,
     String? errorCode,
     String? errorMessage,
+    Map<String, dynamic>? payload,
+    Map<String, dynamic>? errorDetails,
   }) async {
     final db = await _database;
     final now = _nowIso();
-    db.execute(
-      '''
-      UPDATE outbox_operations
-      SET status = ?,
-          retry_count = retry_count + 1,
-          last_error_code = ?,
-          last_error_message = ?,
-          updated_at = ?
-      WHERE id = ?
-      ''',
-      [
-        OutboxOperationStatus.pending.value,
-        errorCode,
-        errorMessage,
-        now,
-        operationId,
-      ],
-    );
+    _inTransaction<void>(db, () {
+      db.execute(
+        '''
+        UPDATE outbox_operations
+        SET status = ?,
+            retry_count = retry_count + 1,
+            last_error_code = ?,
+            last_error_message = ?,
+            updated_at = ?
+        WHERE id = ?
+        ''',
+        [
+          OutboxOperationStatus.pending.value,
+          errorCode,
+          errorMessage,
+          now,
+          operationId,
+        ],
+      );
+      if ((errorCode ?? '').trim().isEmpty && (errorMessage ?? '').trim().isEmpty) {
+        return;
+      }
+      db.execute(
+        '''
+        INSERT INTO sync_errors (
+          id, operation_id, error_code, error_message, payload_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ''',
+        [
+          '${operationId}_$now',
+          operationId,
+          (errorCode ?? 'UNKNOWN_ERROR').trim(),
+          (errorMessage ?? 'Unknown error').trim(),
+          jsonEncode(_buildStoredErrorPayload(
+            payload: payload,
+            errorDetails: errorDetails,
+          )),
+          now,
+        ],
+      );
+    });
   }
 
   Future<void> markOperationManual({
@@ -811,6 +934,7 @@ class PosSyncLocalStore {
     required String errorCode,
     required String errorMessage,
     required Map<String, dynamic> payload,
+    Map<String, dynamic>? errorDetails,
   }) async {
     final db = await _database;
     final now = _nowIso();
@@ -840,7 +964,10 @@ class PosSyncLocalStore {
           operationId,
           errorCode,
           errorMessage,
-          jsonEncode(payload),
+          jsonEncode(_buildStoredErrorPayload(
+            payload: payload,
+            errorDetails: errorDetails,
+          )),
           now,
         ],
       );
@@ -898,6 +1025,64 @@ class PosSyncLocalStore {
     return rows
         .map((row) => _queueItemFromRow(_rowMap(row)))
         .toList(growable: false);
+  }
+
+  Future<QueueItemDetails?> loadQueueItemDetails(String operationId) async {
+    final db = await _database;
+    final operationRow = _firstRow(
+      db.select(
+        '''
+        SELECT *
+        FROM outbox_operations
+        WHERE id = ?
+        LIMIT 1
+        ''',
+        [operationId],
+      ),
+    );
+    if (operationRow == null) return null;
+
+    final latestErrorRow = _firstRow(
+      db.select(
+        '''
+        SELECT *
+        FROM sync_errors
+        WHERE operation_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+        ''',
+        [operationId],
+      ),
+    );
+
+    final queueItem = _queueItemFromRow(operationRow);
+    final payload = decodeJsonMap((operationRow['payload_json'] ?? '{}').toString());
+
+    Map<String, dynamic>? lastErrorDetails;
+    final rawErrorPayload = latestErrorRow?['payload_json']?.toString().trim() ?? '';
+    if (rawErrorPayload.isNotEmpty) {
+      try {
+        lastErrorDetails = decodeJsonMap(rawErrorPayload);
+      } catch (_) {
+        lastErrorDetails = null;
+      }
+    }
+
+    return QueueItemDetails(
+      id: queueItem.id,
+      type: queueItem.type,
+      clientId: queueItem.clientId,
+      status: queueItem.status,
+      createdAt: _parseDt(operationRow['created_at']) ?? DateTime.now(),
+      updatedAt: _parseDt(operationRow['updated_at']) ?? DateTime.now(),
+      payload: payload,
+      title: queueItem.title,
+      subtitle: queueItem.subtitle,
+      errorCode: latestErrorRow?['error_code']?.toString() ?? queueItem.errorCode,
+      errorMessage:
+          latestErrorRow?['error_message']?.toString() ?? queueItem.errorMessage,
+      lastErrorDetails: lastErrorDetails,
+    );
   }
 
   void _applyPullChange(
@@ -994,7 +1179,11 @@ class PosSyncLocalStore {
       ),
     );
     final previousId = _string(existing?['id']);
-    final localNumber = _asInt(existing?['local_number']);
+    var localNumber = _asInt(existing?['local_number']);
+    final pulledNumber = _parseLocalSaleNumber(payload['number']);
+    if (pulledNumber > localNumber) {
+      localNumber = pulledNumber;
+    }
     final shouldRefreshHistoryCache = _hasCachedSaleHistoryRecord(
       db,
       saleId: saleId,
@@ -1898,15 +2087,18 @@ class PosSyncLocalStore {
       ),
     );
     if (sessionRow == null) return null;
+    final sessionIds = _sessionQueryIds(sessionRow, clientSessionId);
+    final sessionWhere = _sessionIdWhereClause(sessionIds.length);
 
     final salesRows = db.select(
-      'SELECT payment_method, total_amount FROM sales WHERE pos_session_id = ?',
-      [clientSessionId],
+      'SELECT id, payment_method, total_amount FROM sales WHERE completed = 1 AND pos_session_id $sessionWhere',
+      sessionIds,
     );
 
     num cashTotal = 0;
     num cardTotal = 0;
     num transferTotal = 0;
+    num creditTotal = 0;
 
     for (final row in salesRows) {
       final map = _rowMap(row);
@@ -1921,23 +2113,56 @@ class PosSyncLocalStore {
         case 'transfer':
           transferTotal += amount;
           break;
+        case 'credit':
+          creditTotal += amount;
+          break;
       }
     }
 
     final itemRows = db.select(
       '''
       SELECT
-        COALESCE(product_name, product_id) AS product_name,
-        SUM(quantity) AS total_qty,
-        SUM(total_price) AS total_sum
-      FROM sale_items
+        COALESCE(
+          NULLIF(TRIM(si.product_name), ''),
+          NULLIF(TRIM(p.name), ''),
+          si.product_id
+        ) AS product_name,
+        SUM(si.quantity) AS total_qty,
+        SUM(si.total_price) AS total_sum
+      FROM sale_items si
+      LEFT JOIN products p ON p.id = si.product_id
       WHERE sale_id IN (
-        SELECT id FROM sales WHERE pos_session_id = ?
+        SELECT id FROM sales WHERE completed = 1 AND pos_session_id $sessionWhere
       )
-      GROUP BY product_id, COALESCE(product_name, product_id)
+      GROUP BY
+        si.product_id,
+        COALESCE(
+          NULLIF(TRIM(si.product_name), ''),
+          NULLIF(TRIM(p.name), ''),
+          si.product_id
+        )
       ORDER BY product_name COLLATE NOCASE
       ''',
-      [clientSessionId],
+      sessionIds,
+    );
+
+    final refundsRow = _firstRow(
+      db.select(
+        'SELECT COALESCE(SUM(total_amount), 0) AS total FROM refunds WHERE pos_session_id $sessionWhere',
+        sessionIds,
+      ),
+    );
+    final paymentsRow = _firstRow(
+      db.select(
+        '''
+        SELECT
+          COALESCE(SUM(CASE WHEN is_expense = 0 THEN amount ELSE 0 END), 0) AS income_total,
+          COALESCE(SUM(CASE WHEN is_expense = 1 THEN amount ELSE 0 END), 0) AS expense_total
+        FROM payments
+        WHERE pos_session_id $sessionWhere
+        ''',
+        sessionIds,
+      ),
     );
 
     final items = itemRows.map((row) {
@@ -1949,17 +2174,34 @@ class PosSyncLocalStore {
       );
     }).toList(growable: false);
 
+    final refundsTotal =
+        refundsRow == null ? 0 : _asDouble(refundsRow['total']);
+    final incomeTotal =
+        paymentsRow == null ? 0 : _asDouble(paymentsRow['income_total']);
+    final expenseTotal =
+        paymentsRow == null ? 0 : _asDouble(paymentsRow['expense_total']);
+    final openingCashAmount = _asDouble(sessionRow['opening_cash_amount']);
+
     return ShiftReportData(
       sessionId: clientSessionId,
       openedAt: _parseDt(sessionRow['opened_at']),
       closedAt: _parseDt(sessionRow['closed_at']),
-      openingCashAmount: _asDouble(sessionRow['opening_cash_amount']),
+      openingCashAmount: openingCashAmount,
       closingCashAmount: _asDouble(sessionRow['closing_cash_amount']),
       salesCount: salesRows.length,
       cashTotal: cashTotal,
       cardTotal: cardTotal,
       transferTotal: transferTotal,
-      grandTotal: cashTotal + cardTotal + transferTotal,
+      creditTotal: creditTotal,
+      grandTotal: cashTotal + cardTotal + transferTotal + creditTotal,
+      refundsTotal: refundsTotal,
+      incomeTotal: incomeTotal,
+      expenseTotal: expenseTotal,
+      expectedCashAmount: openingCashAmount +
+          cashTotal -
+          refundsTotal +
+          incomeTotal -
+          expenseTotal,
       items: items,
     );
   }
@@ -1974,14 +2216,17 @@ class PosSyncLocalStore {
       ),
     );
     if (sessionRow == null) return null;
+    final sessionIds = _sessionQueryIds(sessionRow, clientSessionId);
+    final sessionWhere = _sessionIdWhereClause(sessionIds.length);
 
     num cashSalesTotal = 0;
     num cardSalesTotal = 0;
     num transferSalesTotal = 0;
+    num creditSalesTotal = 0;
 
     final salesRows = db.select(
-      'SELECT payment_method, total_amount FROM sales WHERE pos_session_id = ?',
-      [clientSessionId],
+      'SELECT payment_method, total_amount FROM sales WHERE completed = 1 AND pos_session_id $sessionWhere',
+      sessionIds,
     );
     for (final row in salesRows) {
       final map = _rowMap(row);
@@ -1996,13 +2241,16 @@ class PosSyncLocalStore {
         case 'transfer':
           transferSalesTotal += amount;
           break;
+        case 'credit':
+          creditSalesTotal += amount;
+          break;
       }
     }
 
     final refundsRow = _firstRow(
       db.select(
-        'SELECT COALESCE(SUM(total_amount), 0) AS total FROM refunds WHERE pos_session_id = ?',
-        [clientSessionId],
+        'SELECT COALESCE(SUM(total_amount), 0) AS total FROM refunds WHERE pos_session_id $sessionWhere',
+        sessionIds,
       ),
     );
     final paymentsRow = _firstRow(
@@ -2012,9 +2260,9 @@ class PosSyncLocalStore {
           COALESCE(SUM(CASE WHEN is_expense = 0 THEN amount ELSE 0 END), 0) AS income_total,
           COALESCE(SUM(CASE WHEN is_expense = 1 THEN amount ELSE 0 END), 0) AS expense_total
         FROM payments
-        WHERE pos_session_id = ?
+        WHERE pos_session_id $sessionWhere
         ''',
-        [clientSessionId],
+        sessionIds,
       ),
     );
 
@@ -2026,7 +2274,7 @@ class PosSyncLocalStore {
     final expenseTotal =
         paymentsRow == null ? 0 : _asDouble(paymentsRow['expense_total']);
     final totalSalesAmount =
-        cashSalesTotal + cardSalesTotal + transferSalesTotal;
+        cashSalesTotal + cardSalesTotal + transferSalesTotal + creditSalesTotal;
     final expectedCashAmount = openingCashAmount +
         cashSalesTotal -
         refundsTotal +
@@ -2039,12 +2287,35 @@ class PosSyncLocalStore {
       cashSalesTotal: cashSalesTotal,
       cardSalesTotal: cardSalesTotal,
       transferSalesTotal: transferSalesTotal,
+      creditSalesTotal: creditSalesTotal,
       refundsTotal: refundsTotal,
       incomeTotal: incomeTotal,
       expenseTotal: expenseTotal,
       expectedCashAmount: expectedCashAmount,
       totalSalesAmount: totalSalesAmount,
     );
+  }
+
+  List<Object?> _sessionQueryIds(
+    Map<String, dynamic> sessionRow,
+    String clientSessionId,
+  ) {
+    final ids = <String>{};
+    final clientId = clientSessionId.trim();
+    if (clientId.isNotEmpty) {
+      ids.add(clientId);
+    }
+    final serverId =
+        _nullableString(sessionRow['server_session_id'])?.trim() ?? '';
+    if (serverId.isNotEmpty) {
+      ids.add(serverId);
+    }
+    return ids.toList(growable: false);
+  }
+
+  String _sessionIdWhereClause(int count) {
+    if (count <= 1) return '= ?';
+    return 'IN (${List.filled(count, '?').join(', ')})';
   }
 
   QueueListItem _queueItemFromRow(Map<String, dynamic> row) {
@@ -2107,13 +2378,25 @@ class PosSyncLocalStore {
     final items = (itemsRaw is List)
         ? itemsRaw.whereType<Map>().map((item) {
             final map = Map<String, dynamic>.from(item);
+            final productId = (map['product_id'] ?? '').toString();
+            final productName = (map['product_name'] ?? '').toString().trim();
             return SaleItemModel(
               id: (map['sale_item_id'] ?? '').toString(),
               saleId: (payload['client_sale_id'] ?? '').toString(),
-              productId: (map['product_id'] ?? '').toString(),
+              productId: productId,
               quantity: _asDouble(map['quantity']),
               price: _asInt(map['price']),
               totalPrice: _asInt(map['total_price']),
+              product: productName.isEmpty
+                  ? null
+                  : sale_models.ProductModel(
+                      id: productId,
+                      name: productName,
+                      measurementUnit: '',
+                      arrivalCost: 0,
+                      sellingPrice: _asDouble(map['price']),
+                      wholesalePrice: 0,
+                    ),
             );
           }).toList()
         : <SaleItemModel>[];
@@ -2128,6 +2411,7 @@ class PosSyncLocalStore {
       storeId: (payload['store_id'] ?? '').toString(),
       userId: (payload['user_id'] ?? '').toString(),
       accountId: (payload['account_id'] ?? '').toString(),
+      posSessionId: payload['pos_session_id']?.toString(),
       customerId: payload['customer_id']?.toString(),
       items: items,
     );
@@ -2269,6 +2553,16 @@ class PosSyncLocalStore {
   }
 
   String _nowIso() => DateTime.now().toIso8601String();
+
+  Map<String, dynamic> _buildStoredErrorPayload({
+    Map<String, dynamic>? payload,
+    Map<String, dynamic>? errorDetails,
+  }) {
+    return <String, dynamic>{
+      'request_payload': payload ?? const <String, dynamic>{},
+      if (errorDetails != null) 'error_details': errorDetails,
+    };
+  }
 
   _EntityKind? _normalizeEntity(String raw) {
     final value = raw.trim().toLowerCase();

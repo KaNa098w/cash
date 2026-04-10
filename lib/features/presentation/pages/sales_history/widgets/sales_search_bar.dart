@@ -61,7 +61,6 @@ class SalesSearchBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
       child: Row(
         children: [
-          // ── Search field block ────────────────────────────────────────
           SizedBox(
             width: 520,
             child: Row(
@@ -145,73 +144,81 @@ class SalesSearchBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-
-          // ── Date chip ─────────────────────────────────────────────────
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            height: 46,
-            decoration: BoxDecoration(
-              color: hasDate ? _accentLight : Colors.white,
-              border: Border.all(
-                color: hasDate ? _accent : _greyBorder,
-                width: 1.4,
-              ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Material(
-              color: Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: onPickDate,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.calendar_today_rounded,
-                        size: 16,
-                        color: hasDate ? _accent : _grey,
-                      ),
-                      const SizedBox(width: 7),
-                      Text(
-                        hasDate ? _formatDate(selectedDate!) : 'Фильтр по дате',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: hasDate ? _accent : _grey,
-                        ),
-                      ),
-                      if (hasDate) ...[
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: onClearDate,
-                          child: const Icon(
-                            Icons.close_rounded,
-                            size: 15,
-                            color: _accent,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                height: 46,
+                decoration: BoxDecoration(
+                  color: hasDate ? _accentLight : Colors.white,
+                  border: Border.all(
+                    color: hasDate ? _accent : _greyBorder,
+                    width: 1.4,
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: onPickDate,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.calendar_today_rounded,
+                            size: 16,
+                            color: hasDate ? _accent : _grey,
                           ),
-                        ),
-                      ],
-                    ],
+                          const SizedBox(width: 7),
+                          Text(
+                            hasDate
+                                ? _formatDate(selectedDate!)
+                                : 'Фильтр по дате',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: hasDate ? _accent : _grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
+              if (hasDate) ...[
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 46,
+                  height: 46,
+                  child: Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: onClearDate,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: _accent, width: 1.4),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.close_rounded,
+                          size: 20,
+                          color: _accent,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
-
-          // const SizedBox(width: 12),
-          // if (foundCount != null)
-          //   Text(
-          //     'Найдено: $foundCount',
-          //     style: TextStyle(
-          //       fontSize: 14,
-          //       color: Colors.black.withValues(alpha: 0.65),
-          //       fontWeight: FontWeight.w600,
-          //     ),
-          //   ),
         ],
       ),
     );

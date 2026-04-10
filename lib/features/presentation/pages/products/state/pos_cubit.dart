@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:leemon_app/core/models/product_response.dart'; // ProductModel
 import 'package:leemon_app/features/domain/entities/cart_item.dart';
@@ -10,9 +14,43 @@ import 'package:leemon_app/features/domain/repositories/pos_repository.dart';
 part 'pos_state.dart';
 
 class PosCubit extends Cubit<PosState> {
+  static const _kPersistedStateKey = 'persisted_pos_state_v1';
   final PosRepository repo;
 
-  PosCubit(this.repo) : super(PosState.initial());
+  PosCubit(this.repo) : super(PosState.initial()) {
+    unawaited(_restorePersistedState());
+  }
+
+  void _emitAndPersist(PosState nextState) {
+    emit(nextState);
+    unawaited(_persistState(nextState));
+  }
+
+  Future<void> _persistState(PosState state) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kPersistedStateKey, jsonEncode(state.toJson()));
+  }
+
+  Future<void> _restorePersistedState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kPersistedStateKey);
+    if (raw == null || raw.trim().isEmpty) return;
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return;
+      final restored = PosState.fromJson(decoded);
+      super.emit(restored);
+    } catch (_) {
+      await prefs.remove(_kPersistedStateKey);
+    }
+  }
+
+  Future<void> resetAllLocalState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kPersistedStateKey);
+    emit(PosState.initial());
+  }
 
   double _normalizedMaxQty(Product product) {
     final qty = product.quantity;
@@ -63,7 +101,7 @@ class PosCubit extends Cubit<PosState> {
 
     tickets[idx] = tickets[idx].copyWith(items: const []);
 
-    emit(state.copyWith(
+    _emitAndPersist(state.copyWith(
       tickets: tickets,
       received: 0,
       paymentKind: PaymentKind.cash,
@@ -80,7 +118,7 @@ class PosCubit extends Cubit<PosState> {
       return t.copyWith(customer: customer);
     }).toList();
 
-    emit(state.copyWith(tickets: updated));
+    _emitAndPersist(state.copyWith(tickets: updated));
   }
 
   void clearCustomerForActiveTicket() {
@@ -91,12 +129,12 @@ class PosCubit extends Cubit<PosState> {
       return t.copyWith(clearCustomer: true);
     }).toList();
 
-    emit(state.copyWith(tickets: updated));
+    _emitAndPersist(state.copyWith(tickets: updated));
   }
 
   void selectItem(int index) {
     if (index < 0 || index >= state.items.length) return;
-    emit(state.copyWith(selectedItemIndex: index));
+    _emitAndPersist(state.copyWith(selectedItemIndex: index));
   }
 
   void add(Product p) {
@@ -127,7 +165,7 @@ class PosCubit extends Cubit<PosState> {
       return list;
     });
 
-    emit(state.copyWith(
+    _emitAndPersist(state.copyWith(
       tickets: tickets,
       selectedItemIndex: selectedIndex,
     ));
@@ -166,7 +204,7 @@ class PosCubit extends Cubit<PosState> {
       }
     }
 
-    emit(state.copyWith(
+    _emitAndPersist(state.copyWith(
       tickets: tickets,
       selectedItemIndex: newSelected,
     ));
@@ -185,17 +223,17 @@ class PosCubit extends Cubit<PosState> {
       if (index >= 0 && index < list.length) {
         final current = list[index];
         final maxQty = _normalizedMaxQty(current.product);
-        final normalizedQty =
-            ProductModel.isPiecesMeasurementUnit(current.product.measurementUnit)
-                ? qty.roundToDouble()
-                : qty;
+        final normalizedQty = ProductModel.isPiecesMeasurementUnit(
+                current.product.measurementUnit)
+            ? qty.roundToDouble()
+            : qty;
         final nextQty = normalizedQty > maxQty ? maxQty : normalizedQty;
         list[index] = current.copyWith(qty: nextQty);
       }
       return list;
     });
 
-    emit(state.copyWith(tickets: tickets));
+    _emitAndPersist(state.copyWith(tickets: tickets));
   }
 
   // Увеличить количество у выбранной позиции
@@ -229,21 +267,21 @@ class PosCubit extends Cubit<PosState> {
       );
 
   void setPaymentKind(PaymentKind kind) {
-    emit(state.copyWith(paymentKind: kind));
+    _emitAndPersist(state.copyWith(paymentKind: kind));
   }
 
   void setReceived(double value) {
-    emit(state.copyWith(received: value));
+    _emitAndPersist(state.copyWith(received: value));
   }
 
   double get change => state.received - total;
 
   void showHistory() {
-    emit(state.copyWith(isHistoryMode: true));
+    _emitAndPersist(state.copyWith(isHistoryMode: true));
   }
 
   void showSales() {
-    emit(state.copyWith(isHistoryMode: false));
+    _emitAndPersist(state.copyWith(isHistoryMode: false));
   }
 
   void closeTicket(int id) {
@@ -270,7 +308,7 @@ class PosCubit extends Cubit<PosState> {
       }
     }
 
-    emit(
+    _emitAndPersist(
       state.copyWith(
         tickets: tickets,
         activeTicketId: newActiveId,
@@ -286,7 +324,7 @@ class PosCubit extends Cubit<PosState> {
 
     final newTicket = PosTicket(id: newId, items: []);
 
-    emit(
+    _emitAndPersist(
       state.copyWith(
         tickets: [...state.tickets, newTicket],
         activeTicketId: newId,
@@ -298,7 +336,7 @@ class PosCubit extends Cubit<PosState> {
 
   void switchTicket(int id) {
     if (!state.tickets.any((t) => t.id == id)) return;
-    emit(
+    _emitAndPersist(
       state.copyWith(
         activeTicketId: id,
         isHistoryMode: false,

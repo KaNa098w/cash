@@ -1,4 +1,5 @@
-﻿import 'dart:async';
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
@@ -212,48 +213,70 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
             required String title,
             required String subtitle,
             required Color dot,
+            VoidCallback? onTap,
           }) {
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+            return Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onTap,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration:
-                        BoxDecoration(color: dot, shape: BoxShape.circle),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF0F172A),
-                          ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration:
+                            BoxDecoration(color: dot, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                            Text(
+                              subtitle,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
                         ),
-                        Text(
-                          subtitle,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF64748B),
-                          ),
+                      ),
+                      if (onTap != null) ...[
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: Color(0xFF94A3B8),
                         ),
                       ],
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             );
+          }
+
+          Future<void> openQueueDetails(QueueListItem item) async {
+            final details = await sync.loadQueueItemDetails(item.id);
+            if (!context.mounted || details == null) return;
+            await _showQueueItemDetailsDialog(context, details);
           }
 
           return Dialog(
@@ -323,6 +346,10 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                               dot: item.status == OutboxOperationStatus.manual
                                   ? const Color(0xFFF59E0B)
                                   : const Color(0xFFDC2626),
+                              onTap: item.errorCode != null ||
+                                      item.errorMessage != null
+                                  ? () => openQueueDetails(item)
+                                  : null,
                             ),
                             const SizedBox(height: 8),
                           ],
@@ -613,8 +640,7 @@ Future<void> _runSyncWithProgress(BuildContext context) async {
   try {
     if (stopRequested.value) return;
 
-    final deviceId =
-        context.read<AuthTokenProvider>().deviceId?.trim() ?? '';
+    final deviceId = context.read<AuthTokenProvider>().deviceId?.trim() ?? '';
     if (deviceId.isEmpty) {
       throw Exception('Нет deviceId');
     }
@@ -704,8 +730,11 @@ Future<void> _printLastSaleReceipt(BuildContext context) async {
           pageFormat: pageFormat,
           money: money,
           receiptDate: sale.date,
-          receiptNumber:
-              sale.number.trim().isEmpty ? sale.localId : sale.number.trim(),
+          receiptNumber: formatPosReceiptNumber(
+            posNumber: auth.posNumber ?? '',
+            saleNumber: sale.number,
+            fallback: sale.localId,
+          ),
           cashierName: cashierName,
           storeName: storeName,
           items: sale.items
@@ -811,7 +840,8 @@ Future<void> _pickPrinterSettings(BuildContext context) async {
                 value: value,
                 isExpanded: true,
                 underline: const SizedBox.shrink(),
-                hint: const Text('По умолчанию', style: TextStyle(fontSize: 13)),
+                hint:
+                    const Text('По умолчанию', style: TextStyle(fontSize: 13)),
                 items: [
                   const DropdownMenuItem<String>(
                     value: null,
@@ -833,7 +863,10 @@ Future<void> _pickPrinterSettings(BuildContext context) async {
             );
           }
 
-          Widget paperCard({required int value, required String title, required String subtitle}) {
+          Widget paperCard(
+              {required int value,
+              required String title,
+              required String subtitle}) {
             final isSelected = selectedMm == value;
             return InkWell(
               borderRadius: BorderRadius.circular(14),
@@ -841,28 +874,43 @@ Future<void> _pickPrinterSettings(BuildContext context) async {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 160),
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFFEAF2FF) : const Color(0xFFF8FAFC),
+                  color: isSelected
+                      ? const Color(0xFFEAF2FF)
+                      : const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: isSelected ? const Color(0xFF3B82F6) : const Color(0xFFE2E8F0),
+                    color: isSelected
+                        ? const Color(0xFF3B82F6)
+                        : const Color(0xFFE2E8F0),
                     width: isSelected ? 1.6 : 1,
                   ),
                 ),
                 child: Row(
                   children: [
                     Icon(
-                      isSelected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
-                      color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                      isSelected
+                          ? Icons.radio_button_checked_rounded
+                          : Icons.radio_button_off_rounded,
+                      color: isSelected
+                          ? const Color(0xFF2563EB)
+                          : const Color(0xFF64748B),
                     ),
                     const SizedBox(width: 10),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                        Text(subtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                        Text(title,
+                            style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0F172A))),
+                        Text(subtitle,
+                            style: const TextStyle(
+                                fontSize: 11, color: Color(0xFF64748B))),
                       ],
                     ),
                   ],
@@ -873,7 +921,8 @@ Future<void> _pickPrinterSettings(BuildContext context) async {
 
           return Dialog(
             backgroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
               child: Padding(
@@ -889,14 +938,23 @@ Future<void> _pickPrinterSettings(BuildContext context) async {
                           SizedBox(width: 8),
                           Text(
                             'Настройки принтеров',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF0F172A)),
                           ),
                         ],
                       ),
                       sectionTitle('Размер бумаги чека'),
-                      paperCard(value: 80, title: '80 мм', subtitle: 'Стандартный широкий чек'),
+                      paperCard(
+                          value: 80,
+                          title: '80 мм',
+                          subtitle: 'Стандартный широкий чек'),
                       const SizedBox(height: 8),
-                      paperCard(value: 57, title: '57 мм', subtitle: 'Узкий термочек'),
+                      paperCard(
+                          value: 57,
+                          title: '57 мм',
+                          subtitle: 'Узкий термочек'),
                       sectionTitle('Принтер для чеков (термопринтер)'),
                       printerDropdown(
                         label: 'Чеки / Z-отчёт',
@@ -914,7 +972,8 @@ Future<void> _pickPrinterSettings(BuildContext context) async {
                           padding: EdgeInsets.only(top: 8),
                           child: Text(
                             'Принтеры не найдены. Проверьте подключение.',
-                            style: TextStyle(fontSize: 12, color: Color(0xFFDC2626)),
+                            style: TextStyle(
+                                fontSize: 12, color: Color(0xFFDC2626)),
                           ),
                         ),
                       const SizedBox(height: 18),
@@ -927,10 +986,15 @@ Future<void> _pickPrinterSettings(BuildContext context) async {
                                 onPressed: () => Navigator.of(ctx).pop(),
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: const Color(0xFF0F172A),
-                                  side: const BorderSide(color: Color(0xFFCBD5E1)),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  side: const BorderSide(
+                                      color: Color(0xFFCBD5E1)),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12)),
                                 ),
-                                child: const Text('Отмена', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                                child: const Text('Отмена',
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700)),
                               ),
                             ),
                           ),
@@ -942,14 +1006,20 @@ Future<void> _pickPrinterSettings(BuildContext context) async {
                                 onPressed: () async {
                                   Navigator.of(ctx).pop();
                                   await provider.setReceiptPaperMm(selectedMm);
-                                  await provider.setReceiptPrinterName(selectedReceipt);
-                                  await provider.setInvoicePrinterName(selectedInvoice);
+                                  await provider
+                                      .setReceiptPrinterName(selectedReceipt);
+                                  await provider
+                                      .setInvoicePrinterName(selectedInvoice);
                                 },
                                 style: FilledButton.styleFrom(
                                   backgroundColor: const Color(0xFF2563EB),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12)),
                                 ),
-                                child: const Text('Сохранить', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                                child: const Text('Сохранить',
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w800)),
                               ),
                             ),
                           ),
@@ -1188,6 +1258,213 @@ Future<void> openWindowsPrintersSettings(BuildContext context) async {
   }
 }
 
+Future<void> _showQueueItemDetailsDialog(
+  BuildContext context,
+  QueueItemDetails details,
+) {
+  final storedError = details.lastErrorDetails ?? const <String, dynamic>{};
+  final requestPayload = _asMap(storedError['request_payload']) ?? details.payload;
+  final errorDetails =
+      _asMap(storedError['error_details']) ?? const <String, dynamic>{};
+  final requestMeta = _asMap(errorDetails['request']) ?? const <String, dynamic>{};
+  final responseMeta =
+      _asMap(errorDetails['response']) ?? const <String, dynamic>{};
+  final items = _asListOfMaps(requestPayload['items']);
+
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) {
+      return Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760, maxHeight: 720),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  details.title ?? details.type.label,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                SelectableText(
+                  [
+                    'Код: ${details.errorCode ?? '-'}',
+                    'Ошибка: ${details.errorMessage ?? '-'}',
+                    if ((responseMeta['status_code'] ?? '').toString().isNotEmpty)
+                      'HTTP: ${responseMeta['status_code']}',
+                    if ((requestMeta['method'] ?? '').toString().isNotEmpty ||
+                        (requestMeta['path'] ?? '').toString().isNotEmpty)
+                      'Запрос: ${requestMeta['method'] ?? ''} ${requestMeta['path'] ?? ''}',
+                  ].join('\n'),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.45,
+                    color: Color(0xFF475569),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      if (items.isNotEmpty) ...[
+                        _queueDetailsSection(
+                          title: 'Товары',
+                          child: Column(
+                            children: [
+                              for (final item in items) _queueItemRow(item: item),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      _queueDetailsSection(
+                        title: 'Что отправили',
+                        child: SelectableText(
+                          _prettyJson(requestPayload),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            height: 1.45,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _queueDetailsSection(
+                        title: 'Что вернул сервер',
+                        child: SelectableText(
+                          _prettyJson(
+                            responseMeta.isNotEmpty
+                                ? responseMeta
+                                : errorDetails.isNotEmpty
+                                    ? errorDetails
+                                    : <String, dynamic>{
+                                        'code': details.errorCode,
+                                        'message': details.errorMessage,
+                                      },
+                          ),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            height: 1.45,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Закрыть'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+Widget _queueDetailsSection({
+  required String title,
+  required Widget child,
+}) {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF8FAFC),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0xFFE2E8F0)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF334155),
+          ),
+        ),
+        const SizedBox(height: 8),
+        child,
+      ],
+    ),
+  );
+}
+
+Widget _queueItemRow({
+  required Map<String, dynamic> item,
+}) {
+  final name = (item['product_name'] ?? item['name'] ?? item['product_id'] ?? '-')
+      .toString();
+  final quantity = item['quantity']?.toString() ?? '-';
+  final price = item['price']?.toString() ?? '-';
+  final total = item['total_price']?.toString() ?? '-';
+
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            name,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          'qty: $quantity  price: $price  sum: $total',
+          style: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFF64748B),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Map<String, dynamic>? _asMap(dynamic value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) return Map<String, dynamic>.from(value);
+  return null;
+}
+
+List<Map<String, dynamic>> _asListOfMaps(dynamic value) {
+  if (value is! List) return const [];
+  return value
+      .whereType<Map>()
+      .map((item) => Map<String, dynamic>.from(item))
+      .toList(growable: false);
+}
+
+String _prettyJson(dynamic value) {
+  const encoder = JsonEncoder.withIndent('  ');
+  try {
+    return encoder.convert(value);
+  } catch (_) {
+    return value?.toString() ?? 'null';
+  }
+}
 
 Future<File> _downloadUpdatePackage(
   AppUpdateResponse latest,
@@ -1312,7 +1589,8 @@ Future<void> _runZipUpdater(File packageFile, BuildContext context) async {
   await exitAppFully();
 }
 
-Future<void> _runSilentInstaller(File installerFile, BuildContext context) async {
+Future<void> _runSilentInstaller(
+    File installerFile, BuildContext context) async {
   await Process.start(
     installerFile.path,
     const [
@@ -1561,8 +1839,7 @@ class _UpdateCheckDialogState extends State<_UpdateCheckDialog> {
             onPressed: () => Navigator.of(context).pop(),
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFF16A34A),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
             ),
@@ -1600,8 +1877,7 @@ class _UpdateCheckDialogState extends State<_UpdateCheckDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('Текущая',
-                      style:
-                          TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+                      style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
                   Text(
                     kAppVersion,
                     style: const TextStyle(
@@ -1613,15 +1889,14 @@ class _UpdateCheckDialogState extends State<_UpdateCheckDialog> {
               ),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Icon(Icons.arrow_forward_rounded,
-                    color: Color(0xFF94A3B8)),
+                child:
+                    Icon(Icons.arrow_forward_rounded, color: Color(0xFF94A3B8)),
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('Новая',
-                      style:
-                          TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+                      style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
                   Text(
                     latest.latestVersion,
                     style: const TextStyle(

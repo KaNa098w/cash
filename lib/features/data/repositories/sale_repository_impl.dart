@@ -19,17 +19,16 @@ class SaleRepositoryImpl implements SaleRepository {
         key: key,
         deviceId: deviceId,
         sale: sale,
+        sendInBackground: true,
       );
 
       final localNumber = queueResult.payload['local_number']?.toString() ?? '';
       final printedSale = sale.copyWith(number: localNumber);
 
       return CreateSaleOutcome(
-        result: switch (queueResult.result) {
-          QueueSendResult.sent => CreateSaleResult.sent,
-          QueueSendResult.queued => CreateSaleResult.queued,
-          QueueSendResult.manual => CreateSaleResult.rejected,
-        },
+        result: queueResult.result == QueueSendResult.manual
+            ? CreateSaleResult.rejected
+            : CreateSaleResult.sent,
         sale: printedSale,
       );
     } catch (_) {

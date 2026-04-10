@@ -1,6 +1,50 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+
+class _PdfFontSet {
+  const _PdfFontSet({
+    required this.regular,
+    required this.bold,
+  });
+
+  final pw.Font regular;
+  final pw.Font bold;
+}
+
+Future<pw.Font?> _loadSystemFont(List<String> candidates) async {
+  for (final path in candidates) {
+    final file = File(path);
+    if (!file.existsSync()) continue;
+    final bytes = await file.readAsBytes();
+    return pw.Font.ttf(ByteData.sublistView(bytes));
+  }
+  return null;
+}
+
+Future<_PdfFontSet> _loadPdfFonts() async {
+  if (Platform.isWindows) {
+    final regular = await _loadSystemFont(const [
+      r'C:\Windows\Fonts\arial.ttf',
+      r'C:\Windows\Fonts\segoeui.ttf',
+    ]);
+    final bold = await _loadSystemFont(const [
+      r'C:\Windows\Fonts\arialbd.ttf',
+      r'C:\Windows\Fonts\segoeuib.ttf',
+    ]);
+
+    if (regular != null && bold != null) {
+      return _PdfFontSet(regular: regular, bold: bold);
+    }
+  }
+
+  final regular = await PdfGoogleFonts.robotoRegular();
+  final bold = await PdfGoogleFonts.robotoBold();
+  return _PdfFontSet(regular: regular, bold: bold);
+}
 
 class ReceiptPdfItem {
   const ReceiptPdfItem({
@@ -33,7 +77,6 @@ class ReceiptPdfData {
     this.discountSum = 0,
     this.received,
     this.change,
-    this.title = 'ЧЕК',
     this.rightPaddingMm = 24,
   });
 
@@ -54,7 +97,6 @@ class ReceiptPdfData {
   final num? received;
   final num? change;
 
-  final String title;
   final double rightPaddingMm;
 }
 
@@ -74,8 +116,16 @@ class ShiftReportPdfData {
     required this.cashTotal,
     required this.cardTotal,
     required this.transferTotal,
+    required this.creditTotal,
     required this.grandTotal,
+    required this.refundsTotal,
+    required this.incomeTotal,
+    required this.expenseTotal,
+    required this.expectedCashAmount,
     required this.items,
+    this.reportTitle = 'Z-ОТЧЕТ',
+    this.reportSubtitle = 'Закрытие смены',
+    this.footerText = 'Смена успешно закрыта',
   });
 
   final PdfPageFormat pageFormat;
@@ -92,145 +142,16 @@ class ShiftReportPdfData {
   final num cashTotal;
   final num cardTotal;
   final num transferTotal;
+  final num creditTotal;
   final num grandTotal;
+  final num refundsTotal;
+  final num incomeTotal;
+  final num expenseTotal;
+  final num expectedCashAmount;
   final List<ReceiptPdfItem> items;
-}
-
-String formatReceiptDate(DateTime dt) {
-  final d = dt.toLocal();
-  String two(int v) => v.toString().padLeft(2, '0');
-  return '${two(d.day)}.${two(d.month)}.${d.year} '
-      '${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
-}
-
-Future<pw.Document> buildReceiptPdf(ReceiptPdfData data) async {
-  final base = await PdfGoogleFonts.robotoRegular();
-
-  final doc = pw.Document();
-
-  pw.Widget rowKV(String k, String v, {bool strong = false, double fs = 7}) {
-    return pw.Row(
-      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-      children: [
-        pw.Expanded(
-          child: pw.Text(
-            k,
-            style: pw.TextStyle(font: base, fontSize: fs),
-          ),
-        ),
-        pw.Text(
-          v,
-          style: pw.TextStyle(font: base, fontSize: fs),
-        ),
-      ],
-    );
-  }
-
-  pw.Widget divider() => pw.Container(
-        margin: const pw.EdgeInsets.symmetric(vertical: 3),
-        child: pw.LayoutBuilder(
-          builder: (context, constraints) {
-            const dashWidth = 4.0; // длина штриха
-            const dashGap = 2.0; // расстояние между штрихами
-            const thickness = 0.4; // толщина (уменьшил)
-
-            final width = constraints!.maxWidth;
-            final dashCount = (width / (dashWidth + dashGap)).floor();
-
-            return pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: List.generate(dashCount, (_) {
-                return pw.Container(
-                  width: dashWidth,
-                  height: thickness,
-                  color: PdfColors.grey700, // можешь сделать lighter/darker
-                );
-              }),
-            );
-          },
-        ),
-      );
-
-  doc.addPage(
-    pw.Page(
-      pageFormat: data.pageFormat,
-      orientation: pw.PageOrientation.portrait,
-      margin: pw.EdgeInsets.only(
-        right: data.rightPaddingMm,
-        top: 12,
-        bottom: 12,
-      ),
-      build: (_) {
-        return pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-          children: [
-            pw.Text(
-              data.storeName,
-              style: pw.TextStyle(font: base, fontSize: 9),
-              textAlign: pw.TextAlign.center,
-            ),
-            pw.SizedBox(height: 2),
-            pw.Text(
-              'Дата: ${formatReceiptDate(data.receiptDate)}',
-              style: pw.TextStyle(font: base, fontSize: 7),
-            ),
-            pw.SizedBox(height: 2),
-            pw.Text(
-              'Чек №: ${data.receiptNumber}',
-              style: pw.TextStyle(font: base, fontSize: 7),
-            ),
-            pw.SizedBox(height: 2),
-            pw.Text(
-              'Кассир: ${data.cashierName}',
-              style: pw.TextStyle(font: base, fontSize: 7),
-            ),
-            divider(),
-            for (final it in data.items) ...[
-              pw.Text(it.name, style: pw.TextStyle(font: base, fontSize: 7)),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text(
-                    '${it.quantity} x ${data.money(it.unitPrice)}'
-                    '${(it.discountPercent ?? 0) > 0 ? '  (-${it.discountPercent!.toStringAsFixed(0)}%)' : ''}',
-                    style: pw.TextStyle(font: base, fontSize: 7),
-                  ),
-                  pw.SizedBox(width: 10),
-                  pw.Text(
-                    data.money(it.lineTotal),
-                    style: pw.TextStyle(font: base, fontSize: 7),
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 2),
-            ],
-            divider(),
-            if (data.discountSum > 0) ...[
-              rowKV('Без скидок', data.money(data.total + data.discountSum)),
-              rowKV('Скидка', data.money(data.discountSum)),
-            ],
-            rowKV('ИТОГО', data.money(data.total), strong: true),
-            if (data.isCashPayment) ...[
-              pw.SizedBox(height: 3),
-              rowKV('Получено', data.money(data.received ?? 0)),
-              rowKV('Сдача', data.money((data.change ?? 0)), strong: true),
-            ],
-            pw.SizedBox(height: 4),
-            rowKV('Метод', data.paymentMethodLabel),
-            pw.SizedBox(height: 6),
-            pw.Text(
-              'Спасибо за покупку!',
-              style: pw.TextStyle(font: base, fontSize: 8),
-              textAlign: pw.TextAlign.center,
-            ),
-            pw.SizedBox(height: 35 * PdfPageFormat.mm),
-          ],
-        );
-      },
-    ),
-  );
-
-  return doc;
+  final String reportTitle;
+  final String reportSubtitle;
+  final String footerText;
 }
 
 class InvoicePdfData {
@@ -263,62 +184,255 @@ class InvoicePdfData {
   final String amountInWords;
 }
 
+String formatReceiptDate(DateTime dt) {
+  final d = dt.toLocal();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${two(d.day)}.${two(d.month)}.${d.year} '
+      '${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
+}
+
+String formatPosReceiptNumber({
+  required String posNumber,
+  required String saleNumber,
+  String fallback = '',
+}) {
+  final existing = saleNumber.trim();
+  if (existing.contains('-')) return existing;
+
+  final rawLocal = existing.isNotEmpty ? existing : fallback.trim();
+  final localDigits = rawLocal.replaceAll(RegExp(r'\D'), '');
+  if (localDigits.isEmpty) return rawLocal;
+
+  final rawPos = posNumber.trim();
+  if (rawPos.isEmpty) return localDigits.padLeft(9, '0');
+
+  final posDigits = rawPos.replaceAll(RegExp(r'\D'), '');
+  final posPart = posDigits.isEmpty ? rawPos : posDigits.padLeft(3, '0');
+  return '$posPart-${localDigits.padLeft(9, '0')}';
+}
+
 String _fmtDateRu(DateTime dt) {
   const months = [
-    'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+    'января',
+    'февраля',
+    'марта',
+    'апреля',
+    'мая',
+    'июня',
+    'июля',
+    'августа',
+    'сентября',
+    'октября',
+    'ноября',
+    'декабря',
   ];
   final d = dt.toLocal();
   return '${d.day} ${months[d.month - 1]} ${d.year} г.';
 }
 
+Future<pw.Document> buildReceiptPdf(ReceiptPdfData data) async {
+  final fonts = await _loadPdfFonts();
+  final base = fonts.regular;
+  final bold = fonts.bold;
+  final doc = pw.Document();
+
+  const storeFs = 9.4;
+  const metaFs = 7.6;
+  const itemFs = 7.6;
+  const totalFs = 8.8;
+  const footerFs = 8.0;
+
+  pw.Widget rowKV(
+    String key,
+    String value, {
+    bool strong = false,
+    bool boldText = false,
+    double fs = itemFs,
+  }) {
+    final effectiveFs = strong && fs == itemFs ? totalFs : fs;
+    final style = pw.TextStyle(
+      font: boldText ? bold : base,
+      fontSize: effectiveFs,
+    );
+    return pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Expanded(child: pw.Text(key, style: style)),
+        pw.SizedBox(width: 8),
+        pw.Text(value, style: style, textAlign: pw.TextAlign.right),
+      ],
+    );
+  }
+
+  pw.Widget divider() => pw.Container(
+        margin: const pw.EdgeInsets.symmetric(vertical: 5),
+        child: pw.LayoutBuilder(
+          builder: (context, constraints) {
+            const dashWidth = 4.0;
+            const dashGap = 2.0;
+            const thickness = 0.4;
+
+            final width = constraints!.maxWidth;
+            final dashCount = (width / (dashWidth + dashGap)).floor();
+
+            return pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: List.generate(dashCount, (_) {
+                return pw.Container(
+                  width: dashWidth,
+                  height: thickness,
+                  color: PdfColors.grey700,
+                );
+              }),
+            );
+          },
+        ),
+      );
+
+  doc.addPage(
+    pw.Page(
+      pageFormat: data.pageFormat,
+      orientation: pw.PageOrientation.portrait,
+      margin: pw.EdgeInsets.only(
+        right: data.rightPaddingMm,
+        top: 12,
+        bottom: 12,
+      ),
+      build: (_) {
+        return pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+          children: [
+            pw.Text(
+              data.storeName,
+              style: pw.TextStyle(font: base, fontSize: storeFs),
+              textAlign: pw.TextAlign.center,
+            ),
+            pw.SizedBox(height: 2),
+            pw.Text(
+              'Дата: ${formatReceiptDate(data.receiptDate)}',
+              style: pw.TextStyle(font: base, fontSize: metaFs),
+            ),
+            pw.SizedBox(height: 2),
+            pw.Text(
+              'Чек №: ${data.receiptNumber}',
+              style: pw.TextStyle(font: base, fontSize: metaFs),
+            ),
+            pw.SizedBox(height: 2),
+            pw.Text(
+              'Кассир: ${data.cashierName}',
+              style: pw.TextStyle(font: base, fontSize: metaFs),
+            ),
+            divider(),
+            for (final it in data.items) ...[
+              pw.Text(it.name,
+                  style: pw.TextStyle(font: base, fontSize: itemFs)),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Expanded(
+                    child: pw.Text(
+                      '${it.quantity} x ${data.money(it.unitPrice)}'
+                      '${(it.discountPercent ?? 0) > 0 ? '  (-${it.discountPercent!.toStringAsFixed(0)}%)' : ''}',
+                      style: pw.TextStyle(font: base, fontSize: itemFs),
+                    ),
+                  ),
+                  pw.SizedBox(width: 10),
+                  pw.Text(
+                    '=${data.money(it.lineTotal)}',
+                    style: pw.TextStyle(font: base, fontSize: itemFs),
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 2),
+            ],
+            divider(),
+            if (data.discountSum > 0) ...[
+              rowKV(
+                'Без скидки',
+                data.money(data.total + data.discountSum),
+              ),
+              rowKV('Скидка', data.money(data.discountSum)),
+            ],
+            rowKV(
+              'ИТОГ',
+              data.money(data.total),
+              strong: true,
+              boldText: true,
+            ),
+            if (data.isCashPayment) ...[
+              pw.SizedBox(height: 3),
+              rowKV('Получено', data.money(data.received ?? 0)),
+              rowKV('Сдача', data.money(data.change ?? 0), strong: true),
+            ],
+            pw.SizedBox(height: 4),
+            rowKV('Метод', data.paymentMethodLabel),
+            pw.SizedBox(height: 6),
+            pw.Text(
+              'Спасибо за покупку!',
+              style: pw.TextStyle(font: base, fontSize: footerFs),
+              textAlign: pw.TextAlign.center,
+            ),
+            pw.SizedBox(height: 35 * PdfPageFormat.mm),
+          ],
+        );
+      },
+    ),
+  );
+
+  return doc;
+}
+
 Future<pw.Document> buildInvoicePdf(InvoicePdfData data) async {
-  final base = await PdfGoogleFonts.robotoRegular();
-  final bold = await PdfGoogleFonts.robotoBold();
+  final fonts = await _loadPdfFonts();
+  final base = fonts.regular;
+  final bold = fonts.bold;
 
   const labelColor = PdfColor.fromInt(0xFF1155BB);
   const borderColor = PdfColor.fromInt(0xFF888888);
   const cellPad = pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4);
   const fs = 9.0;
 
-  // Ячейка таблицы товаров
   pw.Widget cell(
     String text, {
     bool isBold = false,
     pw.Alignment align = pw.Alignment.centerLeft,
     PdfColor? bg,
-  }) =>
-      pw.Container(
-        color: bg,
-        padding: cellPad,
-        alignment: align,
-        child: pw.Text(
-          text,
-          style: pw.TextStyle(font: isBold ? bold : base, fontSize: fs),
-        ),
-      );
+  }) {
+    return pw.Container(
+      color: bg,
+      padding: cellPad,
+      alignment: align,
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(font: isBold ? bold : base, fontSize: fs),
+      ),
+    );
+  }
 
-  // Строка шапки: синяя метка + чёрное значение
-  pw.Widget infoRow(String label, String value, {bool valueBold = false}) =>
-      pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
-        child: pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.SizedBox(
-              width: 80,
-              child: pw.Text(label,
-                  style: pw.TextStyle(
-                      font: base, fontSize: fs, color: labelColor)),
+  pw.Widget infoRow(String label, String value, {bool valueBold = false}) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.SizedBox(
+            width: 120,
+            child: pw.Text(
+              label,
+              style: pw.TextStyle(font: base, fontSize: fs, color: labelColor),
             ),
-            pw.Expanded(
-              child: pw.Text(value,
-                  style: pw.TextStyle(
-                      font: valueBold ? bold : base, fontSize: fs)),
+          ),
+          pw.Expanded(
+            child: pw.Text(
+              value,
+              style: pw.TextStyle(font: valueBold ? bold : base, fontSize: fs),
             ),
-          ],
-        ),
-      );
+          ),
+        ],
+      ),
+    );
+  }
 
   final nds = data.ndsAmount ?? 0;
   final tableBorder = pw.TableBorder.all(color: borderColor, width: 0.5);
@@ -331,22 +445,23 @@ Future<pw.Document> buildInvoicePdf(InvoicePdfData data) async {
       build: (_) => pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
-          // ─── Заголовок ───
           pw.Text(
             'Расходная накладная № ${data.invoiceNumber} от ${_fmtDateRu(data.invoiceDate)}',
             style: pw.TextStyle(font: bold, fontSize: 11),
           ),
-          pw.Container(height: 0.8, color: PdfColors.black,
-              margin: const pw.EdgeInsets.symmetric(vertical: 4)),
-
-          // ─── Шапка (без рамки, синие метки) ───
-          infoRow('Поставщик', data.storeName),
-          infoRow('Покупатель', data.buyerName),
-          infoRow('Основание', 'Без договора', valueBold: true),
-          infoRow('Склад', 'Основной склад', valueBold: true),
+          pw.Container(
+            height: 0.8,
+            color: PdfColors.black,
+            margin: const pw.EdgeInsets.symmetric(vertical: 4),
+          ),
+          infoRow('Продавец', data.storeName),
+          infoRow(
+            'Покупатель',
+            data.buyerName.trim().isEmpty ? 'Без указания' : data.buyerName,
+          ),
+          infoRow('Кассир', data.cashierName, valueBold: true),
+          infoRow('Оплата', data.paymentMethodLabel, valueBold: true),
           pw.SizedBox(height: 8),
-
-          // ─── Таблица товаров ───
           pw.Table(
             border: tableBorder,
             columnWidths: const {
@@ -359,81 +474,96 @@ Future<pw.Document> buildInvoicePdf(InvoicePdfData data) async {
             children: [
               pw.TableRow(
                 decoration: const pw.BoxDecoration(
-                    color: PdfColor.fromInt(0xFFF5F5F5)),
+                  color: PdfColor.fromInt(0xFFF5F5F5),
+                ),
                 children: [
-                  cell('№ п/п', isBold: true, align: pw.Alignment.center),
+                  cell('№', isBold: true, align: pw.Alignment.center),
                   cell('Товар', isBold: true, align: pw.Alignment.center),
-                  cell('Количество', isBold: true,
-                      align: pw.Alignment.center),
-                  cell('Цена', isBold: true,
-                      align: pw.Alignment.center),
-                  cell('Сумма', isBold: true,
-                      align: pw.Alignment.center),
+                  cell('Количество', isBold: true, align: pw.Alignment.center),
+                  cell('Цена', isBold: true, align: pw.Alignment.center),
+                  cell('Сумма', isBold: true, align: pw.Alignment.center),
                 ],
               ),
               for (var i = 0; i < data.items.length; i++)
-                pw.TableRow(children: [
-                  cell('${i + 1}', align: pw.Alignment.center),
-                  cell(data.items[i].name),
-                  cell(
-                    '${data.items[i].quantity % 1 == 0 ? data.items[i].quantity.toInt() : data.items[i].quantity} шт.',
-                    align: pw.Alignment.center,
-                  ),
-                  cell(data.money(data.items[i].unitPrice),
-                      align: pw.Alignment.centerRight),
-                  cell(data.money(data.items[i].lineTotal),
-                      align: pw.Alignment.centerRight),
-                ]),
+                pw.TableRow(
+                  children: [
+                    cell('${i + 1}', align: pw.Alignment.center),
+                    cell(data.items[i].name),
+                    cell(
+                      '${data.items[i].quantity % 1 == 0 ? data.items[i].quantity.toInt() : data.items[i].quantity} шт.',
+                      align: pw.Alignment.center,
+                    ),
+                    cell(
+                      data.money(data.items[i].unitPrice),
+                      align: pw.Alignment.centerRight,
+                    ),
+                    cell(
+                      data.money(data.items[i].lineTotal),
+                      align: pw.Alignment.centerRight,
+                    ),
+                  ],
+                ),
               if (data.items.isEmpty)
-                pw.TableRow(children: [
-                  cell(''), cell(''), cell(''), cell(''), cell(''),
-                ]),
+                pw.TableRow(
+                  children: [cell(''), cell(''), cell(''), cell(''), cell('')],
+                ),
             ],
           ),
           pw.SizedBox(height: 4),
-
-          // ─── Итоги (справа) ───
           pw.Align(
             alignment: pw.Alignment.centerRight,
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.end,
               children: [
-                pw.Row(children: [
-                  pw.Text('Итого:',
-                      style: pw.TextStyle(font: bold, fontSize: fs)),
-                  pw.SizedBox(width: 30),
-                  pw.SizedBox(
-                    width: 80,
-                    child: pw.Text(data.money(data.total),
+                pw.Row(
+                  mainAxisSize: pw.MainAxisSize.min,
+                  children: [
+                    pw.Text(
+                      'Итого:',
+                      style: pw.TextStyle(font: bold, fontSize: fs),
+                    ),
+                    pw.SizedBox(width: 30),
+                    pw.SizedBox(
+                      width: 80,
+                      child: pw.Text(
+                        data.money(data.total),
                         textAlign: pw.TextAlign.right,
-                        style: pw.TextStyle(font: bold, fontSize: fs)),
-                  ),
-                ]),
+                        style: pw.TextStyle(font: bold, fontSize: fs),
+                      ),
+                    ),
+                  ],
+                ),
                 pw.SizedBox(height: 2),
-                pw.Row(children: [
-                  pw.Text('В том числе\nНДС:',
-                      style: pw.TextStyle(font: bold, fontSize: fs)),
-                  pw.SizedBox(width: 30),
-                  pw.SizedBox(
-                    width: 80,
-                    child: pw.Text(data.money(nds),
+                pw.Row(
+                  mainAxisSize: pw.MainAxisSize.min,
+                  children: [
+                    pw.Text(
+                      'В том числе НДС:',
+                      style: pw.TextStyle(font: bold, fontSize: fs),
+                    ),
+                    pw.SizedBox(width: 30),
+                    pw.SizedBox(
+                      width: 80,
+                      child: pw.Text(
+                        data.money(nds),
                         textAlign: pw.TextAlign.right,
-                        style: pw.TextStyle(font: bold, fontSize: fs)),
-                  ),
-                ]),
+                        style: pw.TextStyle(font: bold, fontSize: fs),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
           pw.SizedBox(height: 10),
-
-          // ─── Всего наименований ───
           pw.Text(
             'Всего наименований ${data.items.length}, на сумму ${data.money(data.total)}',
             style: pw.TextStyle(
-                font: base,
-                fontSize: fs,
-                color: labelColor,
-                decoration: pw.TextDecoration.underline),
+              font: base,
+              fontSize: fs,
+              color: labelColor,
+              decoration: pw.TextDecoration.underline,
+            ),
           ),
           if (data.amountInWords.isNotEmpty) ...[
             pw.SizedBox(height: 2),
@@ -442,29 +572,32 @@ Future<pw.Document> buildInvoicePdf(InvoicePdfData data) async {
               style: pw.TextStyle(font: bold, fontSize: fs),
             ),
           ],
-
           pw.SizedBox(height: 20),
-
-          // ─── Подписи ───
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
-              pw.Row(children: [
-                pw.Text('Отпустил',
-                    style: pw.TextStyle(font: base, fontSize: 10)),
-                pw.SizedBox(width: 6),
-                pw.Container(width: 130, height: 0.5, color: PdfColors.black),
-                pw.Text('  /',
-                    style: pw.TextStyle(font: base, fontSize: 10)),
-              ]),
-              pw.Row(children: [
-                pw.Text('Получил',
-                    style: pw.TextStyle(font: base, fontSize: 10)),
-                pw.SizedBox(width: 6),
-                pw.Container(width: 130, height: 0.5, color: PdfColors.black),
-                pw.Text('  /',
-                    style: pw.TextStyle(font: base, fontSize: 10)),
-              ]),
+              pw.Row(
+                children: [
+                  pw.Text(
+                    'Отпустил',
+                    style: pw.TextStyle(font: base, fontSize: 10),
+                  ),
+                  pw.SizedBox(width: 6),
+                  pw.Container(width: 130, height: 0.5, color: PdfColors.black),
+                  pw.Text('  /', style: pw.TextStyle(font: base, fontSize: 10)),
+                ],
+              ),
+              pw.Row(
+                children: [
+                  pw.Text(
+                    'Получил',
+                    style: pw.TextStyle(font: base, fontSize: 10),
+                  ),
+                  pw.SizedBox(width: 6),
+                  pw.Container(width: 130, height: 0.5, color: PdfColors.black),
+                  pw.Text('  /', style: pw.TextStyle(font: base, fontSize: 10)),
+                ],
+              ),
             ],
           ),
         ],
@@ -476,9 +609,9 @@ Future<pw.Document> buildInvoicePdf(InvoicePdfData data) async {
 }
 
 Future<pw.Document> buildShiftReportPdf(ShiftReportPdfData data) async {
-  final base = await PdfGoogleFonts.robotoRegular();
-  final bold = await PdfGoogleFonts.robotoBold();
-
+  final fonts = await _loadPdfFonts();
+  final base = fonts.regular;
+  final bold = fonts.bold;
   final doc = pw.Document();
 
   pw.Widget divider() => pw.Container(
@@ -506,7 +639,8 @@ Future<pw.Document> buildShiftReportPdf(ShiftReportPdfData data) async {
         ),
       );
 
-  pw.Widget kv(String left, String right, {bool strong = false, double fs = 7}) {
+  pw.Widget kv(String left, String right,
+      {bool strong = false, double fs = 7}) {
     final style = pw.TextStyle(
       font: strong ? bold : base,
       fontSize: fs,
@@ -541,13 +675,13 @@ Future<pw.Document> buildShiftReportPdf(ShiftReportPdfData data) async {
           ),
           pw.SizedBox(height: 2),
           pw.Text(
-            'Z-ОТЧЕТ',
+            data.reportTitle,
             textAlign: pw.TextAlign.center,
             style: pw.TextStyle(font: bold, fontSize: 9),
           ),
           pw.SizedBox(height: 2),
           pw.Text(
-            'Закрытие смены',
+            data.reportSubtitle,
             textAlign: pw.TextAlign.center,
             style: pw.TextStyle(font: base, fontSize: 7),
           ),
@@ -592,10 +726,7 @@ Future<pw.Document> buildShiftReportPdf(ShiftReportPdfData data) async {
               style: pw.TextStyle(font: base, fontSize: 7),
             ),
           for (final item in data.items) ...[
-            pw.Text(
-              item.name,
-              style: pw.TextStyle(font: base, fontSize: 7),
-            ),
+            pw.Text(item.name, style: pw.TextStyle(font: base, fontSize: 7)),
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
@@ -617,19 +748,34 @@ Future<pw.Document> buildShiftReportPdf(ShiftReportPdfData data) async {
           kv('Наличные', data.money(data.cashTotal)),
           kv('Карта', data.money(data.cardTotal)),
           kv('Перевод', data.money(data.transferTotal)),
+          kv('В долг', data.money(data.creditTotal)),
           divider(),
-          kv('ИТОГО', data.money(data.grandTotal), strong: true),
+          kv('ИТОГ', data.money(data.grandTotal), strong: true),
           divider(),
           kv('Наличные при открытии', data.money(data.openingCashAmount)),
-          kv('Наличные при закрытии', data.money(data.closingCashAmount)),
+          kv('Возвраты', data.money(data.refundsTotal)),
+          kv('Приход в кассу', data.money(data.incomeTotal)),
+          kv('Расход из кассы', data.money(data.expenseTotal)),
+          divider(),
           kv(
-            'Разница',
-            data.money(data.closingCashAmount - data.openingCashAmount),
+            'Должно быть в кассе',
+            data.money(data.expectedCashAmount),
             strong: true,
           ),
+          if (data.closedAt != null) ...[
+            kv(
+              'Фактически в кассе',
+              data.money(data.closingCashAmount),
+            ),
+            kv(
+              'Разница',
+              data.money(data.closingCashAmount - data.expectedCashAmount),
+              strong: true,
+            ),
+          ],
           pw.SizedBox(height: 6),
           pw.Text(
-            'Смена успешно закрыта',
+            data.footerText,
             style: pw.TextStyle(font: base, fontSize: 8),
             textAlign: pw.TextAlign.center,
           ),

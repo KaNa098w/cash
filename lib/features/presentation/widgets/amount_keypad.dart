@@ -92,7 +92,7 @@ class AmountKeypad extends StatelessWidget {
                     for (int i = 0; i < r.length; i++) ...[
                       Expanded(
                         child: SizedBox(
-                          height: 48,
+                          height: 58,
                           child: TextButton(
                             onPressed: r[i].isEmpty
                                 ? null
@@ -110,8 +110,8 @@ class AmountKeypad extends StatelessWidget {
                             child: Text(
                               r[i].isEmpty ? '' : r[i],
                               style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w400,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
@@ -157,7 +157,7 @@ class _QuickRows extends StatelessWidget {
                 for (int i = 0; i < r.length; i++) ...[
                   Expanded(
                     child: SizedBox(
-                      height: 40,
+                      height: 46,
                       child: OutlinedButton(
                         onPressed: () => onTap(r[i]),
                         style: OutlinedButton.styleFrom(
@@ -170,8 +170,8 @@ class _QuickRows extends StatelessWidget {
                         child: Text(
                           r[i],
                           style: const TextStyle(
-                            fontWeight: FontWeight.w500,
-                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
                             color: Colors.black87,
                           ),
                         ),

@@ -23,9 +23,6 @@ class ProductChooserTileState extends State<ProductChooserTile> {
     final theme = Theme.of(context);
     final p = widget.product;
 
-    final hasBarcode = (p.barcode ?? '').trim().isNotEmpty;
-    final hasLocalBarcode = (p.localBarcode ?? '').trim().isNotEmpty;
-
     final bgColor = _pressed
         ? theme.colorScheme.primary.withOpacity(0.08)
         : _hovered
@@ -83,7 +80,7 @@ class ProductChooserTileState extends State<ProductChooserTile> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w500,
                         height: 1.2,
                       ),
                     ),
@@ -92,7 +89,7 @@ class ProductChooserTileState extends State<ProductChooserTile> {
                       spacing: 6,
                       runSpacing: 6,
                       children: [
-                        if (hasBarcode)
+                        /* if (hasBarcode)
                           _MetaChip(
                             icon: Icons.qr_code_2,
                             label: 'ШК: ${p.barcode}',
@@ -101,7 +98,7 @@ class ProductChooserTileState extends State<ProductChooserTile> {
                           _MetaChip(
                             icon: Icons.tag_outlined,
                             label: 'Код: ${p.localBarcode}',
-                          ),
+                          ), */
                         _MetaChip(
                           icon: Icons.straighten,
                           label: 'Ед.: ${p.measurementUnit}',
@@ -128,7 +125,7 @@ class ProductChooserTileState extends State<ProductChooserTile> {
                 child: Text(
                   _formatPrice(p.sellingPrice),
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                     color: theme.colorScheme.primary,
                   ),
                 ),

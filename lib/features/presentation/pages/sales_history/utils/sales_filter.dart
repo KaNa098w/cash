@@ -25,9 +25,8 @@ List<SaleModel> filterSales(
 }
 
 String saleNumber(SaleModel s) {
-  final isLocalOnly = s.items.any((item) => item.id.trim().isEmpty);
   final n = s.number.trim();
-  if (n.isNotEmpty && !isLocalOnly) return n;
+  if (n.isNotEmpty) return n;
 
   return 'Без номера';
 }

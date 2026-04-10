@@ -1,19 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
-import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 
 /// type: true = ВЗНОС, false = РАСХОД
 Future<bool> showDepositToCashSheet(BuildContext context, bool type) async {
-  final res = await showModalBottomSheet<bool>(
+  final res = await showGeneralDialog<bool>(
     context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => _DepositToCashSheet(type: type),
+    barrierDismissible: true,
+    barrierLabel: 'deposit-to-cash',
+    barrierColor: Colors.black.withValues(alpha: 0.45),
+    transitionDuration: const Duration(milliseconds: 220),
+    pageBuilder: (_, __, ___) {
+      return SafeArea(
+        child: Center(
+          child: Material(
+            color: Colors.transparent,
+            child: _DepositToCashSheet(type: type),
+          ),
+        ),
+      );
+    },
+    transitionBuilder: (_, anim, __, child) {
+      final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+      return FadeTransition(
+        opacity: anim,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
+          child: child,
+        ),
+      );
+    },
   );
 
   return res ?? false;
@@ -29,6 +50,7 @@ class _DepositToCashSheet extends StatefulWidget {
 }
 
 class _DepositToCashSheetState extends State<_DepositToCashSheet> {
+  final _noteCtrl = TextEditingController();
   String _text = '';
   bool _loading = false;
 
@@ -53,6 +75,12 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
     if (_isExpense) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _loadExpenseTypes());
     }
+  }
+
+  @override
+  void dispose() {
+    _noteCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadExpenseTypes() async {
@@ -322,7 +350,8 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
       );
 
       if (result.result == QueueSendResult.manual) {
-        throw Exception(result.errorMessage ?? 'Операция требует ручной обработки');
+        throw Exception(
+            result.errorMessage ?? 'Операция требует ручной обработки');
       }
 
       if (!mounted) return;
@@ -342,178 +371,459 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
     }
   }
 
+  void _appendToken(String token) {
+    if (_loading) return;
+
+    var value = _text;
+
+    if (token == 'backspace') {
+      if (value.isNotEmpty) value = value.substring(0, value.length - 1);
+      setState(() => _text = value);
+      return;
+    }
+
+    if (token == '.') {
+      if (!value.contains('.')) {
+        value = value.isEmpty ? '0.' : '$value.';
+      }
+      setState(() => _text = value);
+      return;
+    }
+
+    value = value == '0' ? token : '$value$token';
+    value = value.replaceFirst(RegExp(r'^0+(?=\d)'), '');
+    setState(() => _text = value);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
-    final title = widget.type ? 'Взнос в кассу' : 'Расход из кассы';
+    final title = widget.type ? 'Взнос' : 'Расходы';
+    final amountText = _text.isEmpty ? '0.00 ₸' : '$_text ₸';
+    final typeText = _isExpense
+        ? (_expenseTypeTitle ??
+            (_loadingTypes ? 'Загрузка типов...' : 'Тип расхода'))
+        : 'Тип взноса';
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottom),
-      child: SafeArea(
-        top: false,
-        child: Container(
-          margin: const EdgeInsets.all(12),
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF6F7FB),
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: const [
-              BoxShadow(
-                blurRadius: 18,
-                offset: Offset(0, -6),
-                color: Color(0x22000000),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // grabber
-              Container(
-                width: 44,
-                height: 4,
+    return SizedBox(
+      width: 527,
+      height: 432,
+      child: DefaultTextStyle(
+        style: GoogleFonts.inter(color: Colors.black),
+        child: Stack(
+          children: [
+            Positioned(
+              left: 3.12695,
+              top: 0,
+              width: 520,
+              height: 425,
+              child: Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFFD6D6DA),
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: _loading
-                        ? null
-                        : () => Navigator.of(context).pop(false),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 10),
-
-              // ✅ выбор типа расхода (только если расход)
-              if (_isExpense) ...[
-                InkWell(
-                  onTap: _loading ? null : _pickExpenseType,
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFE6E6EB)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.category_outlined, size: 20),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            _expenseTypeTitle ??
-                                (_loadingTypes
-                                    ? 'Загрузка типов...'
-                                    : 'Выберите тип расхода'),
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        if (_loadingTypes)
-                          const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        else
-                          const Icon(Icons.chevron_right),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              // amount display
-              Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFE6E6EB)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.payments_outlined, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _text.isEmpty ? '0' : _text,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                    ),
-                    const Text(
-                      '₸',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  color: const Color(0xFFF2F2F2),
+                  borderRadius: BorderRadius.circular(15.6354),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 3.127,
+                      offset: const Offset(0, 3.127),
                     ),
                   ],
                 ),
               ),
-
-              const SizedBox(height: 12),
-
-              AmountKeypad(
-                text: _text,
-                onChanged: (v) => setState(() => _text = v),
-                showQuickRows: true,
-                allowDecimal: true,
-              ),
-
-              const SizedBox(height: 12),
-
-              SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: FilledButton(
-                  onPressed: (_loading || (_amount == null) || (_amount! <= 0))
-                      ? null
-                      : _submit,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF2E7D32),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
+            ),
+            Positioned(
+              left: 3.12695,
+              top: 0,
+              width: 520,
+              height: 49.8206,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF373D46),
+                  borderRadius: BorderRadius.circular(10.163),
+                ),
+                padding: const EdgeInsets.only(left: 20.2),
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  title,
+                  style: GoogleFonts.inter(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
                   ),
-                  child: _loading
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text(
-                          'СОХРАНИТЬ',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w500, letterSpacing: 0.4),
-                        ),
                 ),
               ),
-            ],
-          ),
+            ),
+            Positioned(
+              left: 19.6271,
+              top: 68.5001,
+              width: 200.273,
+              height: 46.6278,
+              child: _ExpenseAmountBox(text: amountText),
+            ),
+            Positioned(
+              left: 247.627,
+              top: 68.5,
+              width: 258,
+              height: 47,
+              child: _ExpenseSelectBox(
+                text: 'Наличный счет',
+                onTap: () {},
+              ),
+            ),
+            Positioned(
+              left: 247.627,
+              top: 132.5,
+              width: 258,
+              height: 42,
+              child: _ExpenseSelectBox(
+                text: typeText,
+                showArrow: _isExpense,
+                onTap: _loading || !_isExpense ? null : _pickExpenseType,
+              ),
+            ),
+            Positioned(
+              left: 247.627,
+              top: 191.5,
+              width: 258,
+              height: 139,
+              child: _ExpenseCommentBox(controller: _noteCtrl),
+            ),
+            _ExpenseKeyButton(
+              left: 19.127,
+              top: 132,
+              text: '7',
+              onTap: () => _appendToken('7'),
+            ),
+            _ExpenseKeyButton(
+              left: 89.4326,
+              top: 132,
+              text: '8',
+              onTap: () => _appendToken('8'),
+            ),
+            _ExpenseKeyButton(
+              left: 159.739,
+              top: 132,
+              text: '9',
+              onTap: () => _appendToken('9'),
+            ),
+            _ExpenseKeyButton(
+              left: 19.127,
+              top: 202.306,
+              text: '4',
+              onTap: () => _appendToken('4'),
+            ),
+            _ExpenseKeyButton(
+              left: 89.4326,
+              top: 202.306,
+              text: '5',
+              onTap: () => _appendToken('5'),
+            ),
+            _ExpenseKeyButton(
+              left: 159.739,
+              top: 202.306,
+              text: '6',
+              onTap: () => _appendToken('6'),
+            ),
+            _ExpenseKeyButton(
+              left: 19.127,
+              top: 272.612,
+              text: '1',
+              onTap: () => _appendToken('1'),
+            ),
+            _ExpenseKeyButton(
+              left: 89.4326,
+              top: 272.611,
+              text: '2',
+              onTap: () => _appendToken('2'),
+            ),
+            _ExpenseKeyButton(
+              left: 159.739,
+              top: 272.612,
+              text: '3',
+              onTap: () => _appendToken('3'),
+            ),
+            _ExpenseKeyButton(
+              left: 19.127,
+              top: 342.919,
+              icon: Icons.backspace,
+              fg: const Color(0xFF33CC99),
+              onTap: () => _appendToken('backspace'),
+            ),
+            _ExpenseKeyButton(
+              left: 89.4326,
+              top: 342.919,
+              text: '0',
+              onTap: () => _appendToken('0'),
+            ),
+            _ExpenseKeyButton(
+              left: 159.739,
+              top: 342.918,
+              text: '.',
+              onTap: () => _appendToken('.'),
+            ),
+            Positioned(
+              left: 247.127,
+              top: 342,
+              width: 95.7723,
+              height: 61.5518,
+              child: _ExpenseActionButton(
+                text: 'ЗАКРЫТЬ',
+                color: const Color(0xFFD15850),
+                onTap: _loading ? null : () => Navigator.of(context).pop(false),
+              ),
+            ),
+            Positioned(
+              left: 351.042,
+              top: 342.866,
+              width: 155.085,
+              height: 59.7355,
+              child: _ExpenseActionButton(
+                text: widget.type ? 'СОХРАНИТЬ' : 'СОХРАНИТЬ',
+                color: const Color(0xFF33CC99),
+                loading: _loading,
+                onTap: (_loading || (_amount == null) || (_amount! <= 0))
+                    ? null
+                    : _submit,
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+class _ExpenseAmountBox extends StatelessWidget {
+  const _ExpenseAmountBox({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8.50173),
+        border: Border.all(color: const Color(0xFF00A1FF), width: 1.0002),
+      ),
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.right,
+        style: GoogleFonts.inter(
+          fontSize: 20,
+          fontWeight: FontWeight.w900,
+          color: Colors.black,
+          height: 1,
+        ),
+      ),
+    );
+  }
+}
+
+class _ExpenseSelectBox extends StatelessWidget {
+  const _ExpenseSelectBox({
+    required this.text,
+    required this.onTap,
+    this.showArrow = true,
+  });
+
+  final String text;
+  final VoidCallback? onTap;
+  final bool showArrow;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF999999),
+        padding: const EdgeInsets.fromLTRB(13, 0, 12, 0),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(5.5),
+          side: const BorderSide(color: Color(0xFF00A1FF), width: 1),
+        ),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF999999),
+              ),
+            ),
+          ),
+          if (showArrow)
+            const Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: Color(0xFF4F4F4F),
+              size: 28,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExpenseCommentBox extends StatelessWidget {
+  const _ExpenseCommentBox({required this.controller});
+
+  final TextEditingController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8.50173),
+        border: Border.all(color: const Color(0xFF00A1FF), width: 1.0002),
+      ),
+      child: Stack(
+        children: [
+          TextField(
+            controller: controller,
+            maxLines: null,
+            expands: true,
+            textAlignVertical: TextAlignVertical.top,
+            decoration: InputDecoration(
+              hintText: 'Комментарий',
+              hintStyle: GoogleFonts.inter(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF999999),
+              ),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.fromLTRB(13, 14, 48, 14),
+            ),
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Colors.black,
+            ),
+          ),
+          const Positioned(
+            right: 12,
+            top: 12,
+            child: Icon(
+              Icons.keyboard_alt_outlined,
+              color: Color(0xFF999999),
+              size: 30,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExpenseKeyButton extends StatelessWidget {
+  const _ExpenseKeyButton({
+    required this.left,
+    required this.top,
+    required this.onTap,
+    this.text,
+    this.icon,
+    this.fg = Colors.black,
+  });
+
+  final double left;
+  final double top;
+  final String? text;
+  final IconData? icon;
+  final Color fg;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: left,
+      top: top,
+      width: 61.1361,
+      height: 61.1361,
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          backgroundColor: const Color(0xFFDADADA),
+          foregroundColor: fg,
+          padding: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(9.0685),
+          ),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+        ),
+        child: icon == null
+            ? Text(
+                text ?? '',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                  color: fg,
+                ),
+              )
+            : Icon(icon, size: 20, color: fg),
+      ),
+    );
+  }
+}
+
+class _ExpenseActionButton extends StatelessWidget {
+  const _ExpenseActionButton({
+    required this.text,
+    required this.color,
+    required this.onTap,
+    this.loading = false,
+  });
+
+  final String text;
+  final Color color;
+  final VoidCallback? onTap;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        backgroundColor: color,
+        disabledBackgroundColor: color.withValues(alpha: 0.58),
+        foregroundColor: Colors.white,
+        padding: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(6.57621),
+        ),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+      ),
+      child: loading
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+              ),
+            ),
     );
   }
 }

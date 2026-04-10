@@ -38,7 +38,8 @@ class PosSyncService {
   Stream<void> get onProductsChanged => _productsChangedController.stream;
 
   /// Emits when sales/refunds change and the history UI should refresh.
-  Stream<void> get onSalesHistoryChanged => _salesHistoryChangedController.stream;
+  Stream<void> get onSalesHistoryChanged =>
+      _salesHistoryChangedController.stream;
 
   Future<void> initialize() => _localStore.initialize();
 
@@ -64,11 +65,11 @@ class PosSyncService {
   }) {
     _pullTimer ??= Timer.periodic(
       const Duration(seconds: 20),
-      (_) => pullOnce(key: key, deviceId: deviceId),
+      (_) => _runBackgroundPull(key: key, deviceId: deviceId),
     );
     _pushTimer ??= Timer.periodic(
       const Duration(seconds: 15),
-      (_) => pushPending(key: key, deviceId: deviceId, limit: 5),
+      (_) => _runBackgroundPush(key: key, deviceId: deviceId, limit: 5),
     );
   }
 
@@ -107,6 +108,10 @@ class PosSyncService {
     return _localStore.loadQueueItems();
   }
 
+  Future<QueueItemDetails?> loadQueueItemDetails(String operationId) {
+    return _localStore.loadQueueItemDetails(operationId);
+  }
+
   /// Check if a return access key is valid in the local DB.
   /// Pass [checkExpiry: false] for offline refund scenarios.
   Future<bool> checkReturnAccessKey(String key, {bool checkExpiry = true}) {
@@ -115,6 +120,10 @@ class PosSyncService {
 
   Future<int> peekNextLocalSaleNumber() {
     return _localStore.peekNextLocalSaleNumber();
+  }
+
+  Future<void> ensureLocalSaleCounterSynced() {
+    return _localStore.syncSaleLocalCounter();
   }
 
   Future<void> upsertSalesHistory(List<SaleModel> sales) {
@@ -136,7 +145,8 @@ class PosSyncService {
     return _localStore.loadShiftReport(clientSessionId);
   }
 
-  Future<ShiftClosureSummaryData?> loadShiftClosureSummary(String clientSessionId) {
+  Future<ShiftClosureSummaryData?> loadShiftClosureSummary(
+      String clientSessionId) {
     return _localStore.loadShiftClosureSummary(clientSessionId);
   }
 
@@ -161,21 +171,27 @@ class PosSyncService {
     await _localStore.ensureSyncState(posKey: key, deviceId: deviceId);
 
     // Step 1 — Request snapshot
-    onProgress?.call(const SyncProgress(progress: 0.05, stage: 'Запрашиваем снапшот...'));
+    onProgress?.call(
+        const SyncProgress(progress: 0.05, stage: 'Запрашиваем снапшот...'));
     var snapshot = await _remote.requestSnapshot(key: key);
 
     // Step 2 — Poll until ready (retry POST if failed)
     var retryCount = 0;
     while (!snapshot.isReady) {
       if (snapshot.isFailed) {
-        if (retryCount >= 3) throw Exception('Snapshot failed after $retryCount retries');
+        if (retryCount >= 3)
+          throw Exception('Snapshot failed after $retryCount retries');
         retryCount++;
-        onProgress?.call(SyncProgress(progress: 0.05, stage: 'Повторяем запрос снапшота...', detail: 'попытка $retryCount'));
+        onProgress?.call(SyncProgress(
+            progress: 0.05,
+            stage: 'Повторяем запрос снапшота...',
+            detail: 'попытка $retryCount'));
         snapshot = await _remote.requestSnapshot(key: key);
         continue;
       }
       await Future.delayed(const Duration(seconds: 3));
-      onProgress?.call(const SyncProgress(progress: 0.08, stage: 'Ожидаем подготовку снапшота...'));
+      onProgress?.call(const SyncProgress(
+          progress: 0.08, stage: 'Ожидаем подготовку снапшота...'));
       snapshot = await _remote.pollSnapshotStatus(key: key);
     }
 
@@ -185,7 +201,8 @@ class PosSyncService {
     }
 
     // Step 3 — Download snapshot file
-    onProgress?.call(const SyncProgress(progress: 0.15, stage: 'Скачиваем снапшот...'));
+    onProgress?.call(
+        const SyncProgress(progress: 0.15, stage: 'Скачиваем снапшот...'));
     final snapshotFile = await _remote.downloadSnapshotFile(snapshotUrl);
     final snapshotCursor = snapshot.cursor > 0
         ? snapshot.cursor
@@ -211,16 +228,26 @@ class PosSyncService {
     );
     final accounts = await _remote.fetchAllAccounts(key: key);
 
-    onProgress?.call(SyncProgress(progress: 0.45, stage: 'Загружаем типы расходов...', detail: '${accounts.length} счетов'));
+    onProgress?.call(SyncProgress(
+        progress: 0.45,
+        stage: 'Загружаем типы расходов...',
+        detail: '${accounts.length} счетов'));
     final expenseTypes = await _remote.fetchAllExpenseTypes(key: key);
 
-    onProgress?.call(SyncProgress(progress: 0.58, stage: 'Загружаем покупателей...', detail: '${expenseTypes.length} типов расходов'));
+    onProgress?.call(SyncProgress(
+        progress: 0.58,
+        stage: 'Загружаем покупателей...',
+        detail: '${expenseTypes.length} типов расходов'));
     final customers = await _remote.fetchAllCustomers(key: key);
 
-    onProgress?.call(SyncProgress(progress: 0.68, stage: 'Подключаемся к серверу...', detail: '${customers.length} покупателей'));
+    onProgress?.call(SyncProgress(
+        progress: 0.68,
+        stage: 'Подключаемся к серверу...',
+        detail: '${customers.length} покупателей'));
     final posInfo = await _remote.fetchPosInfo(key: key);
 
-    onProgress?.call(SyncProgress(progress: 0.73, stage: 'Сохраняем данные...'));
+    onProgress
+        ?.call(SyncProgress(progress: 0.73, stage: 'Сохраняем данные...'));
     await _localStore.replaceBootstrapData(
       posKey: key,
       deviceId: deviceId,
@@ -233,7 +260,8 @@ class PosSyncService {
       customers: customers,
     );
 
-    onProgress?.call(const SyncProgress(progress: 0.82, stage: 'Применяем обновления...'));
+    onProgress?.call(
+        const SyncProgress(progress: 0.82, stage: 'Применяем обновления...'));
     await pullOnce(
       key: key,
       deviceId: deviceId,
@@ -250,7 +278,8 @@ class PosSyncService {
       },
     );
 
-    onProgress?.call(const SyncProgress(progress: 1, stage: 'Синхронизация завершена'));
+    onProgress?.call(
+        const SyncProgress(progress: 1, stage: 'Синхронизация завершена'));
   }
 
   int _readIntFromMap(Map<String, dynamic> map, String key) {
@@ -283,7 +312,8 @@ class PosSyncService {
   }) async {
     await initialize();
     await _localStore.ensureSyncState(posKey: key, deviceId: deviceId);
-    var cursor = initialCursor ?? (await _localStore.loadSyncState(key))?.cursor ?? 0;
+    var cursor =
+        initialCursor ?? (await _localStore.loadSyncState(key))?.cursor ?? 0;
     var batchIndex = 0;
 
     while (true) {
@@ -376,7 +406,7 @@ class PosSyncService {
       _syncedController.add(ackedCount);
       _notifySalesHistoryChanged();
       await _localStore.touchLastPush(key);
-      await pullOnce(key: key, deviceId: deviceId);
+      await _runBackgroundPull(key: key, deviceId: deviceId);
     }
   }
 
@@ -384,6 +414,7 @@ class PosSyncService {
     required String key,
     required String deviceId,
     required SaleModel sale,
+    bool sendInBackground = false,
   }) async {
     final localNumber = await _localStore.nextLocalSaleNumber();
     final payload = <String, dynamic>{
@@ -400,15 +431,15 @@ class PosSyncService {
       'store_id': sale.storeId,
       'account_id': sale.accountId,
       'user_id': sale.userId,
-      if ((sale.customerId ?? '').trim().isNotEmpty) 'customer_id': sale.customerId!.trim(),
+      if ((sale.customerId ?? '').trim().isNotEmpty)
+        'customer_id': sale.customerId!.trim(),
       'items': sale.items
           .map(
             (item) => {
               'product_id': item.productId,
-              'product_name':
-                  (item.product?.name ?? '').trim().isEmpty
-                      ? item.productId
-                      : item.product!.name,
+              'product_name': (item.product?.name ?? '').trim().isEmpty
+                  ? item.productId
+                  : item.product!.name,
               'quantity': item.quantity,
               'price': item.price,
               'total_price': item.totalPrice,
@@ -430,6 +461,7 @@ class PosSyncService {
       type: OutboxOperationType.sale,
       clientId: sale.localId,
       payload: payload,
+      tryImmediateSend: !sendInBackground,
     );
   }
 
@@ -454,7 +486,8 @@ class PosSyncService {
       'amount': amount.round(),
       'pos_session_id': posSessionId,
       'account_id': accountId,
-      if ((expenseTypeId ?? '').trim().isNotEmpty) 'expense_type_id': expenseTypeId!.trim(),
+      if ((expenseTypeId ?? '').trim().isNotEmpty)
+        'expense_type_id': expenseTypeId!.trim(),
       if ((userId ?? '').trim().isNotEmpty) 'created_by_id': userId!.trim(),
     };
 
@@ -537,8 +570,10 @@ class PosSyncService {
     required String key,
     required String deviceId,
     required String posSessionId,
+
     /// Server-assigned sale id. Pass empty string if the sale is not yet synced.
     required String saleId,
+
     /// Client-side client_sale_id. Required when [saleId] is empty (offline refund).
     String? clientSaleId,
     required int totalAmount,
@@ -554,11 +589,14 @@ class PosSyncService {
       'client_refund_id': clientId,
       'pos_session_id': posSessionId,
       'date': _formatDate(date),
-      if (!isOffline) 'sale_id': saleId
-      else if ((clientSaleId ?? '').isNotEmpty) 'client_sale_id': clientSaleId!,
+      if (!isOffline)
+        'sale_id': saleId
+      else if ((clientSaleId ?? '').isNotEmpty)
+        'client_sale_id': clientSaleId!,
       'total_amount': totalAmount,
       'items': items,
-      if ((returnAccessKey ?? '').trim().isNotEmpty) 'return_access_key': returnAccessKey!.trim(),
+      if ((returnAccessKey ?? '').trim().isNotEmpty)
+        'return_access_key': returnAccessKey!.trim(),
     };
 
     await _localStore.insertRefundLocal(payload);
@@ -580,6 +618,7 @@ class PosSyncService {
     required String clientId,
     required Map<String, dynamic> payload,
     String? relatedClientId,
+    bool tryImmediateSend = true,
   }) async {
     await initialize();
     await _localStore.ensureSyncState(posKey: key, deviceId: deviceId);
@@ -591,6 +630,18 @@ class PosSyncService {
       relatedClientId: relatedClientId,
       payload: payload,
     );
+
+    if (!tryImmediateSend) {
+      Timer.run(() {
+        _runBackgroundPush(key: key, deviceId: deviceId);
+      });
+      return QueueOperationResult(
+        result: QueueSendResult.queued,
+        type: type,
+        clientId: clientId,
+        payload: payload,
+      );
+    }
 
     if (_pushFuture != null) {
       return QueueOperationResult(
@@ -622,9 +673,37 @@ class PosSyncService {
     if (result.result == QueueSendResult.sent) {
       await _localStore.touchLastPush(key);
       _notifySalesHistoryChanged();
-      unawaited(pullOnce(key: key, deviceId: deviceId));
+      _runBackgroundPull(key: key, deviceId: deviceId);
     }
     return result;
+  }
+
+  Future<void> _runBackgroundPush({
+    required String key,
+    required String deviceId,
+    int limit = 5,
+  }) {
+    return _ignoreBackgroundSyncErrors(
+      pushPending(key: key, deviceId: deviceId, limit: limit),
+    );
+  }
+
+  Future<void> _runBackgroundPull({
+    required String key,
+    required String deviceId,
+  }) {
+    return _ignoreBackgroundSyncErrors(
+      pullOnce(key: key, deviceId: deviceId),
+    );
+  }
+
+  Future<void> _ignoreBackgroundSyncErrors(Future<void> future) async {
+    try {
+      await future;
+    } catch (_) {
+      // Background sync is best-effort. Pending operations stay queued and
+      // will be retried by the next timer tick or when connectivity returns.
+    }
   }
 
   Future<QueueOperationResult> _sendClaimedRecord({
@@ -632,8 +711,9 @@ class PosSyncService {
     required String deviceId,
     required OutboxOperationRecord record,
   }) async {
+    late final Map<String, dynamic> payloadForSend;
     try {
-      final payloadForSend = await _preparePayloadForSend(record);
+      payloadForSend = await _preparePayloadForSend(record);
       final responseData = await _remote.sendOperation(
         type: record.type,
         key: key,
@@ -662,6 +742,7 @@ class PosSyncService {
     } catch (error) {
       final errorCode = _remote.extractErrorCode(error);
       final errorMessage = _remote.extractErrorMessage(error);
+      final errorDetails = _remote.extractErrorDetails(error);
 
       // Duplicate key: the operation already exists on the server — treat as success.
       if (errorCode == 'IDEMPOTENCY_CONFLICT') {
@@ -680,6 +761,8 @@ class PosSyncService {
           operationId: record.id,
           errorCode: errorCode,
           errorMessage: errorMessage,
+          payload: payloadForSend,
+          errorDetails: errorDetails,
         );
         return QueueOperationResult(
           result: QueueSendResult.queued,
@@ -691,13 +774,15 @@ class PosSyncService {
         );
       }
 
-      final manualCode =
-          _remote.isManualErrorCode(errorCode) ? errorCode : 'MANUAL_REVIEW_REQUIRED';
+      final manualCode = _remote.isManualErrorCode(errorCode)
+          ? errorCode
+          : 'MANUAL_REVIEW_REQUIRED';
       await _localStore.markOperationManual(
         operationId: record.id,
         errorCode: manualCode,
         errorMessage: errorMessage,
-        payload: record.payload,
+        payload: payloadForSend,
+        errorDetails: errorDetails,
       );
       return QueueOperationResult(
         result: QueueSendResult.manual,
@@ -710,16 +795,19 @@ class PosSyncService {
     }
   }
 
-  Future<Map<String, dynamic>> _preparePayloadForSend(OutboxOperationRecord record) async {
+  Future<Map<String, dynamic>> _preparePayloadForSend(
+      OutboxOperationRecord record) async {
     final payload = Map<String, dynamic>.from(record.payload);
     payload['app_version'] = AppBuildInfo.appVersion;
     switch (record.type) {
       case OutboxOperationType.sale:
       case OutboxOperationType.payment:
       case OutboxOperationType.refund:
-        final rawSessionId = (payload['pos_session_id'] ?? '').toString().trim();
+        final rawSessionId =
+            (payload['pos_session_id'] ?? '').toString().trim();
         if (rawSessionId.isNotEmpty) {
-          final serverSessionId = await _localStore.resolveServerSessionId(rawSessionId);
+          final serverSessionId =
+              await _localStore.resolveServerSessionId(rawSessionId);
           if ((serverSessionId ?? '').isNotEmpty) {
             payload['pos_session_id'] = serverSessionId;
           }

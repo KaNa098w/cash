@@ -13,6 +13,24 @@ class PosTicket extends Equatable {
     this.customer,
   });
 
+  factory PosTicket.fromJson(Map<String, dynamic> json) {
+    final itemsRaw = json['items'];
+    final items = itemsRaw is List
+        ? itemsRaw
+            .whereType<Map>()
+            .map((e) => CartItem.fromJson(Map<String, dynamic>.from(e)))
+            .toList(growable: false)
+        : const <CartItem>[];
+    final customerRaw = json['customer'];
+    return PosTicket(
+      id: (json['id'] as num?)?.toInt() ?? 1,
+      items: items,
+      customer: customerRaw is Map
+          ? PosCustomer.fromJson(Map<String, dynamic>.from(customerRaw))
+          : null,
+    );
+  }
+
   PosTicket copyWith({
     List<CartItem>? items,
     PosCustomer? customer,
@@ -24,6 +42,12 @@ class PosTicket extends Equatable {
       customer: clearCustomer ? null : (customer ?? this.customer),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'items': items.map((e) => e.toJson()).toList(growable: false),
+        'customer': customer?.toJson(),
+      };
 
   @override
   List<Object?> get props => [id, items, customer];
@@ -54,6 +78,30 @@ class PosState extends Equatable {
       tickets: [PosTicket(id: 1)],
       activeTicketId: 1,
       selectedItemIndex: null,
+    );
+  }
+
+  factory PosState.fromJson(Map<String, dynamic> json) {
+    final ticketsRaw = json['tickets'];
+    final tickets = ticketsRaw is List
+        ? ticketsRaw
+            .whereType<Map>()
+            .map((e) => PosTicket.fromJson(Map<String, dynamic>.from(e)))
+            .toList(growable: false)
+        : const <PosTicket>[];
+    final paymentKindRaw =
+        (json['paymentKind'] ?? PaymentKind.cash.name).toString();
+
+    return PosState(
+      tickets: tickets.isEmpty ? const [PosTicket(id: 1)] : tickets,
+      activeTicketId: (json['activeTicketId'] as num?)?.toInt() ?? 1,
+      isHistoryMode: json['isHistoryMode'] == true,
+      paymentKind: PaymentKind.values.firstWhere(
+        (kind) => kind.name == paymentKindRaw,
+        orElse: () => PaymentKind.cash,
+      ),
+      received: (json['received'] as num?)?.toDouble() ?? 0,
+      selectedItemIndex: (json['selectedItemIndex'] as num?)?.toInt(),
     );
   }
 
@@ -92,6 +140,15 @@ class PosState extends Equatable {
     );
   }
 
+  Map<String, dynamic> toJson() => {
+        'tickets': tickets.map((e) => e.toJson()).toList(growable: false),
+        'activeTicketId': activeTicketId,
+        'isHistoryMode': isHistoryMode,
+        'paymentKind': paymentKind.name,
+        'received': received,
+        'selectedItemIndex': selectedItemIndex,
+      };
+
   @override
   List<Object?> get props => [
         tickets,
@@ -113,4 +170,16 @@ class PosCustomer {
     required this.name,
     this.phone,
   });
+
+  factory PosCustomer.fromJson(Map<String, dynamic> json) => PosCustomer(
+        id: (json['id'] ?? '').toString(),
+        name: (json['name'] ?? '').toString(),
+        phone: json['phone']?.toString(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'phone': phone,
+      };
 }

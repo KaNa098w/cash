@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_state.dart';
 
@@ -13,25 +14,33 @@ import 'package:leemon_app/features/presentation/pages/sales_history/sales_histo
 import 'package:leemon_app/features/presentation/widgets/close_shift_bottom.dart';
 
 class _GoRouterAuthRefresh extends ChangeNotifier {
-  _GoRouterAuthRefresh(Stream stream) {
+  _GoRouterAuthRefresh(Stream stream, Listenable authTokenProvider) {
     _sub = stream.asBroadcastStream().listen((_) => notifyListeners());
+    _authTokenProvider = authTokenProvider;
+    _authTokenProvider.addListener(notifyListeners);
   }
   late final StreamSubscription _sub;
+  late final Listenable _authTokenProvider;
   @override
   void dispose() {
     _sub.cancel();
+    _authTokenProvider.removeListener(notifyListeners);
     super.dispose();
   }
 }
 
 GoRouter createRouter(BuildContext context) {
   final auth = context.read<AuthCubit>();
+  final authTokenProvider = context.read<AuthTokenProvider>();
 
-  bool isAuthed(AuthState s) => s is AuthSuccess || s is AuthUnlocked;
+  bool isAuthed(AuthState s) =>
+      s is AuthSuccess ||
+      s is AuthUnlocked ||
+      (authTokenProvider.hasActiveUserId && authTokenProvider.hasShiftId);
 
   return GoRouter(
     initialLocation: '/login',
-    refreshListenable: _GoRouterAuthRefresh(auth.stream),
+    refreshListenable: _GoRouterAuthRefresh(auth.stream, authTokenProvider),
     redirect: (ctx, state) {
       final authed = isAuthed(auth.state);
       final onLogin = state.matchedLocation == '/login';

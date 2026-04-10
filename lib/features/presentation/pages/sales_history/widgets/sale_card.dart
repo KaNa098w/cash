@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 
 import '../models/refund_pick.dart';
@@ -17,6 +17,10 @@ class SaleCard extends StatelessWidget {
     required this.expanded,
     required this.onToggle,
     required this.refundLoading,
+    required this.receiptPrintLoading,
+    required this.receiptPrintDisabled,
+    required this.invoicePrintLoading,
+    required this.invoicePrintDisabled,
     required this.onSubmitRefund,
     required this.onPrintReceipt,
     required this.onPrintInvoice,
@@ -35,6 +39,10 @@ class SaleCard extends StatelessWidget {
   final VoidCallback onToggle;
 
   final bool refundLoading;
+  final bool receiptPrintLoading;
+  final bool receiptPrintDisabled;
+  final bool invoicePrintLoading;
+  final bool invoicePrintDisabled;
   final VoidCallback onSubmitRefund;
   final VoidCallback onPrintReceipt;
   final VoidCallback onPrintInvoice;
@@ -51,14 +59,46 @@ class SaleCard extends StatelessWidget {
 
   static const _radius = 22.0;
 
-  bool get isReturned => (sale.refund?.id ?? '').trim().isNotEmpty;
+  String get paymentLabel {
+    switch (sale.paymentMethod.trim().toLowerCase()) {
+      case 'cash':
+        return 'Наличная';
+      case 'card':
+        return 'Безналичная';
+      case 'credit':
+        return 'В долг';
+      default:
+        final raw = sale.paymentMethod.trim();
+        return raw.isEmpty ? '-' : raw;
+    }
+  }
 
-  String get statusLabel => isReturned ? 'Возвращен' : 'Закрыт';
+  Color get paymentBg {
+    switch (sale.paymentMethod.trim().toLowerCase()) {
+      case 'cash':
+        return const Color(0xFFE6F4EA);
+      case 'card':
+        return const Color(0xFFE0ECFF);
+      case 'credit':
+        return const Color(0xFFFFE6D6);
+      default:
+        return const Color(0xFFF3F5F4);
+    }
+  }
 
-  Color get statusBg =>
-      isReturned ? const Color(0xFFFFE6D6) : const Color(0xFFCBE9C5);
-  Color get statusFg =>
-      isReturned ? const Color(0xFFB54708) : const Color(0xFF258808);
+  Color get paymentFg {
+    switch (sale.paymentMethod.trim().toLowerCase()) {
+      case 'cash':
+        return const Color(0xFF258808);
+      case 'card':
+        return const Color(0xFF1D4ED8);
+      case 'credit':
+        return const Color(0xFFB54708);
+      default:
+        return const Color(0xFF425A4E);
+    }
+  }
+
   Color get cardShadow => const Color(0x140F172A);
   Color get dateBg => const Color(0xFFF3F5F4);
   Color get dateBorder => const Color(0xFFD9E1DC);
@@ -132,9 +172,9 @@ class SaleCard extends StatelessWidget {
                           Row(
                             children: [
                               StatusChip(
-                                  label: statusLabel,
-                                  bg: statusBg,
-                                  fg: statusFg),
+                                  label: paymentLabel,
+                                  bg: paymentBg,
+                                  fg: paymentFg),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
@@ -152,7 +192,7 @@ class SaleCard extends StatelessWidget {
                               const SizedBox(width: 8),
                               Icon(Icons.more_horiz,
                                   size: 22,
-                                  color: Colors.black.withOpacity(0.55)),
+                                  color: Colors.black.withValues(alpha: 0.55)),
                             ],
                           ),
                         ],
@@ -185,9 +225,9 @@ class SaleCard extends StatelessWidget {
                             child: Align(
                               alignment: Alignment.centerLeft,
                               child: StatusChip(
-                                  label: statusLabel,
-                                  bg: statusBg,
-                                  fg: statusFg),
+                                  label: paymentLabel,
+                                  bg: paymentBg,
+                                  fg: paymentFg),
                             ),
                           ),
                           SizedBox(
@@ -205,8 +245,8 @@ class SaleCard extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 10),
-                          Icon(Icons.more_horiz,
-                              size: 22, color: const Color(0xFF7A837E)),
+                          const Icon(Icons.more_horiz,
+                              size: 22, color: Color(0xFF7A837E)),
                         ],
                       ),
               ),
@@ -259,7 +299,8 @@ class SaleCard extends StatelessWidget {
                         width: actionWidth,
                         fontSize: 16,
                         bg: actionBlueMuted,
-                        onTap: onPrintInvoice,
+                        onTap: invoicePrintDisabled ? null : onPrintInvoice,
+                        loading: invoicePrintLoading,
                       ),
                       const SizedBox(height: 12),
                       BottomActionButton(
@@ -267,7 +308,8 @@ class SaleCard extends StatelessWidget {
                         width: actionWidth,
                         fontSize: 16,
                         bg: actionBlueMuted,
-                        onTap: onPrintReceipt,
+                        onTap: receiptPrintDisabled ? null : onPrintReceipt,
+                        loading: receiptPrintLoading,
                       ),
                     ] else
                       Row(
@@ -296,14 +338,18 @@ class SaleCard extends StatelessWidget {
                               width: invoiceBtnWidth,
                               fontSize: 16,
                               bg: actionBlueMuted,
-                              onTap: onPrintInvoice),
+                              onTap:
+                                  invoicePrintDisabled ? null : onPrintInvoice,
+                              loading: invoicePrintLoading),
                           const SizedBox(width: 12),
                           BottomActionButton(
                               label: 'Распечатать чек',
                               width: printBtnWidth,
                               fontSize: 16,
                               bg: actionBlueMuted,
-                              onTap: onPrintReceipt),
+                              onTap:
+                                  receiptPrintDisabled ? null : onPrintReceipt,
+                              loading: receiptPrintLoading),
                         ],
                       ),
                   ],

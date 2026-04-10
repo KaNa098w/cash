@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Leemon.Updater")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+04eb16bd002f987e859d8dd04b44e76cb45934c1")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+29a40dff4386cdfb8008d551ea7b87de183633e5")]
 [assembly: System.Reflection.AssemblyProductAttribute("Leemon.Updater")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Leemon.Updater")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

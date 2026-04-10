@@ -24,6 +24,12 @@ class SessionRepositoryImpl implements SessionRepository {
       throw Exception(result.errorMessage ?? 'Не удалось открыть смену');
     }
 
+    if (result.result != QueueSendResult.sent) {
+      throw Exception(
+        'Для открытия сессии необходим интернет. Подключите интернет и попробуйте снова.',
+      );
+    }
+
     return result.clientId;
   }
 

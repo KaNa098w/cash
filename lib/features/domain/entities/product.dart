@@ -22,6 +22,26 @@ class Product extends Equatable {
     this.conversionValue,
   });
 
+  factory Product.fromJson(Map<String, dynamic> json) => Product(
+        id: (json['id'] ?? '').toString(),
+        name: (json['name'] ?? '').toString(),
+        price: (json['price'] as num?)?.toDouble() ?? 0,
+        vat: (json['vat'] as num?)?.toDouble() ?? 0,
+        quantity: (json['quantity'] as num?)?.toDouble() ?? 0,
+        measurementUnit: (json['measurementUnit'] ?? 'шт.').toString(),
+        conversionValue: (json['conversionValue'] as num?)?.toDouble(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'price': price,
+        'vat': vat,
+        'quantity': quantity,
+        'measurementUnit': measurementUnit,
+        'conversionValue': conversionValue,
+      };
+
   @override
   List<Object?> get props =>
       [id, name, price, vat, quantity, measurementUnit, conversionValue];

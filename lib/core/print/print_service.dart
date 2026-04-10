@@ -1,9 +1,8 @@
-// lib/core/print/print_service.dart
 import 'dart:typed_data';
 
-import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 class PrintService {
   Future<Printer?> _resolvePrinter(String? name) async {
@@ -19,7 +18,7 @@ class PrintService {
     );
   }
 
-  // Чеки и Z-отчёт — маленький термопринтер
+  // Чеки и Z-отчёт — маленький термопринтер.
   Future<void> print80mmSilently(
     Future<pw.Document> Function() buildDoc, {
     PdfPageFormat format = PdfPageFormat.roll80,
@@ -39,7 +38,7 @@ class PrintService {
     );
   }
 
-  // Накладные — большой принтер (A4)
+  // Накладные — большой принтер (A4).
   Future<void> printPdfBytesSilently(
     Uint8List pdfBytes, {
     String? printerName,

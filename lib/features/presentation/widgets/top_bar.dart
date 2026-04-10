@@ -10,6 +10,7 @@ import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/search/search_keyboard_controller.dart';
 import 'hold_delete_confirm_dialog.dart';
 import 'incoming_orders_dialog.dart';
 import 'show_pos_action_dialog.dart';
@@ -22,10 +23,10 @@ class TopBar extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, _) {
         final compact = MediaQuery.sizeOf(context).width <= 900;
-        final barHeight = compact ? 56.0 : 64.0;
-        final topPad = compact ? 4.0 : 10.0;
+        final barHeight = compact ? 60.0 : 68.0;
+        final topPad = compact ? 8.0 : 14.0;
         final sidePad = compact ? 10.0 : 20.0;
-        final tabGap = compact ? 8.0 : 5.0;
+        final tabGap = compact ? 12.0 : 8.0;
         final holdFont = compact ? 15.0 : 16.0;
 
         return Container(
@@ -123,7 +124,11 @@ class TopBar extends StatelessWidget {
                           ),
                           _divider(),
                           IconButton(
-                            onPressed: () => showPosActionsDialog(context),
+                            onPressed: () {
+                              requestSearchKeyboardClose();
+                              FocusManager.instance.primaryFocus?.unfocus();
+                              showPosActionsDialog(context);
+                            },
                             icon: SvgPicture.asset(
                               'assets/svg/elements.svg',
                               width: 24,
@@ -178,10 +183,11 @@ class _TicketTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final bg = active ? const Color(0xFFF3F4F6) : const Color(0xFF536074);
     final textColor = active ? Colors.black : Colors.white70;
-
+    final minWidth = compact ? 128.0 : 118.0;
     return GestureDetector(
       onTap: onTap,
       child: Container(
+        constraints: BoxConstraints(minWidth: minWidth),
         padding: EdgeInsets.symmetric(
           horizontal: compact ? 18 : 16,
           vertical: compact ? 12 : 16,
@@ -193,34 +199,45 @@ class _TicketTab extends StatelessWidget {
             topRight: Radius.circular(14),
           ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              text,
-              style: TextStyle(
-                color: textColor,
-                fontSize: compact ? 15 : 16,
-                fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (showClose && onClose != null) ...[
-              const SizedBox(width: 8),
-              GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () {
-                  onClose?.call();
-                },
-                child: Icon(
-                  Icons.close,
-                  size: compact ? 16 : 18,
-                  color: active ? Colors.black54 : Colors.white70,
+        child: showClose && onClose != null
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    text,
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: compact ? 16 : 16,
+                      fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: () {
+                      onClose?.call();
+                    },
+                    child: Icon(
+                      Icons.close,
+                      size: compact ? 18 : 18,
+                      color: active ? Colors.black54 : Colors.white70,
+                    ),
+                  ),
+                ],
+              )
+            : Center(
+                child: Text(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: compact ? 16 : 16,
+                    fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            ],
-          ],
-        ),
       ),
     );
   }
@@ -295,7 +312,6 @@ class _StatusDot extends StatefulWidget {
 class _StatusDotState extends State<_StatusDot> {
   bool _online = true;
   Timer? _timer;
-  StreamSubscription<int>? _syncedSub;
 
   @override
   void initState() {
@@ -304,21 +320,11 @@ class _StatusDotState extends State<_StatusDot> {
     _timer = Timer.periodic(const Duration(seconds: 4), (_) {
       _refreshOnline();
     });
-    _syncedSub = GetIt.I<PosSyncService>().onOperationsSynced.listen((count) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Синхронизировано: $count оп.'),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _syncedSub?.cancel();
     super.dispose();
   }
 

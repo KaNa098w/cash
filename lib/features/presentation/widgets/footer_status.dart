@@ -1,5 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/features/presentation/widgets/quit_products_screen.dart';
@@ -50,7 +51,6 @@ class _FooterDesktop extends StatelessWidget {
         ) ??
         false;
   }
-
 
   Future<void> _payByCardWithPrint(BuildContext context) async {
     final posCubit = context.read<PosCubit>();
@@ -103,6 +103,7 @@ class _FooterDesktop extends StatelessWidget {
     final pageFormat =
         auth.receiptPaperMm == 57 ? PdfPageFormat.roll57 : PdfPageFormat.roll80;
     final ok = await _confirmCardPayment(context, amount: money(total));
+    if (!context.mounted) return;
     if (!ok) return;
 
     posCubit.setPaymentKind(PaymentKind.card);
@@ -120,9 +121,7 @@ class _FooterDesktop extends StatelessWidget {
         final cv = it.product.conversionValue;
         // Для конвертируемых товаров отправляем количество
         // в единице измерения товара, а не во внутренних штуках.
-        final qty = (cv != null && cv > 0)
-            ? (it.qty * cv)
-            : it.qty;
+        final qty = (cv != null && cv > 0) ? (it.qty * cv) : it.qty;
         final price = it.product.price.round();
         final totalPrice = (it.product.price * it.qty).round();
 
@@ -207,10 +206,11 @@ class _FooterDesktop extends StatelessWidget {
             pageFormat: pageFormat,
             money: money,
             receiptDate: printedSale.date,
-            receiptNumber:
-                printedSale.number.trim().isEmpty
-                    ? printedSale.localId
-                    : printedSale.number.trim(),
+            receiptNumber: formatPosReceiptNumber(
+              posNumber: auth.posNumber ?? '',
+              saleNumber: printedSale.number,
+              fallback: printedSale.localId,
+            ),
             cashierName: (auth.activeUserName ?? '').trim().isEmpty
                 ? userId
                 : auth.activeUserName!.trim(),
@@ -243,14 +243,13 @@ class _FooterDesktop extends StatelessWidget {
         printerName: auth.receiptPrinterName,
       );
 
+      if (!context.mounted) return;
       await showDialog<void>(
         context: context,
         barrierDismissible: true,
-        barrierColor: Colors.black.withOpacity(0.45),
+        barrierColor: Colors.black.withValues(alpha: 0.45),
         builder: (ctx) {
-          final message = result == CreateSaleResult.queued
-              ? 'Нет сети: продажа добавлена в очередь.\nЧек распечатан.'
-              : 'Продажа отправлена.\nЧек распечатан.';
+          const message = 'Продажа сохранена.\nЧек распечатан.';
 
           return Dialog(
             insetPadding:
@@ -367,7 +366,7 @@ class _FooterDesktop extends StatelessWidget {
     final res = await showDialog<bool>(
       context: context,
       barrierDismissible: true,
-      barrierColor: Colors.black.withOpacity(0.45),
+      barrierColor: Colors.black.withValues(alpha: 0.45),
       builder: (ctx) {
         return Dialog(
           backgroundColor: ThemeColors.greyB,
@@ -507,7 +506,7 @@ class _FooterDesktop extends StatelessWidget {
         final compact = c.maxWidth < 1200;
         final infoWidth = compact ? 152.0 : 190.0;
         final infoPad = compact ? 12.0 : 16.0;
-        final clockSize = compact ? 26.0 : 34.0;
+        final clockSize = compact ? 22.0 : 22.0;
         final bottomInset = MediaQuery.of(context).viewPadding.bottom;
         final baseFooterHeight = compact ? 172.0 : 182.0;
         final footerHeight = baseFooterHeight + bottomInset;
@@ -542,8 +541,15 @@ class _FooterDesktop extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.access_time,
-                                color: Colors.white, size: compact ? 18 : 20),
+                            SvgPicture.asset(
+                              'assets/svg/time.svg',
+                              width: clockSize,
+                              height: clockSize,
+                              colorFilter: const ColorFilter.mode(
+                                Colors.white54,
+                                BlendMode.srcIn,
+                              ),
+                            ),
                             const SizedBox(width: 6),
                             StreamBuilder(
                               stream:
@@ -699,7 +705,7 @@ class _FooterDesktop extends StatelessWidget {
       context: context,
       barrierDismissible: true,
       barrierLabel: 'payment',
-      barrierColor: Colors.black.withOpacity(0.45),
+      barrierColor: Colors.black.withValues(alpha: 0.45),
       transitionDuration: const Duration(milliseconds: 220),
       pageBuilder: (ctx, a1, a2) {
         return SafeArea(
@@ -710,7 +716,7 @@ class _FooterDesktop extends StatelessWidget {
                 builder: (context, constraints) {
                   final w = constraints.maxWidth;
                   final panelWidth =
-                      w >= 460 ? 420.0 : (w - 32).clamp(280.0, 420.0);
+                      w >= 625 ? 573.0 : (w - 32).clamp(280.0, 573.0);
 
                   return Container(
                     width: panelWidth,
@@ -720,7 +726,7 @@ class _FooterDesktop extends StatelessWidget {
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.18),
+                          color: Colors.black.withValues(alpha: 0.18),
                           blurRadius: 24,
                           offset: const Offset(0, 10),
                         ),
@@ -752,6 +758,7 @@ class _FooterDesktop extends StatelessWidget {
 
 class TouchDeleteDialog extends StatelessWidget {
   const TouchDeleteDialog({
+    super.key,
     required this.productName,
   });
 

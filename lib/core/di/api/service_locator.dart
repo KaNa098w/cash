@@ -73,6 +73,7 @@ Future<void> initDependencies() async {
           error: true,
           compact: true,
           maxWidth: 120,
+          filter: (options, _) => options.extra['silentDioLog'] != true,
           logPrint: (obj) => debugPrint(obj.toString()),
         ),
       );

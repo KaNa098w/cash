@@ -10,15 +10,81 @@ import 'package:leemon_app/features/presentation/pages/sales_history/utils/forma
 
 class SalesHistoryController {
   final Map<String, bool> _refundLoading = {};
+  final Map<String, bool> _receiptPrintLoading = {};
+  final Map<String, bool> _invoicePrintLoading = {};
+  final Map<String, bool> _receiptPrintCoolingDown = {};
+  final Map<String, bool> _invoicePrintCoolingDown = {};
+  final Map<String, Timer> _receiptPrintCooldownTimers = {};
+  final Map<String, Timer> _invoicePrintCooldownTimers = {};
   final Map<String, Map<String, RefundPick>> _refundPicks = {};
 
   Timer? _refundPutDebounce;
 
   bool isRefundLoading(String saleId) => _refundLoading[saleId] == true;
+  bool isReceiptPrintLoading(String saleId) =>
+      _receiptPrintLoading[saleId] == true;
+  bool isInvoicePrintLoading(String saleId) =>
+      _invoicePrintLoading[saleId] == true;
+  bool isReceiptPrintDisabled(String saleId) =>
+      isReceiptPrintLoading(saleId) || _receiptPrintCoolingDown[saleId] == true;
+  bool isInvoicePrintDisabled(String saleId) =>
+      isInvoicePrintLoading(saleId) || _invoicePrintCoolingDown[saleId] == true;
 
   void setRefundLoading(String saleId, bool v, VoidCallback notify) {
     _refundLoading[saleId] = v;
     notify();
+  }
+
+  void setReceiptPrintLoading(String saleId, bool v, VoidCallback notify) {
+    _receiptPrintCooldownTimers.remove(saleId)?.cancel();
+    _receiptPrintLoading[saleId] = v;
+    if (v) _receiptPrintCoolingDown[saleId] = false;
+    notify();
+  }
+
+  void setInvoicePrintLoading(String saleId, bool v, VoidCallback notify) {
+    _invoicePrintCooldownTimers.remove(saleId)?.cancel();
+    _invoicePrintLoading[saleId] = v;
+    if (v) _invoicePrintCoolingDown[saleId] = false;
+    notify();
+  }
+
+  void startReceiptPrintCooldownAfterLoading(
+    String saleId,
+    Duration loadingDuration,
+    Duration cooldownDuration,
+    VoidCallback notify,
+  ) {
+    _receiptPrintCooldownTimers.remove(saleId)?.cancel();
+    _receiptPrintCooldownTimers[saleId] = Timer(loadingDuration, () {
+      _receiptPrintLoading[saleId] = false;
+      _receiptPrintCoolingDown[saleId] = true;
+      notify();
+      _receiptPrintCooldownTimers[saleId] = Timer(cooldownDuration, () {
+        _receiptPrintCooldownTimers.remove(saleId);
+        _receiptPrintCoolingDown[saleId] = false;
+        notify();
+      });
+    });
+  }
+
+  void startInvoicePrintCooldownAfterLoading(
+    String saleId,
+    Duration loadingDuration,
+    Duration cooldownDuration,
+    VoidCallback notify,
+  ) {
+    _invoicePrintCooldownTimers.remove(saleId)?.cancel();
+    _invoicePrintCooldownTimers[saleId] = Timer(loadingDuration, () {
+      _invoicePrintLoading[saleId] = false;
+      _invoicePrintCoolingDown[saleId] = true;
+      notify();
+      _invoicePrintCooldownTimers[saleId] = Timer(cooldownDuration, () {
+        _invoicePrintCooldownTimers.remove(saleId);
+        _invoicePrintCoolingDown[saleId] = false;
+        notify();
+      });
+    });
   }
 
   Map<String, RefundPick> salePickMap(String saleId) {
@@ -26,9 +92,7 @@ class SalesHistoryController {
   }
 
   int refundedQtyOf(SaleItemModel item) {
-    final d = item as dynamic;
-    final v = d.refund_quantity ?? d.refundQuantity ?? 0;
-    return toIntRefunded(v);
+    return toIntRefunded(item.refund_quantity ?? 0);
   }
 
   int availableQtyOf(SaleItemModel item) {
@@ -54,7 +118,9 @@ class SalesHistoryController {
       sid,
       () => RefundPick(
         saleItemId: sid,
-        productId: (item.product?.id ?? '').toString(),
+        productId: item.productId.trim().isNotEmpty
+            ? item.productId.trim()
+            : (item.product?.id ?? '').toString(),
         checked: false,
         quantity: 0,
         maxQuantity: maxQty,
@@ -77,7 +143,9 @@ class SalesHistoryController {
       pick.checked = pick.quantity > 0;
     }
 
-    final newProductId = (item.product?.id ?? '').toString();
+    final newProductId = item.productId.trim().isNotEmpty
+        ? item.productId.trim()
+        : (item.product?.id ?? '').toString();
     if (pick.productId.trim().isEmpty && newProductId.trim().isNotEmpty) {
       pick.productId = newProductId;
     }
@@ -192,5 +260,15 @@ class SalesHistoryController {
 
   void dispose() {
     _refundPutDebounce?.cancel();
+    for (final timer in _receiptPrintCooldownTimers.values) {
+      timer.cancel();
+    }
+    for (final timer in _invoicePrintCooldownTimers.values) {
+      timer.cancel();
+    }
+    _receiptPrintCooldownTimers.clear();
+    _invoicePrintCooldownTimers.clear();
+    _receiptPrintCoolingDown.clear();
+    _invoicePrintCoolingDown.clear();
   }
 }

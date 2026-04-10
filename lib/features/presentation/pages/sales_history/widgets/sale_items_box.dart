@@ -24,6 +24,12 @@ class SaleItemsBox extends StatelessWidget {
   final int Function(SaleItemModel item) refundedQtyOf;
   final int Function(SaleItemModel item) availableQtyOf;
 
+  String _pickKey(SaleItemModel item) {
+    final id = item.id.trim();
+    if (id.isNotEmpty) return id;
+    return item.productId.trim();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -37,12 +43,13 @@ class SaleItemsBox extends StatelessWidget {
           if (items.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Text('Нет позиций', style: TextStyle(color: Colors.black.withOpacity(0.55))),
+              child: Text('Нет позиций',
+                  style: TextStyle(color: Colors.black.withOpacity(0.55))),
             ),
           for (int i = 0; i < items.length; i++) ...[
             SaleItemRow(
               item: items[i],
-              pick: picks[items[i].id.toString()],
+              pick: picks[_pickKey(items[i])],
               onToggle: (v) => onToggleItem(items[i], v),
               onQtyChanged: (q) => onQtyChanged(items[i], q),
               refundedQtyOf: refundedQtyOf,
@@ -51,7 +58,10 @@ class SaleItemsBox extends StatelessWidget {
             if (i != items.length - 1)
               Padding(
                 padding: const EdgeInsets.only(left: 44),
-                child: Divider(height: 10, thickness: 1, color: Colors.black.withOpacity(0.06)),
+                child: Divider(
+                    height: 10,
+                    thickness: 1,
+                    color: Colors.black.withOpacity(0.06)),
               ),
           ],
         ],

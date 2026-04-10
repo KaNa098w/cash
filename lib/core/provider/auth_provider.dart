@@ -13,6 +13,7 @@ class AuthTokenProvider extends ChangeNotifier {
   static const _kDeviceId = 'deviceId';
 
   static const _kPosName = 'posName';
+  static const _kPosNumber = 'posNumber';
   static const _kPosId = 'posId';
   static const _kStoreId = 'storeId';
   static const _kStoreName = 'storeName';
@@ -41,6 +42,9 @@ class AuthTokenProvider extends ChangeNotifier {
 
   String? _posName;
   String? get posName => _posName;
+
+  String? _posNumber;
+  String? get posNumber => _posNumber;
 
   String? _posId;
   String? get posId => _posId;
@@ -99,6 +103,7 @@ class AuthTokenProvider extends ChangeNotifier {
     return PosProvisionResponse(
       id: _posId!,
       name: _posName!,
+      number: _posNumber ?? '',
       key: _posKey ?? '',
       accountId: _accountId!,
       storeId: _storeId!,
@@ -123,6 +128,7 @@ class AuthTokenProvider extends ChangeNotifier {
     _deviceId = prefs.getString(_kDeviceId);
 
     _posName = prefs.getString(_kPosName);
+    _posNumber = prefs.getString(_kPosNumber);
     _posId = prefs.getString(_kPosId);
     _storeId = prefs.getString(_kStoreId);
     _storeName = prefs.getString(_kStoreName);
@@ -186,6 +192,7 @@ class AuthTokenProvider extends ChangeNotifier {
     _posKey = resp.key;
 
     _posName = resp.name;
+    _posNumber = resp.number;
     _posId = resp.id;
     _storeId = resp.storeId;
     _storeName = resp.storeName;
@@ -209,6 +216,7 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.setString(_kPosKey, _posKey ?? '');
 
     await prefs.setString(_kPosName, _posName ?? '');
+    await prefs.setString(_kPosNumber, _posNumber ?? '');
     await prefs.setString(_kPosId, _posId ?? '');
     await prefs.setString(_kStoreId, _storeId ?? '');
     await prefs.setString(_kStoreName, _storeName ?? '');
@@ -221,6 +229,7 @@ class AuthTokenProvider extends ChangeNotifier {
 
   Future<void> clearProvisioned({bool keepDeviceId = true}) async {
     _posName = null;
+    _posNumber = null;
     _posId = null;
     _storeId = null;
     _storeName = null;
@@ -237,6 +246,7 @@ class AuthTokenProvider extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kPosName);
+    await prefs.remove(_kPosNumber);
     await prefs.remove(_kPosId);
     await prefs.remove(_kStoreId);
     await prefs.remove(_kStoreName);

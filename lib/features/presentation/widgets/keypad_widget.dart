@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 
 class Keypad extends StatelessWidget {
-  const Keypad({required this.onTap});
+  const Keypad({
+    required this.onTap,
+    this.keyHeight = 58,
+    this.fontSize = 22,
+  });
+
   final void Function(String) onTap;
+  final double keyHeight;
+  final double fontSize;
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +30,7 @@ class Keypad extends StatelessWidget {
                 for (int i = 0; i < r.length; i++) ...[
                   Expanded(
                     child: SizedBox(
-                      height: 48,
+                      height: keyHeight,
                       child: TextButton(
                         onPressed: () => onTap(r[i]),
                         style: TextButton.styleFrom(
@@ -35,8 +42,8 @@ class Keypad extends StatelessWidget {
                         ),
                         child: Text(
                           r[i],
-                          style: const TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.w400),
+                          style: TextStyle(
+                              fontSize: fontSize, fontWeight: FontWeight.w600),
                         ),
                       ),
                     ),

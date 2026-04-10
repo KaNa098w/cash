@@ -13,6 +13,7 @@ import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
+import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/error_bloc.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/refund_access_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sales_history_controller.dart';
@@ -34,6 +35,10 @@ class SalesHistoryPage extends StatefulWidget {
 }
 
 class _SalesHistoryPageState extends State<SalesHistoryPage> {
+  static const Duration _historyIdleTimeout = Duration(seconds: 30);
+  static const Duration _printLoadingDuration = Duration(seconds: 1);
+  static const Duration _printCooldownDuration = Duration(seconds: 5);
+
   String? _expandedSaleId;
 
   final ScrollController _scrollController = ScrollController();
@@ -45,8 +50,10 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   final TextEditingController _saleSearchCtrl = TextEditingController();
   Timer? _saleSearchDebounce;
   Timer? _historyRefreshDebounce;
+  Timer? _historyIdleTimer;
   String _saleQuery = '';
   DateTime? _selectedDate;
+  StreamSubscription<PosState>? _posStateSub;
 
   int? _statusCodeOf(Object e) {
     try {
@@ -65,6 +72,32 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   DateTime _dateOnly(DateTime value) =>
       DateTime(value.year, value.month, value.day);
 
+  void _cancelHistoryIdleTimer() {
+    _historyIdleTimer?.cancel();
+    _historyIdleTimer = null;
+  }
+
+  void _resetHistoryIdleTimer() {
+    if (!mounted) return;
+    final posCubit = context.read<PosCubit>();
+    if (!posCubit.state.isHistoryMode) {
+      _cancelHistoryIdleTimer();
+      return;
+    }
+
+    _historyIdleTimer?.cancel();
+    _historyIdleTimer = Timer(_historyIdleTimeout, () {
+      if (!mounted) return;
+      final currentCubit = context.read<PosCubit>();
+      if (!currentCubit.state.isHistoryMode) return;
+      currentCubit.showSales();
+    });
+  }
+
+  void _trackUserActivity() {
+    _resetHistoryIdleTimer();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -77,6 +110,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     });
 
     _saleSearchCtrl.addListener(() {
+      _trackUserActivity();
       _saleSearchDebounce?.cancel();
       _saleSearchDebounce = Timer(const Duration(milliseconds: 250), () {
         if (!mounted) return;
@@ -87,7 +121,16 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       });
     });
 
+    _posStateSub = context.read<PosCubit>().stream.listen((state) {
+      if (state.isHistoryMode) {
+        _resetHistoryIdleTimer();
+      } else {
+        _cancelHistoryIdleTimer();
+      }
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _resetHistoryIdleTimer();
       final auth = context.read<AuthTokenProvider>();
       final key = auth.posKey?.trim() ?? '';
 
@@ -104,7 +147,9 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   void dispose() {
     _saleSearchDebounce?.cancel();
     _historyRefreshDebounce?.cancel();
+    _cancelHistoryIdleTimer();
     _historyChangedSub?.cancel();
+    _posStateSub?.cancel();
     _saleSearchCtrl.dispose();
     _saleSearchFocusNode.dispose();
 
@@ -159,8 +204,27 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     return 'Магазин';
   }
 
+  String _salePrintKey(SaleModel sale) {
+    final localId = sale.localId.trim();
+    if (localId.isNotEmpty) return localId;
+
+    final number = sale.number.trim();
+    if (number.isNotEmpty) return 'number:$number';
+
+    return 'sale:${sale.date.microsecondsSinceEpoch}:${sale.totalAmount}';
+  }
+
+  void _notifyPrintStateChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
 
   Future<void> _printSaleReceipt(SaleModel sale) async {
+    final saleKey = _salePrintKey(sale);
+    if (_controller.isReceiptPrintDisabled(saleKey)) return;
+
+    _controller.setReceiptPrintLoading(saleKey, true, _notifyPrintStateChanged);
+
     final auth = context.read<AuthTokenProvider>();
     final printer = PrintService();
     final pageFormat =
@@ -176,8 +240,11 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
             pageFormat: pageFormat,
             money: money,
             receiptDate: sale.date,
-            receiptNumber:
-                sale.number.trim().isEmpty ? sale.localId : sale.number.trim(),
+            receiptNumber: formatPosReceiptNumber(
+              posNumber: auth.posNumber ?? '',
+              saleNumber: sale.number,
+              fallback: sale.localId,
+            ),
             cashierName: cashierName,
             storeName: _storeName(auth),
             items: sale.items
@@ -194,11 +261,14 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                 .toList(),
             total: sale.totalAmount,
             discountSum: 0,
-            paymentMethodLabel: switch (sale.paymentMethod.trim().toLowerCase()) {
+            paymentMethodLabel: switch (
+                sale.paymentMethod.trim().toLowerCase()) {
               'cash' => 'Наличные',
               'card' => 'Безналичный',
               'credit' => 'В долг',
-              _ => sale.paymentMethod.trim().isEmpty ? '-' : sale.paymentMethod.trim(),
+              _ => sale.paymentMethod.trim().isEmpty
+                  ? '-'
+                  : sale.paymentMethod.trim(),
             },
             isCashPayment: sale.paymentMethod.trim().toLowerCase() == 'cash',
           ),
@@ -211,10 +281,22 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     } catch (e) {
       if (!mounted) return;
       _snack('Ошибка печати: $e');
+    } finally {
+      _controller.startReceiptPrintCooldownAfterLoading(
+        saleKey,
+        _printLoadingDuration,
+        _printCooldownDuration,
+        _notifyPrintStateChanged,
+      );
     }
   }
 
   Future<void> _printInvoice(SaleModel sale) async {
+    final saleKey = _salePrintKey(sale);
+    if (_controller.isInvoicePrintDisabled(saleKey)) return;
+
+    _controller.setInvoicePrintLoading(saleKey, true, _notifyPrintStateChanged);
+
     final auth = context.read<AuthTokenProvider>();
     final printer = PrintService();
     final cashierName = (auth.activeUserName ?? '').trim().isEmpty
@@ -222,14 +304,17 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         : auth.activeUserName!.trim();
     final storeName = (auth.storeName?.trim().isNotEmpty == true)
         ? auth.storeName!.trim()
-        : (auth.posName?.trim().isNotEmpty == true ? auth.posName!.trim() : 'Магазин');
+        : (auth.posName?.trim().isNotEmpty == true
+            ? auth.posName!.trim()
+            : 'Магазин');
 
     try {
       final doc = await buildInvoicePdf(
         InvoicePdfData(
           money: money,
           invoiceDate: sale.date,
-          invoiceNumber: sale.number.trim().isEmpty ? sale.localId : sale.number.trim(),
+          invoiceNumber:
+              sale.number.trim().isEmpty ? sale.localId : sale.number.trim(),
           cashierName: cashierName,
           storeName: storeName,
           items: sale.items
@@ -250,7 +335,9 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
             'cash' => 'Наличные',
             'card' => 'Безналичный',
             'credit' => 'В долг',
-            _ => sale.paymentMethod.trim().isEmpty ? '-' : sale.paymentMethod.trim(),
+            _ => sale.paymentMethod.trim().isEmpty
+                ? '-'
+                : sale.paymentMethod.trim(),
           },
         ),
       );
@@ -264,6 +351,13 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     } catch (e) {
       if (!mounted) return;
       _snack('Ошибка печати накладной: $e');
+    } finally {
+      _controller.startInvoicePrintCooldownAfterLoading(
+        saleKey,
+        _printLoadingDuration,
+        _printCooldownDuration,
+        _notifyPrintStateChanged,
+      );
     }
   }
 
@@ -599,135 +693,179 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTextStyle.merge(
-      style: const TextStyle(fontSize: _fs, color: Colors.black),
-      child: BlocProvider.value(
-        value: _cubit,
-        child: BlocBuilder<SalesHistoryCubit, SalesHistoryState>(
-          builder: (context, state) {
-            final visibleSales = filterSales(state.sales, _saleQuery, date: _selectedDate);
-            final savedCashierName =
-                context.read<AuthTokenProvider>().activeUserName ?? '';
-            final visibleTotalAmount = visibleSales.fold<num>(
-              0,
-              (sum, sale) => sum + sale.totalAmount,
-            );
-            final visibleChecksCount = visibleSales.length;
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => _trackUserActivity(),
+      onPointerSignal: (_) => _trackUserActivity(),
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(fontSize: _fs, color: Colors.black),
+        child: BlocProvider.value(
+          value: _cubit,
+          child: BlocBuilder<SalesHistoryCubit, SalesHistoryState>(
+            builder: (context, state) {
+              final visibleSales =
+                  filterSales(state.sales, _saleQuery, date: _selectedDate);
+              final savedCashierName =
+                  context.read<AuthTokenProvider>().activeUserName ?? '';
+              final visibleTotalAmount = visibleSales.fold<num>(
+                0,
+                (sum, sale) => sum + sale.totalAmount,
+              );
+              final visibleChecksCount = visibleSales.length;
 
-            return Column(
-              children: [
-                SalesSearchBar(
-                  controller: _saleSearchCtrl,
-                  focusNode: _saleSearchFocusNode,
-                  foundCount: (_saleQuery.isNotEmpty || _selectedDate != null)
-                      ? visibleSales.length
-                      : null,
-                  onSubmit: _applySaleSearch,
-                  onOpenKeyboard: _openSaleKeyboard,
-                  onClear: () {
-                    _saleSearchCtrl.clear();
-                    setState(() => _expandedSaleId = null);
-                    _applySaleSearch();
-                  },
-                  selectedDate: _selectedDate,
-                  onPickDate: _pickDate,
-                  onClearDate: () => setState(() {
-                    _selectedDate = null;
-                    _expandedSaleId = null;
-                  }),
-                ),
-                Expanded(
-                  child: state.loading
-                      ? const Center(
-                          child: CircularProgressIndicator(color: Colors.grey))
-                      : state.error != null
-                          ? ErrorBlock(
-                              message: state.error!,
-                              onRetry: () {
-                                final key = context
-                                        .read<AuthTokenProvider>()
-                                        .posKey
-                                        ?.trim() ??
-                                    '';
-                                if (key.isNotEmpty) _cubit.loadFirst(key: key);
-                              },
-                            )
-                          : ScrollConfiguration(
-                              behavior: AppScrollBehavior(),
-                              child: Scrollbar(
-                                controller: _scrollController,
-                                thumbVisibility: true,
-                                trackVisibility: true,
-                                interactive: true,
-                                thickness: 10,
-                                radius: const Radius.circular(12),
-                                child: ListView.separated(
+              return Column(
+                children: [
+                  SalesSearchBar(
+                    controller: _saleSearchCtrl,
+                    focusNode: _saleSearchFocusNode,
+                    foundCount: (_saleQuery.isNotEmpty || _selectedDate != null)
+                        ? visibleSales.length
+                        : null,
+                    onSubmit: () {
+                      _trackUserActivity();
+                      _applySaleSearch();
+                    },
+                    onOpenKeyboard: () {
+                      _trackUserActivity();
+                      _openSaleKeyboard();
+                    },
+                    onClear: () {
+                      _trackUserActivity();
+                      _saleSearchCtrl.clear();
+                      setState(() => _expandedSaleId = null);
+                      _applySaleSearch();
+                    },
+                    selectedDate: _selectedDate,
+                    onPickDate: () {
+                      _trackUserActivity();
+                      _pickDate();
+                    },
+                    onClearDate: () {
+                      _trackUserActivity();
+                      setState(() {
+                        _selectedDate = null;
+                        _expandedSaleId = null;
+                      });
+                    },
+                  ),
+                  Expanded(
+                    child: state.loading
+                        ? const Center(
+                            child:
+                                CircularProgressIndicator(color: Colors.grey))
+                        : state.error != null
+                            ? ErrorBlock(
+                                message: state.error!,
+                                onRetry: () {
+                                  _trackUserActivity();
+                                  final key = context
+                                          .read<AuthTokenProvider>()
+                                          .posKey
+                                          ?.trim() ??
+                                      '';
+                                  if (key.isNotEmpty) {
+                                    _cubit.loadFirst(key: key);
+                                  }
+                                },
+                              )
+                            : ScrollConfiguration(
+                                behavior: AppScrollBehavior(),
+                                child: Scrollbar(
                                   controller: _scrollController,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 4),
-                                  itemCount: visibleSales.length,
-                                  separatorBuilder: (_, __) =>
-                                      const SizedBox(height: 10),
-                                  itemBuilder: (_, index) {
-                                    final sale = visibleSales[index];
-                                    final expanded =
-                                        _expandedSaleId == sale.localId;
-                                    final saleId = sale.localId;
+                                  thumbVisibility: true,
+                                  trackVisibility: true,
+                                  interactive: true,
+                                  thickness: 10,
+                                  radius: const Radius.circular(12),
+                                  child: ListView.separated(
+                                    controller: _scrollController,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 4),
+                                    itemCount: visibleSales.length,
+                                    separatorBuilder: (_, __) =>
+                                        const SizedBox(height: 10),
+                                    itemBuilder: (_, index) {
+                                      final sale = visibleSales[index];
+                                      final expanded =
+                                          _expandedSaleId == sale.localId;
+                                      final saleId = sale.localId;
+                                      final printKey = _salePrintKey(sale);
 
-                                    return SaleCard(
-                                      sale: sale,
-                                      cashierName: savedCashierName,
-                                      expanded: expanded,
-                                      refundLoading:
-                                          _controller.isRefundLoading(saleId),
-                                      selectedCount: _controller
-                                          .selectedItemsCount(saleId),
-                                      selectedTotal:
-                                          _controller.selectedTotal(saleId),
-                                      onSubmitRefund: () =>
-                                          _submitRefund(context, sale),
-                                      onPrintReceipt: () =>
-                                          _printSaleReceipt(sale),
-                                      onPrintInvoice: () =>
-                                          _printInvoice(sale),
-                                      onToggle: () => setState(() {
-                                        _expandedSaleId =
-                                            expanded ? null : sale.localId;
-                                      }),
-                                      picks: _controller.salePickMap(saleId),
-                                      onToggleItem: (item, checked) =>
+                                      return SaleCard(
+                                        sale: sale,
+                                        cashierName: savedCashierName,
+                                        expanded: expanded,
+                                        refundLoading:
+                                            _controller.isRefundLoading(saleId),
+                                        receiptPrintLoading: _controller
+                                            .isReceiptPrintLoading(printKey),
+                                        receiptPrintDisabled: _controller
+                                            .isReceiptPrintDisabled(printKey),
+                                        invoicePrintLoading: _controller
+                                            .isInvoicePrintLoading(printKey),
+                                        invoicePrintDisabled: _controller
+                                            .isInvoicePrintDisabled(printKey),
+                                        selectedCount: _controller
+                                            .selectedItemsCount(saleId),
+                                        selectedTotal:
+                                            _controller.selectedTotal(saleId),
+                                        onSubmitRefund: () {
+                                          _trackUserActivity();
+                                          _submitRefund(context, sale);
+                                        },
+                                        onPrintReceipt: () {
+                                          _trackUserActivity();
+                                          _printSaleReceipt(sale);
+                                        },
+                                        onPrintInvoice: () {
+                                          _trackUserActivity();
+                                          _printInvoice(sale);
+                                        },
+                                        onToggle: () {
+                                          _trackUserActivity();
                                           setState(() {
-                                        _controller.toggleItem(
-                                          saleId: saleId,
-                                          item: item,
-                                          checked: checked,
-                                          notify: () {},
-                                        );
-                                      }),
-                                      onQtyChanged: (item, q) => setState(() {
-                                        _controller.changeQty(
-                                          saleId: saleId,
-                                          item: item,
-                                          newQty: q,
-                                          notify: () {},
-                                        );
-                                      }),
-                                      refundedQtyOf: _controller.refundedQtyOf,
-                                      availableQtyOf:
-                                          _controller.availableQtyOf,
-                                    );
-                                  },
+                                            _expandedSaleId =
+                                                expanded ? null : sale.localId;
+                                          });
+                                        },
+                                        picks: _controller.salePickMap(saleId),
+                                        onToggleItem: (item, checked) =>
+                                            setState(() {
+                                          _trackUserActivity();
+                                          _controller.toggleItem(
+                                            saleId: saleId,
+                                            item: item,
+                                            checked: checked,
+                                            notify: () {},
+                                          );
+                                        }),
+                                        onQtyChanged: (item, q) => setState(() {
+                                          _trackUserActivity();
+                                          _controller.changeQty(
+                                            saleId: saleId,
+                                            item: item,
+                                            newQty: q,
+                                            notify: () {},
+                                          );
+                                        }),
+                                        refundedQtyOf:
+                                            _controller.refundedQtyOf,
+                                        availableQtyOf:
+                                            _controller.availableQtyOf,
+                                      );
+                                    },
+                                  ),
                                 ),
                               ),
-                            ),
-                ),
-                _SalesHistoryTotalsBar(
-                  checksCount: visibleChecksCount,
-                  totalAmount: visibleTotalAmount,
-                ),
-              ],
-            );
-          },
+                  ),
+                  _SalesHistoryTotalsBar(
+                    checksCount: visibleChecksCount,
+                    totalAmount: visibleTotalAmount,
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );

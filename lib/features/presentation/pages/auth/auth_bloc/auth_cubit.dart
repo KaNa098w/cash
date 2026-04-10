@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pdf/pdf.dart';
 
@@ -29,6 +32,17 @@ class AuthCubit extends Cubit<AuthState> {
   final SessionRepository _sessionRepository;
   final AuthTokenProvider _tokenProvider;
 
+  Future<bool> _hasInternet() async {
+    if (kIsWeb) return true;
+    try {
+      final result = await InternetAddress.lookup('example.com')
+          .timeout(const Duration(milliseconds: 900));
+      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static AuthState _resolveInitialState(AuthTokenProvider tokenProvider) {
     final cached = tokenProvider.cachedProvision;
     if (cached != null) return AuthProvisioned(cached);
@@ -52,20 +66,23 @@ class AuthCubit extends Cubit<AuthState> {
           ? cached.users
           : cached.users.where((user) => user.id == activeUserId).toList();
 
-      emit(AuthProvisioned(
-        PosProvisionResponse(
-          id: cached.id,
-          name: cached.name,
-          key: cached.key,
-          accountId: cached.accountId,
-          storeId: cached.storeId,
-          storeName: cached.storeName,
-          organizationId: cached.organizationId,
-          users: lockedUsers.isNotEmpty ? lockedUsers : cached.users,
-          createdAt: cached.createdAt,
-          updatedAt: cached.updatedAt,
+      emit(
+        AuthProvisioned(
+          PosProvisionResponse(
+            id: cached.id,
+            name: cached.name,
+            number: cached.number,
+            key: cached.key,
+            accountId: cached.accountId,
+            storeId: cached.storeId,
+            storeName: cached.storeName,
+            organizationId: cached.organizationId,
+            users: lockedUsers.isNotEmpty ? lockedUsers : cached.users,
+            createdAt: cached.createdAt,
+            updatedAt: cached.updatedAt,
+          ),
         ),
-      ));
+      );
     } else {
       emit(const AuthInitial());
     }
@@ -119,11 +136,13 @@ class AuthCubit extends Cubit<AuthState> {
   }) async {
     final pin = inputPin.trim();
     if (pin.isEmpty) {
-      emit(AuthPinStep(
-        provision: provision,
-        user: user,
-        errorText: 'Введите PIN',
-      ));
+      emit(
+        AuthPinStep(
+          provision: provision,
+          user: user,
+          errorText: 'Введите PIN',
+        ),
+      );
       return;
     }
 
@@ -138,16 +157,19 @@ class AuthCubit extends Cubit<AuthState> {
     }
 
     if (!ok) {
-      emit(AuthPinStep(
-        provision: provision,
-        user: user,
-        errorText: 'Неверный PIN',
-      ));
+      emit(
+        AuthPinStep(
+          provision: provision,
+          user: user,
+          errorText: 'Неверный PIN',
+        ),
+      );
       return;
     }
 
     await _tokenProvider.setActiveUserId(user.id);
     await _tokenProvider.setActiveUserName(user.name);
+    await sl<PosSyncService>().ensureLocalSaleCounterSynced();
 
     if (_tokenProvider.hasShiftId) {
       emit(AuthUnlocked(provision: provision, user: user));
@@ -165,16 +187,25 @@ class AuthCubit extends Cubit<AuthState> {
     required PosUser user,
   }) async {
     try {
-      emit(AuthOpeningSession(
-        provision: provision,
-        user: user,
-      ));
+      emit(
+        AuthOpeningSession(
+          provision: provision,
+          user: user,
+        ),
+      );
 
       final key = _tokenProvider.posKey?.trim() ?? '';
       if (key.isEmpty) throw Exception('posKey пустой');
 
       final deviceId = _tokenProvider.deviceId?.trim() ?? '';
       if (deviceId.isEmpty) throw Exception('deviceId отсутствует');
+
+      final hasInternet = await _hasInternet();
+      if (!hasInternet) {
+        throw Exception(
+          'Для открытия сессии необходим интернет. Подключите интернет и попробуйте снова.',
+        );
+      }
 
       final sessionId = await _sessionRepository.openSession(
         key: key,
@@ -187,9 +218,11 @@ class AuthCubit extends Cubit<AuthState> {
 
       emit(const AuthSuccess());
     } on DioException catch (e) {
-      emit(AuthFailure(
-        'Не удалось открыть смену: Dio ${e.response?.statusCode}: ${e.response?.data}',
-      ));
+      emit(
+        AuthFailure(
+          'Не удалось открыть смену: Dio ${e.response?.statusCode}: ${e.response?.data}',
+        ),
+      );
       emit(AuthPinStep(provision: provision, user: user));
     } catch (e) {
       emit(AuthFailure('Не удалось открыть смену: $e'));
@@ -201,6 +234,13 @@ class AuthCubit extends Cubit<AuthState> {
     required num closingCashAmount,
   }) async {
     try {
+      final hasInternet = await _hasInternet();
+      if (!hasInternet) {
+        throw Exception(
+          'Закрыть смену без интернета нельзя. Подключите интернет и попробуйте снова.',
+        );
+      }
+
       final key = _tokenProvider.posKey?.trim() ?? '';
       if (key.isEmpty) throw Exception('posKey пустой');
 
@@ -280,7 +320,12 @@ class AuthCubit extends Cubit<AuthState> {
                 cashTotal: report.cashTotal,
                 cardTotal: report.cardTotal,
                 transferTotal: report.transferTotal,
+                creditTotal: report.creditTotal,
                 grandTotal: report.grandTotal,
+                refundsTotal: report.refundsTotal,
+                incomeTotal: report.incomeTotal,
+                expenseTotal: report.expenseTotal,
+                expectedCashAmount: report.expectedCashAmount,
                 items: report.items
                     .map(
                       (item) => ReceiptPdfItem(

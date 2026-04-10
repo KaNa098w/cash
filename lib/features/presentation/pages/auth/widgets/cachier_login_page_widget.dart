@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:leemon_app/core/models/pos_provision_response.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:leemon_app/features/presentation/widgets/show_pos_action_dialog.dart'
+    show exitAppFully;
 
 class CashierLoginStep extends StatefulWidget {
   const CashierLoginStep({
@@ -93,7 +95,8 @@ class _CashierLoginStepState extends State<CashierLoginStep> {
       _backspace();
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
       _ok();
       return KeyEventResult.handled;
     }
@@ -223,67 +226,17 @@ class _CashierLoginStepState extends State<CashierLoginStep> {
       focusNode: _keyboardFocusNode,
       onKeyEvent: _handleKeyEvent,
       child: Stack(
-      children: [
-        ColoredBox(
-          color: widget.backgroundColor,
-          child: LayoutBuilder(
-            builder: (context, c) {
-              final isWide = c.maxWidth >= 900;
+        children: [
+          ColoredBox(
+            color: widget.backgroundColor,
+            child: LayoutBuilder(
+              builder: (context, c) {
+                final isWide = c.maxWidth >= 900;
 
-              if (!isWide) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: _LoginCard(
-                      users: widget.provision.users,
-                      selected: _selected,
-                      onUserChanged: (u) {
-                        setState(() {
-                          _selected = u;
-                          _pin = '';
-                          _localError = null;
-                        });
-                        widget.onSelectUser(u);
-                      },
-                      pin: _pin,
-                      pinLength: widget.pinLength,
-                      errorText: widget.errorText ?? _localError,
-                      onDigit: _digit,
-                      onBackspace: _backspace,
-                      onCancel: _cancel,
-                      onOk: _ok,
-                    ),
-                  ),
-                );
-              }
-
-              // ✅ как на фото: широкая левая зона и карточка справа с отступом
-              const loginCardWidth = 317.0;
-              const rightCardOffset = 56.0;
-              final leftPaneWidth =
-                  (c.maxWidth - rightCardOffset - loginCardWidth)
-                      .clamp(420.0, c.maxWidth);
-
-              return Stack(
-                children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: SizedBox(
-                      width: leftPaneWidth,
-                      height: double.infinity,
-                      child: _BrandPane(
-                        brandLogo: widget.brandLogo,
-                        partnerLogo: widget.partnerLogo,
-                        siteText: widget.siteText,
-                        contactsText: widget.contactsText,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    right: rightCardOffset,
-                    top: 0,
-                    bottom: 0,
-                    child: Center(
+                if (!isWide) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
                       child: _LoginCard(
                         users: widget.provision.users,
                         selected: _selected,
@@ -304,24 +257,255 @@ class _CashierLoginStepState extends State<CashierLoginStep> {
                         onOk: _ok,
                       ),
                     ),
-                  ),
-                ],
-              );
-            },
+                  );
+                }
+
+                // ✅ как на фото: широкая левая зона и карточка справа с отступом
+                const loginCardWidth = 317.0;
+                const rightCardOffset = 56.0;
+                final leftPaneWidth =
+                    (c.maxWidth - rightCardOffset - loginCardWidth)
+                        .clamp(420.0, c.maxWidth);
+
+                return Stack(
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: SizedBox(
+                        width: leftPaneWidth,
+                        height: double.infinity,
+                        child: _BrandPane(
+                          brandLogo: widget.brandLogo,
+                          partnerLogo: widget.partnerLogo,
+                          siteText: widget.siteText,
+                          contactsText: widget.contactsText,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      right: rightCardOffset,
+                      top: 0,
+                      bottom: 0,
+                      child: Center(
+                        child: _LoginCard(
+                          users: widget.provision.users,
+                          selected: _selected,
+                          onUserChanged: (u) {
+                            setState(() {
+                              _selected = u;
+                              _pin = '';
+                              _localError = null;
+                            });
+                            widget.onSelectUser(u);
+                          },
+                          pin: _pin,
+                          pinLength: widget.pinLength,
+                          errorText: widget.errorText ?? _localError,
+                          onDigit: _digit,
+                          onBackspace: _backspace,
+                          onCancel: _cancel,
+                          onOk: _ok,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            width: 56,
+            height: 56,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _wipingData ? null : _handleSecretTap,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          const Positioned(
+            top: 24,
+            right: 28,
+            child: _ExitAppButton(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExitAppButton extends StatelessWidget {
+  const _ExitAppButton();
+
+  Future<void> _confirmExit(BuildContext context) async {
+    final shouldExit = await showDialog<bool>(
+          context: context,
+          barrierDismissible: true,
+          builder: (ctx) => Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x33000000),
+                      blurRadius: 28,
+                      offset: Offset(0, 14),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF1F2),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: const Icon(
+                            Icons.logout_rounded,
+                            color: Color(0xFFD15850),
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Выйти из приложения?',
+                                style: GoogleFonts.inter(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF111827),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Приложение будет закрыто. Все несинхронизированные операции останутся в очереди и отправятся позже.',
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.35,
+                                  color: const Color(0xFF6B7280),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 48,
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.of(ctx).pop(false),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF374151),
+                                side: const BorderSide(
+                                  color: Color(0xFFD1D5DB),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              child: Text(
+                                'Отмена',
+                                style: GoogleFonts.inter(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: SizedBox(
+                            height: 48,
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.of(ctx).pop(true),
+                              style: ElevatedButton.styleFrom(
+                                elevation: 0,
+                                backgroundColor: const Color(0xFFD15850),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              child: Text(
+                                'Выйти',
+                                style: GoogleFonts.inter(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ) ??
+        false;
+
+    if (shouldExit) {
+      exitAppFully();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _confirmExit(context),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Выход из приложения',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  height: 1,
+                  letterSpacing: 0,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 8),
+              SvgPicture.asset(
+                'assets/svg/log_out.svg',
+                width: 18,
+                height: 18,
+              ),
+            ],
           ),
         ),
-        Positioned(
-          top: 0,
-          left: 0,
-          width: 56,
-          height: 56,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _wipingData ? null : _handleSecretTap,
-            child: const SizedBox.expand(),
-          ),
-        ),
-      ],
       ),
     );
   }

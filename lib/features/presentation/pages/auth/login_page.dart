@@ -10,9 +10,11 @@ import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_state.dart';
+import 'package:leemon_app/features/presentation/pages/auth/widgets/auth_error_alert_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/auth/widgets/cachier_login_page_widget.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_state.dart';
+import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 
 import 'widgets/login_steps.dart';
 
@@ -29,6 +31,7 @@ class _LoginPageState extends State<LoginPage> {
   bool _keySubmitted = false;
   bool _syncingProducts = false;
   double _syncProgress = 0;
+  String? _syncErrorMessage;
   String _syncStage = 'Подготовка синхронизации...';
 
   @override
@@ -64,6 +67,7 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _wipeAllLocalData() async {
     await sl<PosSyncService>().clearAllLocalData();
 
+    await context.read<PosCubit>().resetAllLocalState();
     await context.read<ProductsCubit>().reset();
     await context.read<AuthCubit>().resetAll();
 
@@ -74,6 +78,7 @@ class _LoginPageState extends State<LoginPage> {
       _keySubmitted = false;
       _syncingProducts = false;
       _syncProgress = 0;
+      _syncErrorMessage = null;
       _syncStage = 'Подготовка синхронизации...';
     });
 
@@ -91,12 +96,14 @@ class _LoginPageState extends State<LoginPage> {
     setState(() {
       _syncingProducts = true;
       _syncProgress = 0.05;
+      _syncErrorMessage = null;
       _syncStage = 'Подготовка...';
     });
 
     try {
       final sync = sl<PosSyncService>();
-      final alreadyBootstrapped = !forceRefresh && await sync.isBootstrapped(key);
+      final alreadyBootstrapped =
+          !forceRefresh && await sync.isBootstrapped(key);
 
       if (alreadyBootstrapped) {
         // Fast path: load from local SQLite instantly, sync in background
@@ -106,18 +113,21 @@ class _LoginPageState extends State<LoginPage> {
         });
 
         if (!mounted) return;
-        await context.read<ProductsCubit>().loadFirstPage(key: key, forceRefresh: false);
+        await context
+            .read<ProductsCubit>()
+            .loadFirstPage(key: key, forceRefresh: false);
         sync.startBackgroundLoops(key: key, deviceId: deviceId);
         unawaited(sync.pullOnce(key: key, deviceId: deviceId));
 
         if (!mounted) return;
         setState(() {
           _syncProgress = 1.0;
+          _syncErrorMessage = null;
           _syncStage = 'Готово';
         });
         await Future.delayed(const Duration(milliseconds: 150));
         if (!mounted) return;
-        context.go('/pos');
+        _goToCartList();
       } else {
         // Full bootstrap — first run or forced
         await sync.bootstrap(
@@ -135,20 +145,24 @@ class _LoginPageState extends State<LoginPage> {
         );
 
         if (!mounted) return;
-        await context.read<ProductsCubit>().loadFirstPage(key: key, forceRefresh: false);
+        await context
+            .read<ProductsCubit>()
+            .loadFirstPage(key: key, forceRefresh: false);
         sync.startBackgroundLoops(key: key, deviceId: deviceId);
 
         if (!mounted) return;
         setState(() {
           _syncProgress = 1.0;
+          _syncErrorMessage = null;
           _syncStage = 'Синхронизация завершена';
         });
         await Future.delayed(const Duration(milliseconds: 220));
         if (!mounted) return;
-        context.go('/pos');
+        _goToCartList();
       }
     } catch (e) {
       if (!mounted) return;
+      setState(() => _syncErrorMessage = '$e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка загрузки данных: $e')),
       );
@@ -157,18 +171,24 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  void _goToCartList() {
+    context.read<PosCubit>().showSales();
+    context.go('/pos');
+  }
+
   void _ensureProductsLoadedAndGoPos() {
     final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
     if (key.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('posKey пустой, не могу загрузить товары')),
+        const SnackBar(
+            content: Text('posKey пустой, не могу загрузить товары')),
       );
       return;
     }
 
     final productsState = context.read<ProductsCubit>().state;
     if (productsState is ProductsLoaded) {
-      context.go('/pos');
+      _goToCartList();
       return;
     }
 
@@ -186,8 +206,9 @@ class _LoginPageState extends State<LoginPage> {
           BlocListener<AuthCubit, AuthState>(
             listener: (context, state) {
               if (state is AuthFailure) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(state.message)),
+                showAuthErrorAlertDialog(
+                  context,
+                  message: state.message,
                 );
               }
 
@@ -200,7 +221,9 @@ class _LoginPageState extends State<LoginPage> {
             listener: (context, state) {
               if (state is ProductsError) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Ошибка загрузки товаров: ${state.message}')),
+                  SnackBar(
+                      content:
+                          Text('Ошибка загрузки товаров: ${state.message}')),
                 );
               }
             },
@@ -215,20 +238,24 @@ class _LoginPageState extends State<LoginPage> {
               final provision = authState is AuthProvisioned
                   ? authState.provision
                   : (authState as AuthPinStep).provision;
-              final selectedUser = authState is AuthPinStep ? authState.user : null;
-              final errorText = authState is AuthPinStep ? authState.errorText : null;
+              final selectedUser =
+                  authState is AuthPinStep ? authState.user : null;
+              final errorText =
+                  authState is AuthPinStep ? authState.errorText : null;
 
               return CashierLoginStep(
                 provision: provision,
                 selectedUser: selectedUser,
                 errorText: errorText,
-                onSelectUser: (u) => context.read<AuthCubit>().selectUser(provision, u),
+                onSelectUser: (u) =>
+                    context.read<AuthCubit>().selectUser(provision, u),
                 onSubmitPin: (u, pin) => context.read<AuthCubit>().verifyPin(
                       provision: provision,
                       user: u,
                       inputPin: pin,
                     ),
-                onCancel: () => context.read<AuthCubit>().backToUsers(provision),
+                onCancel: () =>
+                    context.read<AuthCubit>().backToUsers(provision),
                 onWipeAllData: _wipeAllLocalData,
               );
             }
@@ -248,7 +275,8 @@ class _LoginPageState extends State<LoginPage> {
               ),
               child: Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 980, maxHeight: 750),
+                  constraints:
+                      const BoxConstraints(maxWidth: 980, maxHeight: 750),
                   child: Card(
                     elevation: 0,
                     color: Colors.white.withOpacity(0.9),
@@ -259,10 +287,20 @@ class _LoginPageState extends State<LoginPage> {
                       children: [
                         Expanded(
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 40, vertical: 32),
                             child: Builder(
                               builder: (context) {
-                                if (authState is AuthSuccess || authState is AuthUnlocked) {
+                                if (authState is AuthSuccess ||
+                                    authState is AuthUnlocked) {
+                                  if (_syncErrorMessage != null) {
+                                    return ProductsErrorStep(
+                                      theme: theme,
+                                      message: _syncErrorMessage!,
+                                      onRetry: _retryProductsLoad,
+                                    );
+                                  }
+
                                   if (_syncingProducts ||
                                       productsState is ProductsLoading ||
                                       productsState is ProductsInitial) {
@@ -270,8 +308,11 @@ class _LoginPageState extends State<LoginPage> {
                                       theme: theme,
                                       title: 'Подготовка кассы',
                                       subtitle: 'Выполняется синхронизация',
-                                      progress: _syncingProducts ? _syncProgress : null,
-                                      stage: _syncingProducts ? _syncStage : null,
+                                      progress: _syncingProducts
+                                          ? _syncProgress
+                                          : null,
+                                      stage:
+                                          _syncingProducts ? _syncStage : null,
                                     );
                                   }
 
@@ -294,7 +335,9 @@ class _LoginPageState extends State<LoginPage> {
                                   );
                                 }
 
-                                if (authState is AuthInitial || authState is AuthLoading) {
+                                if (authState is AuthInitial ||
+                                    authState is AuthLoading ||
+                                    authState is AuthFailure) {
                                   return KeyStep(
                                     theme: theme,
                                     controller: _keyController,
@@ -308,7 +351,17 @@ class _LoginPageState extends State<LoginPage> {
                                   );
                                 }
 
-                                return const SizedBox.shrink();
+                                return KeyStep(
+                                  theme: theme,
+                                  controller: _keyController,
+                                  focusNode: _keyFocus,
+                                  submitted: _keySubmitted,
+                                  loading: false,
+                                  onSubmit: _submitKey,
+                                  hint: provider.deviceId == null
+                                      ? null
+                                      : 'Device ID: ${provider.deviceId}',
+                                );
                               },
                             ),
                           ),

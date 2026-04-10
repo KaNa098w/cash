@@ -1,6 +1,7 @@
 class PosProvisionResponse {
   final String id;
   final String name;
+  final String number;
   final String key;
   final String accountId;
   final String storeId;
@@ -15,6 +16,7 @@ class PosProvisionResponse {
   PosProvisionResponse({
     required this.id,
     required this.name,
+    this.number = '',
     required this.key,
     required this.accountId,
     required this.storeId,
@@ -33,6 +35,7 @@ class PosProvisionResponse {
     final id = (data['id'] ?? '').toString();
 
     final name = (data['name'] ?? '').toString();
+    final number = (data['number'] ?? '').toString();
     final key = (data['key'] ?? '').toString();
     final accountId = (data['account_id'] ?? '').toString();
     final storeId = (data['store_id'] ?? '').toString();
@@ -72,6 +75,7 @@ class PosProvisionResponse {
     return PosProvisionResponse(
       id: id,
       name: name,
+      number: number,
       key: key,
       accountId: accountId,
       storeId: storeId,

@@ -23,7 +23,7 @@ class OnScreenKeyboardSheet extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: const BoxDecoration(
-            color: Color(0xFFF6F7FB),
+            color: Color(0xFFE2E6EF),
             borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
           ),
           child: Column(
@@ -69,7 +69,7 @@ class _Grabber extends StatelessWidget {
       width: 46,
       height: 5,
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.12),
+        color: Colors.black.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(99),
       ),
     );
@@ -91,11 +91,38 @@ class _Keyboard extends StatefulWidget {
 
 class _KeyboardState extends State<_Keyboard> {
   bool _shift = false;
-  bool _isRussian = true;
+  _KeyboardLanguage _language = _KeyboardLanguage.ru;
 
   static const _digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
-  static const _ruRow1 = ['й', 'ц', 'у', 'к', 'е', 'н', 'г', 'ш', 'щ', 'з', 'х', 'ъ'];
-  static const _ruRow2 = ['ф', 'ы', 'в', 'а', 'п', 'р', 'о', 'л', 'д', 'ж', 'э'];
+  static const _kzTopRow = ['ә', 'і', 'ң', 'ғ', 'ү', 'ұ', 'қ', 'ө', 'һ'];
+
+  static const _ruRow1 = [
+    'й',
+    'ц',
+    'у',
+    'к',
+    'е',
+    'н',
+    'г',
+    'ш',
+    'щ',
+    'з',
+    'х',
+    'ъ',
+  ];
+  static const _ruRow2 = [
+    'ф',
+    'ы',
+    'в',
+    'а',
+    'п',
+    'р',
+    'о',
+    'л',
+    'д',
+    'ж',
+    'э',
+  ];
   static const _ruRow3 = ['я', 'ч', 'с', 'м', 'и', 'т', 'ь', 'б', 'ю'];
 
   static const _enRow1 = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'];
@@ -104,9 +131,39 @@ class _KeyboardState extends State<_Keyboard> {
 
   TextEditingController get _ctrl => widget.controllerGetter();
 
-  List<String> get _lettersRow1 => _isRussian ? _ruRow1 : _enRow1;
-  List<String> get _lettersRow2 => _isRussian ? _ruRow2 : _enRow2;
-  List<String> get _lettersRow3 => _isRussian ? _ruRow3 : _enRow3;
+  List<String> get _lettersRow1 => switch (_language) {
+        _KeyboardLanguage.ru => _ruRow1,
+        _KeyboardLanguage.kz => _ruRow1,
+        _KeyboardLanguage.en => _enRow1,
+      };
+
+  List<String> get _lettersRow2 => switch (_language) {
+        _KeyboardLanguage.ru => _ruRow2,
+        _KeyboardLanguage.kz => _ruRow2,
+        _KeyboardLanguage.en => _enRow2,
+      };
+
+  List<String> get _lettersRow3 => switch (_language) {
+        _KeyboardLanguage.ru => _ruRow3,
+        _KeyboardLanguage.kz => _ruRow3,
+        _KeyboardLanguage.en => _enRow3,
+      };
+
+  String get _languageLabel => switch (_language) {
+        _KeyboardLanguage.ru => 'RU',
+        _KeyboardLanguage.kz => 'KZ',
+        _KeyboardLanguage.en => 'EN',
+      };
+
+  void _nextLanguage() {
+    setState(() {
+      _language = switch (_language) {
+        _KeyboardLanguage.ru => _KeyboardLanguage.kz,
+        _KeyboardLanguage.kz => _KeyboardLanguage.en,
+        _KeyboardLanguage.en => _KeyboardLanguage.ru,
+      };
+    });
+  }
 
   void _insert(String text) {
     final ctrl = _ctrl;
@@ -214,6 +271,8 @@ class _KeyboardState extends State<_Keyboard> {
   Widget build(BuildContext context) {
     return Column(
       children: [
+        if (_language == _KeyboardLanguage.kz)
+          Row(children: _kzTopRow.map((k) => _textKey(k)).toList()),
         Row(
           children: [
             ..._digits.map((k) => _textKey(k)),
@@ -231,7 +290,7 @@ class _KeyboardState extends State<_Keyboard> {
               onTap: () => setState(() => _shift = !_shift),
               flex: 2,
             ),
-            ..._lettersRow2.map((k) => _textKey(k)).toList(),
+            ..._lettersRow2.map((k) => _textKey(k)),
             _actionKey(
               const Icon(Icons.backspace_outlined, color: Colors.white),
               onTap: _backspace,
@@ -244,13 +303,13 @@ class _KeyboardState extends State<_Keyboard> {
           children: [
             _actionKey(
               Text(
-                _isRussian ? 'RU' : 'EN',
+                _languageLabel,
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              onTap: () => setState(() => _isRussian = !_isRussian),
+              onTap: _nextLanguage,
               flex: 2,
               backgroundColor: const Color(0xFF2563EB),
             ),
@@ -268,3 +327,5 @@ class _KeyboardState extends State<_Keyboard> {
     );
   }
 }
+
+enum _KeyboardLanguage { ru, kz, en }

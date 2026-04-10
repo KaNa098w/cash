@@ -9,10 +9,12 @@ import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_state.dart';
+import 'package:leemon_app/features/presentation/pages/auth/widgets/auth_error_alert_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/auth/widgets/cachier_login_page_widget.dart';
 import 'package:leemon_app/features/presentation/pages/auth/widgets/login_steps.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_state.dart';
+import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 
 class CashiersPage extends StatefulWidget {
   const CashiersPage({super.key});
@@ -25,6 +27,7 @@ class _CashiersPageState extends State<CashiersPage> {
   Future<void> _wipeAllLocalData() async {
     await sl<PosSyncService>().clearAllLocalData();
 
+    await context.read<PosCubit>().resetAllLocalState();
     await context.read<ProductsCubit>().reset();
     await context.read<AuthCubit>().resetAll();
 
@@ -35,6 +38,7 @@ class _CashiersPageState extends State<CashiersPage> {
   void _goToPosIfReady() {
     final productsState = context.read<ProductsCubit>().state;
     if (productsState is ProductsLoaded) {
+      context.read<PosCubit>().showSales();
       context.go('/pos');
       return;
     }
@@ -57,8 +61,9 @@ class _CashiersPageState extends State<CashiersPage> {
             curr is AuthInitial,
         listener: (context, state) {
           if (state is AuthFailure) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(state.message)),
+            showAuthErrorAlertDialog(
+              context,
+              message: state.message,
             );
             return;
           }
@@ -97,8 +102,7 @@ class _CashiersPageState extends State<CashiersPage> {
             );
           }
 
-          final selectedUser =
-              authState is AuthPinStep ? authState.user : null;
+          final selectedUser = authState is AuthPinStep ? authState.user : null;
           final errorText =
               authState is AuthPinStep ? authState.errorText : null;
 
@@ -106,7 +110,8 @@ class _CashiersPageState extends State<CashiersPage> {
             provision: provision,
             selectedUser: selectedUser,
             errorText: errorText,
-            onSelectUser: (u) => context.read<AuthCubit>().selectUser(provision, u),
+            onSelectUser: (u) =>
+                context.read<AuthCubit>().selectUser(provision, u),
             onSubmitPin: (u, pin) => context.read<AuthCubit>().verifyPin(
                   provision: provision,
                   user: u,
