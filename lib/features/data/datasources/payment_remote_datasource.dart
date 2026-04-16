@@ -9,6 +9,7 @@ class PaymentsRemoteDataSource {
     String? expenseTypeId,
     required bool isExpense,
     required num amount,
+    String? comment,
     String? createdById,
   }) async {
     final safeKey = key.trim();
@@ -17,6 +18,7 @@ class PaymentsRemoteDataSource {
       'expense_type_id': expenseTypeId,
       'is_expense': isExpense,
       'amount': amount,
+      'comment': comment,
       'created_by_id': createdById,
     }..removeWhere((_, v) => v == null);
 

@@ -64,6 +64,31 @@ enum QueueSendResult {
   manual,
 }
 
+enum QueuePushStage {
+  sending,
+  success,
+  queued,
+  error,
+}
+
+class QueuePushEvent {
+  const QueuePushEvent({
+    required this.operationId,
+    required this.type,
+    required this.clientId,
+    required this.title,
+    required this.stage,
+    this.message,
+  });
+
+  final String operationId;
+  final OutboxOperationType type;
+  final String clientId;
+  final String title;
+  final QueuePushStage stage;
+  final String? message;
+}
+
 class QueueOperationResult {
   const QueueOperationResult({
     required this.result,

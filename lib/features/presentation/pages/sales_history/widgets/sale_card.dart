@@ -59,6 +59,15 @@ class SaleCard extends StatelessWidget {
 
   static const _radius = 22.0;
 
+  bool get hasRefund {
+    final refund = sale.refund;
+    if (refund == null) return false;
+
+    return refund.id.trim().isNotEmpty ||
+        (refund.totalAmount ?? 0) > 0 ||
+        refund.items.isNotEmpty;
+  }
+
   String get paymentLabel {
     switch (sale.paymentMethod.trim().toLowerCase()) {
       case 'cash':
@@ -120,7 +129,7 @@ class SaleCard extends StatelessWidget {
         final actionWidth = (constraints.maxWidth - 36).clamp(180.0, 520.0);
         final saleNumberWidth = desktopNarrow ? 220.0 : 280.0;
         final dateWidth = desktopNarrow ? 220.0 : 400.0;
-        final statusWidth = desktopNarrow ? 130.0 : 180.0;
+        final statusWidth = desktopNarrow ? 190.0 : 250.0;
         final cashierWidth = desktopNarrow ? 170.0 : 250.0;
         final amountWidth = desktopNarrow ? 110.0 : 140.0;
         final refundBtnWidth = desktopNarrow ? 180.0 : 220.0;
@@ -171,10 +180,20 @@ class SaleCard extends StatelessWidget {
                           const SizedBox(height: 10),
                           Row(
                             children: [
-                              StatusChip(
-                                  label: paymentLabel,
-                                  bg: paymentBg,
-                                  fg: paymentFg),
+                              Flexible(
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    StatusChip(
+                                        label: paymentLabel,
+                                        bg: paymentBg,
+                                        fg: paymentFg),
+                                    if (hasRefund) const _RefundStatusBadge(),
+                                  ],
+                                ),
+                              ),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
@@ -224,10 +243,18 @@ class SaleCard extends StatelessWidget {
                             width: statusWidth,
                             child: Align(
                               alignment: Alignment.centerLeft,
-                              child: StatusChip(
-                                  label: paymentLabel,
-                                  bg: paymentBg,
-                                  fg: paymentFg),
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  StatusChip(
+                                      label: paymentLabel,
+                                      bg: paymentBg,
+                                      fg: paymentFg),
+                                  if (hasRefund) const _RefundStatusBadge(),
+                                ],
+                              ),
                             ),
                           ),
                           SizedBox(
@@ -359,6 +386,22 @@ class SaleCard extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _RefundStatusBadge extends StatelessWidget {
+  const _RefundStatusBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Tooltip(
+      message: 'Есть возврат',
+      child: Icon(
+        Icons.assignment_return_rounded,
+        size: 18,
+        color: Color(0xFF16A34A),
+      ),
     );
   }
 }

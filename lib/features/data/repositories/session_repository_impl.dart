@@ -1,10 +1,12 @@
+import 'package:leemon_app/features/data/datasources/session_remote_datasource.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/domain/repositories/session_repository.dart';
 
 class SessionRepositoryImpl implements SessionRepository {
-  SessionRepositoryImpl(Object _, this._syncService);
+  SessionRepositoryImpl(this._remoteDataSource, this._syncService);
 
+  final SessionRemoteDataSource _remoteDataSource;
   final PosSyncService _syncService;
 
   @override
@@ -17,19 +19,7 @@ class SessionRepositoryImpl implements SessionRepository {
       key: key,
       deviceId: deviceId,
       userId: userId,
-      openedAt: DateTime.now(),
     );
-
-    if (result.result == QueueSendResult.manual) {
-      throw Exception(result.errorMessage ?? 'Не удалось открыть смену');
-    }
-
-    if (result.result != QueueSendResult.sent) {
-      throw Exception(
-        'Для открытия сессии необходим интернет. Подключите интернет и попробуйте снова.',
-      );
-    }
-
     return result.clientId;
   }
 
@@ -41,19 +31,24 @@ class SessionRepositoryImpl implements SessionRepository {
     required String userId,
     required num closingCashAmount,
   }) async {
-    final result = await _syncService.closeSession(
+    final closedAt = DateTime.now();
+    final resolvedSessionId =
+        await _syncService.resolveServerSessionId(sessionId);
+
+    await _remoteDataSource.closeSession(
       key: key,
-      deviceId: deviceId,
-      clientSessionId: sessionId,
+      sessionId: resolvedSessionId,
       userId: userId,
+      deviceId: deviceId,
       closingCashAmount: closingCashAmount,
-      closedAt: DateTime.now(),
     );
 
-    if (result.result == QueueSendResult.manual) {
-      throw Exception(result.errorMessage ?? 'Не удалось закрыть смену');
-    }
+    await _syncService.registerClosedSession(
+      sessionId: resolvedSessionId,
+      closingCashAmount: closingCashAmount.toDouble(),
+      closedAt: closedAt,
+    );
 
-    return result.result;
+    return QueueSendResult.sent;
   }
 }

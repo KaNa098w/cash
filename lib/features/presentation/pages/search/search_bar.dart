@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
@@ -475,27 +475,6 @@ class _SearchBarState extends State<SearchBar> {
     }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
-    final logicalKey = event.logicalKey;
-    if (_chooserEntry != null && _chooserProducts.isNotEmpty) {
-      if (logicalKey == LogicalKeyboardKey.arrowDown) {
-        _moveChooserSelection(1);
-        return KeyEventResult.handled;
-      }
-
-      if (logicalKey == LogicalKeyboardKey.arrowUp) {
-        _moveChooserSelection(-1);
-        return KeyEventResult.handled;
-      }
-
-      if (logicalKey == LogicalKeyboardKey.enter ||
-          logicalKey == LogicalKeyboardKey.numpadEnter) {
-        _resetHardwareScanState();
-        final product = _chooserProducts[_chooserSelectedIndex];
-        unawaited(_selectChooserProduct(product));
-        return KeyEventResult.handled;
-      }
-    }
-
     final digit = _digitFromPhysicalKey(event.physicalKey);
     if (digit != null) {
       final now = DateTime.now();
@@ -525,6 +504,11 @@ class _SearchBarState extends State<SearchBar> {
 
     if (event.physicalKey == PhysicalKeyboardKey.enter ||
         event.physicalKey == PhysicalKeyboardKey.numpadEnter) {
+      if (_chooserEntry != null && _chooserProducts.isNotEmpty) {
+        final product = _chooserProducts[_chooserSelectedIndex];
+        unawaited(_selectChooserProduct(product));
+        return KeyEventResult.handled;
+      }
       _resetHardwareScanState();
       _doSearch();
       return KeyEventResult.handled;
@@ -734,7 +718,17 @@ class _SearchBarState extends State<SearchBar> {
                                 _chooserEntry?.markNeedsBuild();
                               },
                               child: Container(
-                                color: Colors.transparent,
+                                decoration: BoxDecoration(
+                                  color: selected
+                                      ? const Color(0xFFE8F0FE)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: selected
+                                        ? const Color(0xFF2563EB)
+                                        : Colors.transparent,
+                                  ),
+                                ),
                                 child: ListTile(
                                   dense: true,
                                   shape: RoundedRectangleBorder(
@@ -843,56 +837,80 @@ class _SearchBarState extends State<SearchBar> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Focus(
-                  onKeyEvent: _handleSearchKeyEvent,
-                  child: TextField(
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    autofocus: searchCanRequestFocus,
-                    canRequestFocus: searchCanRequestFocus,
-                    readOnly: _disableSearchFieldForIpad || isHistoryMode,
-                    showCursor: searchCanRequestFocus,
-                    enableInteractiveSelection:
-                        !_disableSearchFieldForIpad && !isHistoryMode,
-                    onTap: _restoreSearchFocus,
-                    onTapOutside: (_) => _restoreSearchFocus(),
-                    onSubmitted: (_) => _doSearch(),
-                    textInputAction: TextInputAction.search,
-                    style: const TextStyle(fontSize: 18),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        vertical: 12,
-                        horizontal: 0,
-                      ),
-                      hintText: 'Введите наименование товара или код товара',
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      suffixIconConstraints: const BoxConstraints(
-                        minHeight: 42,
-                        minWidth: 42,
-                      ),
-                      suffixIcon: SizedBox(
-                        // width: 80,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // IconButton(
-                            //   tooltip: 'Экранная клавиатура',
-                            //   icon: const Icon(Icons.keyboard),
-                            //   onPressed: _openKeyboard,
-                            // ),
-                            IconButton(
-                              tooltip: 'Найти',
-                              icon: SvgPicture.asset(
-                                'assets/svg/search.svg',
-                                width: 20,
-                                height: 20,
+                child: CallbackShortcuts(
+                  bindings: <ShortcutActivator, VoidCallback>{
+                    const SingleActivator(LogicalKeyboardKey.arrowDown): () {
+                      if (_chooserEntry != null && _chooserProducts.isNotEmpty) {
+                        _moveChooserSelection(1);
+                      }
+                    },
+                    const SingleActivator(LogicalKeyboardKey.arrowUp): () {
+                      if (_chooserEntry != null && _chooserProducts.isNotEmpty) {
+                        _moveChooserSelection(-1);
+                      }
+                    },
+                    const SingleActivator(LogicalKeyboardKey.enter): () {
+                      if (_chooserEntry != null && _chooserProducts.isNotEmpty) {
+                        final product = _chooserProducts[_chooserSelectedIndex];
+                        unawaited(_selectChooserProduct(product));
+                      } else {
+                        _doSearch();
+                      }
+                    },
+                    const SingleActivator(LogicalKeyboardKey.numpadEnter): () {
+                      if (_chooserEntry != null && _chooserProducts.isNotEmpty) {
+                        final product = _chooserProducts[_chooserSelectedIndex];
+                        unawaited(_selectChooserProduct(product));
+                      } else {
+                        _doSearch();
+                      }
+                    },
+                  },
+                  child: Focus(
+                    onKeyEvent: _handleSearchKeyEvent,
+                    child: TextField(
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      autofocus: searchCanRequestFocus,
+                      canRequestFocus: searchCanRequestFocus,
+                      readOnly: _disableSearchFieldForIpad || isHistoryMode,
+                      showCursor: searchCanRequestFocus,
+                      enableInteractiveSelection:
+                          !_disableSearchFieldForIpad && !isHistoryMode,
+                      onTap: _restoreSearchFocus,
+                      onTapOutside: (_) => _restoreSearchFocus(),
+                      onSubmitted: (_) => _doSearch(),
+                      textInputAction: TextInputAction.search,
+                      style: const TextStyle(fontSize: 18),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 0,
+                        ),
+                        hintText: 'Введите наименование товара или код товара',
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        suffixIconConstraints: const BoxConstraints(
+                          minHeight: 42,
+                          minWidth: 42,
+                        ),
+                        suffixIcon: SizedBox(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: 'Найти',
+                                icon: SvgPicture.asset(
+                                  'assets/svg/search.svg',
+                                  width: 20,
+                                  height: 20,
+                                ),
+                                onPressed: _doSearch,
                               ),
-                              onPressed: _doSearch,
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),

@@ -200,17 +200,13 @@ class AuthCubit extends Cubit<AuthState> {
       final deviceId = _tokenProvider.deviceId?.trim() ?? '';
       if (deviceId.isEmpty) throw Exception('deviceId отсутствует');
 
-      final hasInternet = await _hasInternet();
-      if (!hasInternet) {
-        throw Exception(
-          'Для открытия сессии необходим интернет. Подключите интернет и попробуйте снова.',
-        );
-      }
-
       final sessionId = await _sessionRepository.openSession(
         key: key,
         deviceId: deviceId,
         userId: user.id,
+      );
+      debugPrint(
+        '[AuthCubit] openSession completed: returned sessionId=$sessionId for userId=${user.id}',
       );
 
       await _tokenProvider.setShiftId(sessionId);

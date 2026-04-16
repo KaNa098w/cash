@@ -302,10 +302,12 @@ class AuthTokenProvider extends ChangeNotifier {
     if (v.isEmpty) return;
 
     _shiftId = v;
+    debugPrint('[AuthTokenProvider] saving shiftId=$v');
     notifyListeners();
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kShiftId, v);
+    debugPrint('[AuthTokenProvider] shiftId saved to SharedPreferences key=$_kShiftId');
   }
 
   Future<void> clearShiftId() async {

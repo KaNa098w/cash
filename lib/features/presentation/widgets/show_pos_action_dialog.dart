@@ -184,11 +184,11 @@ Future<void> showPosActionsDialog(BuildContext context) {
 }
 
 Future<void> _showServicesQueueDialog(BuildContext context) async {
-  final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
-  final deviceId = context.read<AuthTokenProvider>().deviceId?.trim() ?? '';
   final sync = sl<PosSyncService>();
 
   List<QueueListItem> queueItems = await sync.loadQueueItems();
+  final selectedOperationIds = <String>{};
+  final syncEvents = <QueuePushEvent>[];
   var syncing = false;
 
   if (!context.mounted) return;
@@ -197,22 +197,164 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
     builder: (ctx) {
       return StatefulBuilder(
         builder: (context, setState) {
-          Future<void> syncNow() async {
-            if (syncing) return;
-            if (key.isEmpty || deviceId.isEmpty) return;
-            setState(() => syncing = true);
-            await sync.pushPending(key: key, deviceId: deviceId, limit: 20);
+          List<QueueListItem> eligibleItems() {
+            return queueItems
+                .where(
+                  (item) =>
+                      item.status == OutboxOperationStatus.pending ||
+                      item.status == OutboxOperationStatus.manual,
+                )
+                .toList(growable: false);
+          }
+
+          Future<void> reloadQueue() async {
             final next = await sync.loadQueueItems();
+            if (!context.mounted) return;
             setState(() {
               queueItems = next;
+              selectedOperationIds
+                  .removeWhere((id) => !next.any((item) => item.id == id));
+            });
+          }
+
+          Future<void> syncNow({bool selectedOnly = false}) async {
+            if (syncing) return;
+            final auth = context.read<AuthTokenProvider>();
+            final key = auth.posKey?.trim() ?? '';
+            final deviceId = auth.deviceId?.trim() ?? '';
+            if (key.isEmpty || deviceId.isEmpty) return;
+            final targetItems = (selectedOnly || selectedOperationIds.isNotEmpty)
+                ? eligibleItems()
+                    .where((item) => selectedOperationIds.contains(item.id))
+                    .toList(growable: false)
+                : eligibleItems();
+            if (targetItems.isEmpty) return;
+            setState(() => syncing = true);
+            await sync.rebindQueuedOperationsToCurrentContext(
+              deviceId: deviceId,
+              posId: auth.posId?.trim(),
+              storeId: auth.storeId?.trim(),
+              accountId: auth.accountId?.trim(),
+              userId: auth.activeUserId?.trim(),
+              sessionId: auth.shiftId?.trim(),
+            );
+            setState(() {
+              syncEvents.clear();
+            });
+            for (final item in targetItems) {
+              if (!context.mounted) break;
+              setState(() {
+                syncEvents.add(
+                  QueuePushEvent(
+                    operationId: item.id,
+                    type: item.type,
+                    clientId: item.clientId,
+                    title: item.title ?? item.type.label,
+                    stage: QueuePushStage.sending,
+                    message: 'Отправляется...',
+                  ),
+                );
+              });
+              final result = await sync.sendQueueOperationById(
+                key: key,
+                deviceId: deviceId,
+                operationId: item.id,
+              );
+              if (!context.mounted) break;
+              setState(() {
+                syncEvents.add(
+                  QueuePushEvent(
+                    operationId: item.id,
+                    type: item.type,
+                    clientId: item.clientId,
+                    title: item.title ?? item.type.label,
+                    stage: switch (result?.result) {
+                      QueueSendResult.sent => QueuePushStage.success,
+                      QueueSendResult.queued => QueuePushStage.queued,
+                      QueueSendResult.manual => QueuePushStage.error,
+                      null => QueuePushStage.error,
+                    },
+                    message: switch (result?.result) {
+                      QueueSendResult.sent => 'Успешно отправлено',
+                      QueueSendResult.queued =>
+                        result?.errorMessage?.trim().isNotEmpty == true
+                            ? result!.errorMessage!.trim()
+                            : 'Не отправлено, останется в очереди',
+                      QueueSendResult.manual =>
+                        result?.errorMessage?.trim().isNotEmpty == true
+                            ? result!.errorMessage!.trim()
+                            : 'Ошибка отправки',
+                      null => 'Не удалось отправить запись',
+                    },
+                  ),
+                );
+              });
+            }
+            await reloadQueue();
+            if (!context.mounted) return;
+            setState(() {
               syncing = false;
             });
+          }
+
+          Future<void> deleteSelected() async {
+            final targets = selectedOperationIds.toList(growable: false);
+            if (targets.isEmpty || syncing) return;
+            final confirmed = await showDialog<bool>(
+              context: context,
+              builder: (dialogContext) {
+                return AlertDialog(
+                  title: const Text('Удалить сервисы'),
+                  content: Text(
+                    'Удалить выбранные сервисы из очереди: ${targets.length}?',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                      child: const Text('Отмена'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(true),
+                      child: const Text('Удалить'),
+                    ),
+                  ],
+                );
+              },
+            );
+            if (confirmed != true) return;
+            for (final id in targets) {
+              await sync.deleteQueueOperation(id);
+            }
+            await reloadQueue();
+          }
+
+          Future<void> showCashDeskData() async {
+            final auth = context.read<AuthTokenProvider>();
+            await _showCashDeskContextDialog(
+              context,
+              values: <MapEntry<String, String>>[
+                MapEntry('posKey', auth.posKey?.trim() ?? ''),
+                MapEntry('deviceId', auth.deviceId?.trim() ?? ''),
+                MapEntry('posId', auth.posId?.trim() ?? ''),
+                MapEntry('posName', auth.posName?.trim() ?? ''),
+                MapEntry('posNumber', auth.posNumber?.trim() ?? ''),
+                MapEntry('storeId', auth.storeId?.trim() ?? ''),
+                MapEntry('storeName', auth.storeName?.trim() ?? ''),
+                MapEntry('accountId', auth.accountId?.trim() ?? ''),
+                MapEntry('organizationId', auth.organizationId?.trim() ?? ''),
+                MapEntry('userId', auth.activeUserId?.trim() ?? ''),
+                MapEntry('userName', auth.activeUserName?.trim() ?? ''),
+                MapEntry('sessionId', auth.shiftId?.trim() ?? ''),
+              ],
+            );
           }
 
           Widget queueTile({
             required String title,
             required String subtitle,
             required Color dot,
+            required bool selected,
+            required ValueChanged<bool> onSelectedChanged,
             VoidCallback? onTap,
           }) {
             return Material(
@@ -259,8 +401,12 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                           ],
                         ),
                       ),
+                      Checkbox(
+                        value: selected,
+                        onChanged: (value) =>
+                            onSelectedChanged(value ?? false),
+                      ),
                       if (onTap != null) ...[
-                        const SizedBox(width: 8),
                         const Icon(
                           Icons.chevron_right_rounded,
                           color: Color(0xFF94A3B8),
@@ -276,7 +422,16 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
           Future<void> openQueueDetails(QueueListItem item) async {
             final details = await sync.loadQueueItemDetails(item.id);
             if (!context.mounted || details == null) return;
-            await _showQueueItemDetailsDialog(context, details);
+            final changed = await _showEditableQueueItemDetailsDialog(
+              context,
+              details,
+            );
+            if (!context.mounted || changed != true) return;
+            final next = await sync.loadQueueItems();
+            if (!context.mounted) return;
+            setState(() {
+              queueItems = next;
+            });
           }
 
           return Dialog(
@@ -306,19 +461,131 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                         color: Color(0xFF64748B),
                       ),
                     ),
+                    if (syncEvents.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Статус отправки',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 150),
+                              child: ListView.separated(
+                                shrinkWrap: true,
+                                itemCount: syncEvents.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 6),
+                                itemBuilder: (context, index) {
+                                  final event = syncEvents[index];
+                                  final color = switch (event.stage) {
+                                    QueuePushStage.sending =>
+                                      const Color(0xFF2563EB),
+                                    QueuePushStage.success =>
+                                      const Color(0xFF16A34A),
+                                    QueuePushStage.queued =>
+                                      const Color(0xFFF59E0B),
+                                    QueuePushStage.error =>
+                                      const Color(0xFFDC2626),
+                                  };
+                                  final icon = switch (event.stage) {
+                                    QueuePushStage.sending =>
+                                      Icons.sync_rounded,
+                                    QueuePushStage.success =>
+                                      Icons.check_circle_rounded,
+                                    QueuePushStage.queued =>
+                                      Icons.schedule_rounded,
+                                    QueuePushStage.error =>
+                                      Icons.error_rounded,
+                                  };
+
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: const Color(0xFFE2E8F0),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(icon, size: 18, color: color),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                event.title,
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: Color(0xFF0F172A),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                event.message ?? '-',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: color,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: syncing ? null : syncNow,
+                            onPressed: showCashDeskData,
+                            icon: const Icon(Icons.badge_outlined),
+                            label: const Text('Данные кассы'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: syncing ? null : () => syncNow(),
                             icon: syncing
                                 ? const SizedBox(
                                     width: 14,
                                     height: 14,
                                     child: CircularProgressIndicator(
                                         strokeWidth: 2),
-                                  )
+                              )
                                 : const Icon(Icons.sync_rounded),
                             label: const Text('Отправить сейчас'),
                           ),
@@ -328,6 +595,52 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                           child: FilledButton(
                             onPressed: () => Navigator.of(ctx).pop(),
                             child: const Text('Закрыть'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        TextButton(
+                          onPressed: eligibleItems().isEmpty
+                              ? null
+                              : () {
+                                  setState(() {
+                                    if (selectedOperationIds.length ==
+                                        eligibleItems().length) {
+                                      selectedOperationIds.clear();
+                                    } else {
+                                      selectedOperationIds
+                                        ..clear()
+                                        ..addAll(
+                                          eligibleItems().map((item) => item.id),
+                                        );
+                                    }
+                                  });
+                                },
+                          child: Text(
+                            selectedOperationIds.isNotEmpty &&
+                                    selectedOperationIds.length ==
+                                        eligibleItems().length
+                                ? 'Снять выбор'
+                                : 'Выбрать все',
+                          ),
+                        ),
+                        const Spacer(),
+                        if (selectedOperationIds.isNotEmpty) ...[
+                          OutlinedButton.icon(
+                            onPressed: syncing ? null : deleteSelected,
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            label: const Text('Удалить выбранные'),
+                          ),
+                          const SizedBox(width: 10),
+                        ],
+                        Text(
+                          'Выбрано: ${selectedOperationIds.length}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF64748B),
                           ),
                         ),
                       ],
@@ -346,10 +659,18 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                               dot: item.status == OutboxOperationStatus.manual
                                   ? const Color(0xFFF59E0B)
                                   : const Color(0xFFDC2626),
-                              onTap: item.errorCode != null ||
-                                      item.errorMessage != null
-                                  ? () => openQueueDetails(item)
-                                  : null,
+                              selected:
+                                  selectedOperationIds.contains(item.id),
+                              onSelectedChanged: (selected) {
+                                setState(() {
+                                  if (selected) {
+                                    selectedOperationIds.add(item.id);
+                                  } else {
+                                    selectedOperationIds.remove(item.id);
+                                  }
+                                });
+                              },
+                              onTap: () => openQueueDetails(item),
                             ),
                             const SizedBox(height: 8),
                           ],
@@ -1258,6 +1579,7 @@ Future<void> openWindowsPrintersSettings(BuildContext context) async {
   }
 }
 
+// ignore: unused_element
 Future<void> _showQueueItemDetailsDialog(
   BuildContext context,
   QueueItemDetails details,
@@ -1362,6 +1684,439 @@ Future<void> _showQueueItemDetailsDialog(
                 const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerRight,
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Закрыть'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+Future<bool?> _showEditableQueueItemDetailsDialog(
+  BuildContext context,
+  QueueItemDetails details,
+) {
+  final sync = sl<PosSyncService>();
+  var currentDetails = details;
+  var storedError = details.lastErrorDetails ?? const <String, dynamic>{};
+  var requestPayload = _asMap(storedError['request_payload']) ??
+      Map<String, dynamic>.from(details.payload);
+  var errorDetails =
+      _asMap(storedError['error_details']) ?? const <String, dynamic>{};
+  var requestMeta = _asMap(errorDetails['request']) ?? const <String, dynamic>{};
+  var responseMeta =
+      _asMap(errorDetails['response']) ?? const <String, dynamic>{};
+  var items = _asListOfMaps(requestPayload['items']);
+  final localNumberController = TextEditingController(
+    text: (requestPayload['local_number'] ?? '').toString(),
+  );
+  var savingNumber = false;
+  var sendingSelected = false;
+  var changed = false;
+  String? actionMessage;
+
+  Future<void> reloadDetails(StateSetter setState) async {
+    final next = await sync.loadQueueItemDetails(currentDetails.id);
+    if (next == null) return;
+    setState(() {
+      currentDetails = next;
+      storedError = next.lastErrorDetails ?? const <String, dynamic>{};
+      requestPayload = _asMap(storedError['request_payload']) ??
+          Map<String, dynamic>.from(next.payload);
+      errorDetails =
+          _asMap(storedError['error_details']) ?? const <String, dynamic>{};
+      requestMeta =
+          _asMap(errorDetails['request']) ?? const <String, dynamic>{};
+      responseMeta =
+          _asMap(errorDetails['response']) ?? const <String, dynamic>{};
+      items = _asListOfMaps(requestPayload['items']);
+      localNumberController.text = (requestPayload['local_number'] ?? '')
+          .toString();
+    });
+  }
+
+  return showDialog<bool>(
+    context: context,
+    builder: (ctx) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          Future<void> saveReceiptNumber() async {
+            if (savingNumber || currentDetails.type != OutboxOperationType.sale) {
+              return;
+            }
+            final parsed = int.tryParse(localNumberController.text.trim());
+            if (parsed == null || parsed <= 0) {
+              setState(() {
+                actionMessage = 'Номер чека должен быть положительным числом';
+              });
+              return;
+            }
+
+            setState(() {
+              savingNumber = true;
+              actionMessage = null;
+            });
+
+            final nextPayload = Map<String, dynamic>.from(currentDetails.payload);
+            nextPayload['local_number'] = parsed;
+            nextPayload['number'] = parsed.toString();
+
+            await sync.updateQueueOperationPayload(
+              operationId: currentDetails.id,
+              payload: nextPayload,
+            );
+            await reloadDetails(setState);
+
+            setState(() {
+              savingNumber = false;
+              changed = true;
+              actionMessage = 'Номер чека сохранён';
+            });
+          }
+
+          Future<void> sendSelectedService() async {
+            if (sendingSelected) return;
+
+            final auth = context.read<AuthTokenProvider>();
+            final key = auth.posKey?.trim() ?? '';
+            final deviceId = auth.deviceId?.trim() ?? '';
+            if (key.isEmpty || deviceId.isEmpty) {
+              setState(() {
+                actionMessage = 'Не удалось определить данные кассы для отправки';
+              });
+              return;
+            }
+
+            setState(() {
+              sendingSelected = true;
+              actionMessage = null;
+            });
+
+            await sync.rebindQueuedOperationsToCurrentContext(
+              deviceId: deviceId,
+              posId: auth.posId?.trim(),
+              storeId: auth.storeId?.trim(),
+              accountId: auth.accountId?.trim(),
+              userId: auth.activeUserId?.trim(),
+              sessionId: auth.shiftId?.trim(),
+            );
+
+            final result = await sync.sendQueueOperationById(
+              key: key,
+              deviceId: deviceId,
+              operationId: currentDetails.id,
+            );
+            await reloadDetails(setState);
+
+            setState(() {
+              sendingSelected = false;
+              changed = true;
+              actionMessage = switch (result?.result) {
+                QueueSendResult.sent => 'Выбранный сервис успешно отправлен',
+                QueueSendResult.queued =>
+                  result?.errorMessage?.trim().isNotEmpty == true
+                      ? result!.errorMessage!.trim()
+                      : 'Сервис не отправился и остался в очереди',
+                QueueSendResult.manual =>
+                  result?.errorMessage?.trim().isNotEmpty == true
+                      ? result!.errorMessage!.trim()
+                      : 'Ошибка отправки, нужна ручная проверка',
+                null => 'Запись не удалось взять в отправку',
+              };
+            });
+          }
+
+          Future<void> deleteCurrentService() async {
+            final confirmed = await showDialog<bool>(
+              context: context,
+              builder: (dialogContext) {
+                return AlertDialog(
+                  title: const Text('Удалить сервис'),
+                  content: const Text(
+                    'Удалить этот сервис из очереди?',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                      child: const Text('Отмена'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(true),
+                      child: const Text('Удалить'),
+                    ),
+                  ],
+                );
+              },
+            );
+            if (confirmed != true) return;
+            await sync.deleteQueueOperation(currentDetails.id);
+            if (!context.mounted) return;
+            changed = true;
+            Navigator.of(ctx).pop(true);
+          }
+
+          return Dialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760, maxHeight: 720),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      currentDetails.title ?? currentDetails.type.label,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    SelectableText(
+                      [
+                        'Код: ${currentDetails.errorCode ?? '-'}',
+                        'Ошибка: ${currentDetails.errorMessage ?? '-'}',
+                        if ((responseMeta['status_code'] ?? '')
+                            .toString()
+                            .isNotEmpty)
+                          'HTTP: ${responseMeta['status_code']}',
+                        if ((requestMeta['method'] ?? '').toString().isNotEmpty ||
+                            (requestMeta['path'] ?? '').toString().isNotEmpty)
+                          'Запрос: ${requestMeta['method'] ?? ''} ${requestMeta['path'] ?? ''}',
+                      ].join('\n'),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        height: 1.45,
+                        color: Color(0xFF475569),
+                      ),
+                    ),
+                    if (actionMessage?.trim().isNotEmpty == true) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Text(
+                          actionMessage!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    Expanded(
+                      child: ListView(
+                        children: [
+                          if (currentDetails.type == OutboxOperationType.sale) ...[
+                            _queueDetailsSection(
+                              title: 'Номер чека',
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  TextField(
+                                    controller: localNumberController,
+                                    keyboardType: TextInputType.number,
+                                    decoration: const InputDecoration(
+                                      hintText: 'Введите номер чека',
+                                      border: OutlineInputBorder(),
+                                      isDense: true,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  FilledButton.tonal(
+                                    onPressed: savingNumber
+                                        ? null
+                                        : saveReceiptNumber,
+                                    child: Text(
+                                      savingNumber
+                                          ? 'Сохраняю...'
+                                          : 'Сохранить номер чека',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          if (items.isNotEmpty) ...[
+                            _queueDetailsSection(
+                              title: 'Товары',
+                              child: Column(
+                                children: [
+                                  for (final item in items)
+                                    _queueItemRow(item: item),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          _queueDetailsSection(
+                            title: 'Что отправили',
+                            child: SelectableText(
+                              _prettyJson(requestPayload),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                height: 1.45,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _queueDetailsSection(
+                            title: 'Что вернул сервер',
+                            child: SelectableText(
+                              _prettyJson(
+                                responseMeta.isNotEmpty
+                                    ? responseMeta
+                                    : errorDetails.isNotEmpty
+                                        ? errorDetails
+                                        : <String, dynamic>{
+                                            'code': currentDetails.errorCode,
+                                            'message':
+                                                currentDetails.errorMessage,
+                                          },
+                              ),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                height: 1.45,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: deleteCurrentService,
+                          icon: const Icon(Icons.delete_outline_rounded),
+                          label: const Text('Удалить'),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton.tonal(
+                            onPressed:
+                                sendingSelected ? null : sendSelectedService,
+                            child: Text(
+                              sendingSelected
+                                  ? 'Отправляю...'
+                                  : 'Отправить только этот сервис',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        FilledButton(
+                          onPressed: () => Navigator.of(ctx).pop(changed),
+                          child: const Text('Закрыть'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    },
+  ).whenComplete(localNumberController.dispose);
+}
+
+Future<void> _showCashDeskContextDialog(
+  BuildContext context, {
+  required List<MapEntry<String, String>> values,
+}) {
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) {
+      return Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 620, maxHeight: 640),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Данные кассы',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Текущие сохраненные id и параметры кассы',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: values.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final item = values[index];
+                      return Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.key,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            SelectableText(
+                              item.value.isEmpty ? '-' : item.value,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
                   child: FilledButton(
                     onPressed: () => Navigator.of(ctx).pop(),
                     child: const Text('Закрыть'),

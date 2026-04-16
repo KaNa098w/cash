@@ -64,11 +64,13 @@ class _PinStepState extends State<PinStep> {
       children: [
         Row(
           children: [
-            IconButton(onPressed: widget.onBack, icon: const Icon(Icons.arrow_back)),
+            IconButton(
+                onPressed: widget.onBack, icon: const Icon(Icons.arrow_back)),
             Expanded(
               child: Text(
                 widget.user.name,
-                style: theme.textTheme.titleLarge!.copyWith(fontWeight: FontWeight.w800),
+                style: theme.textTheme.titleLarge!
+                    .copyWith(fontWeight: FontWeight.w800),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -76,9 +78,9 @@ class _PinStepState extends State<PinStep> {
           ],
         ),
         const SizedBox(height: 6),
-        Text('Введи PIN пользователя', style: theme.textTheme.bodyMedium!.copyWith(color: Colors.black54)),
+        Text('Введи PIN пользователя',
+            style: theme.textTheme.bodyMedium!.copyWith(color: Colors.black54)),
         const SizedBox(height: 16),
-
         TextField(
           controller: _pinController,
           focusNode: _pinFocusNode,
@@ -95,13 +97,13 @@ class _PinStepState extends State<PinStep> {
             hintText: 'Например: 1050',
             errorText: widget.errorText,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           ),
           onTap: () => _pinFocusNode.requestFocus(),
           onChanged: (value) => setState(() {}),
           onSubmitted: (_) => _submit(),
         ),
-
         const SizedBox(height: 14),
         SizedBox(
           width: double.infinity,
@@ -109,15 +111,16 @@ class _PinStepState extends State<PinStep> {
           child: FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFD45F4F),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
             ),
             onPressed: _submit,
-            child: const Text('Продолжить', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.3)),
+            child: const Text('Продолжить',
+                style:
+                    TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.3)),
           ),
         ),
-
         const SizedBox(height: 16),
-
         AmountKeypad(
           text: _pinController.text,
           onChanged: (value) {
@@ -130,9 +133,9 @@ class _PinStepState extends State<PinStep> {
           maxLength: 4,
           showQuickRows: false,
         ),
-
         const SizedBox(height: 12),
-        Text('© ${DateTime.now().year} POS Desktop', style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54)),
+        Text('© ${DateTime.now().year} POS Desktop',
+            style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54)),
       ],
     );
   }

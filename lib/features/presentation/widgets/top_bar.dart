@@ -6,13 +6,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get_it/get_it.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
-import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
-import 'package:leemon_app/features/presentation/pages/search/search_keyboard_controller.dart';
 import 'hold_delete_confirm_dialog.dart';
-import 'incoming_orders_dialog.dart';
 import 'show_pos_action_dialog.dart';
 
 class TopBar extends StatelessWidget {
@@ -125,8 +122,6 @@ class TopBar extends StatelessWidget {
                           _divider(),
                           IconButton(
                             onPressed: () {
-                              requestSearchKeyboardClose();
-                              FocusManager.instance.primaryFocus?.unfocus();
                               showPosActionsDialog(context);
                             },
                             icon: SvgPicture.asset(

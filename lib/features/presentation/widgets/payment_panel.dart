@@ -906,65 +906,78 @@ class _PaymentTabs extends StatelessWidget {
   final VoidCallback onCard;
   final VoidCallback onMixed;
 
+  static const double _tabHeight = 42;
+  static const double _dividerTop = 6;
+  static const double _dividerHeight = 30;
+
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(9.002),
-      child: Stack(
-        children: [
-          const Positioned.fill(child: ColoredBox(color: Colors.white)),
-          if (mixed || paymentKind != PaymentKind.credit)
-            Positioned(
-              left: mixed
-                  ? 351.795
-                  : paymentKind == PaymentKind.cash
-                      ? 0
-                      : 180.59,
-              top: 0,
-              width: mixed
-                  ? 189.97
-                  : paymentKind == PaymentKind.cash
-                      ? 180.59
-                      : 171.205,
-              height: 34.3978,
-              child: const ColoredBox(color: Color(0xFF33CC99)),
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(9.002),
+        border: Border.all(color: const Color(0xFFD9E1DC), width: 1),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(9.002),
+        child: Stack(
+          children: [
+            const Positioned.fill(child: ColoredBox(color: Colors.white)),
+            if (mixed || paymentKind != PaymentKind.credit)
+              Positioned(
+                left: mixed
+                    ? 351.795
+                    : paymentKind == PaymentKind.cash
+                        ? 0
+                        : 180.59,
+                top: 0,
+                width: mixed
+                    ? 189.97
+                    : paymentKind == PaymentKind.cash
+                        ? 180.59
+                        : 171.205,
+                height: _tabHeight,
+                child: const ColoredBox(color: Color(0xFF33CC99)),
+              ),
+            const Positioned(
+              left: 180.59,
+              top: _dividerTop,
+              width: 0.7818,
+              height: _dividerHeight,
+              child: ColoredBox(color: Color(0xFFB6B6B6)),
             ),
-          const Positioned(
-            left: 180.59,
-            top: 4.69,
-            width: 0.7818,
-            height: 26.58,
-            child: ColoredBox(color: Color(0xFFB6B6B6)),
-          ),
-          Row(
-            children: [
-              SizedBox(
-                width: 180.59,
-                child: _PaymentTabButton(
-                  text: 'Наличная',
-                  selected: !mixed && paymentKind == PaymentKind.cash,
-                  onTap: onCash,
-                ),
+            SizedBox(
+              height: _tabHeight,
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 180.59,
+                    child: _PaymentTabButton(
+                      text: 'Наличные',
+                      selected: !mixed && paymentKind == PaymentKind.cash,
+                      onTap: onCash,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 171.205,
+                    child: _PaymentTabButton(
+                      text: 'Безналичные',
+                      selected: !mixed && paymentKind == PaymentKind.card,
+                      onTap: onCard,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 189.97,
+                    child: _PaymentTabButton(
+                      text: 'Смешенная',
+                      selected: mixed,
+                      onTap: onMixed,
+                    ),
+                  ),
+                ],
               ),
-              SizedBox(
-                width: 171.205,
-                child: _PaymentTabButton(
-                  text: 'Безналичная',
-                  selected: !mixed && paymentKind == PaymentKind.card,
-                  onTap: onCard,
-                ),
-              ),
-              SizedBox(
-                width: 189.97,
-                child: _PaymentTabButton(
-                  text: 'Смешанная',
-                  selected: mixed,
-                  onTap: onMixed,
-                ),
-              ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -996,7 +1009,7 @@ class _PaymentTabButton extends StatelessWidget {
       child: Text(
         text,
         style: GoogleFonts.inter(
-          fontSize: 12,
+          fontSize: 14,
           fontWeight: FontWeight.w800,
           height: 1,
         ),

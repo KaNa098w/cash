@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -50,7 +51,10 @@ class _DepositToCashSheet extends StatefulWidget {
 }
 
 class _DepositToCashSheetState extends State<_DepositToCashSheet> {
+  final _amountCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
+  final _amountFocus = FocusNode();
+  final _noteFocus = FocusNode();
   String _text = '';
   bool _loading = false;
 
@@ -70,16 +74,26 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
   @override
   void initState() {
     super.initState();
+    _amountCtrl.addListener(_handleAmountChanged);
 
     // Если это расход — заранее подгружаем типы расходов
     if (_isExpense) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _loadExpenseTypes());
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _amountFocus.requestFocus();
+    });
   }
 
   @override
   void dispose() {
+    _amountCtrl.removeListener(_handleAmountChanged);
+    _amountCtrl.dispose();
     _noteCtrl.dispose();
+    _amountFocus.dispose();
+    _noteFocus.dispose();
     super.dispose();
   }
 
@@ -345,6 +359,7 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
         isExpense: _isExpense, // ✅ type=false -> расход
         expenseTypeId: _isExpense ? _expenseTypeId : null,
         amount: amount,
+        comment: _noteCtrl.text.trim(),
         date: DateTime.now(),
         userId: provider.activeUserId?.trim(),
       );
@@ -371,6 +386,50 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
     }
   }
 
+  void _handleAmountChanged() {
+    final normalized = _normalizeAmountInput(_amountCtrl.text);
+    if (_text == normalized) return;
+    setState(() => _text = normalized);
+  }
+
+  String _normalizeAmountInput(String raw) {
+    var value = raw.replaceAll(' ', '').replaceAll(',', '.');
+    if (value.isEmpty) return '';
+
+    final cleaned = StringBuffer();
+    var hasDot = false;
+    for (final rune in value.runes) {
+      final char = String.fromCharCode(rune);
+      final isDigit = rune >= 48 && rune <= 57;
+      if (isDigit) {
+        cleaned.write(char);
+        continue;
+      }
+      if (char == '.' && !hasDot) {
+        cleaned.write(char);
+        hasDot = true;
+      }
+    }
+
+    value = cleaned.toString();
+    if (value.startsWith('.')) {
+      value = '0$value';
+    }
+    if (value.startsWith('0') && value.length > 1 && !value.startsWith('0.')) {
+      value = value.replaceFirst(RegExp(r'^0+'), '');
+      if (value.isEmpty) value = '0';
+    }
+    return value;
+  }
+
+  void _setAmountText(String value) {
+    final normalized = _normalizeAmountInput(value);
+    _amountCtrl.value = TextEditingValue(
+      text: normalized,
+      selection: TextSelection.collapsed(offset: normalized.length),
+    );
+  }
+
   void _appendToken(String token) {
     if (_loading) return;
 
@@ -378,7 +437,7 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
 
     if (token == 'backspace') {
       if (value.isNotEmpty) value = value.substring(0, value.length - 1);
-      setState(() => _text = value);
+      _setAmountText(value);
       return;
     }
 
@@ -386,13 +445,13 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
       if (!value.contains('.')) {
         value = value.isEmpty ? '0.' : '$value.';
       }
-      setState(() => _text = value);
+      _setAmountText(value);
       return;
     }
 
     value = value == '0' ? token : '$value$token';
     value = value.replaceFirst(RegExp(r'^0+(?=\d)'), '');
-    setState(() => _text = value);
+    _setAmountText(value);
   }
 
   @override
@@ -457,7 +516,12 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
               top: 68.5001,
               width: 200.273,
               height: 46.6278,
-              child: _ExpenseAmountBox(text: amountText),
+              child: _ExpenseAmountBox(
+                controller: _amountCtrl,
+                focusNode: _amountFocus,
+                displayText: amountText,
+                onSubmitted: (_) => _noteFocus.requestFocus(),
+              ),
             ),
             Positioned(
               left: 247.627,
@@ -485,7 +549,10 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
               top: 191.5,
               width: 258,
               height: 139,
-              child: _ExpenseCommentBox(controller: _noteCtrl),
+              child: _ExpenseCommentBox(
+                controller: _noteCtrl,
+                focusNode: _noteFocus,
+              ),
             ),
             _ExpenseKeyButton(
               left: 19.127,
@@ -593,9 +660,17 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
 }
 
 class _ExpenseAmountBox extends StatelessWidget {
-  const _ExpenseAmountBox({required this.text});
+  const _ExpenseAmountBox({
+    required this.controller,
+    required this.focusNode,
+    required this.displayText,
+    this.onSubmitted,
+  });
 
-  final String text;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String displayText;
+  final ValueChanged<String>? onSubmitted;
 
   @override
   Widget build(BuildContext context) {
@@ -605,19 +680,34 @@ class _ExpenseAmountBox extends StatelessWidget {
         borderRadius: BorderRadius.circular(8.50173),
         border: Border.all(color: const Color(0xFF00A1FF), width: 1.0002),
       ),
-      alignment: Alignment.centerRight,
       padding: const EdgeInsets.symmetric(horizontal: 14),
-      child: Text(
-        text,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      child: TextField(
+        controller: controller,
+        focusNode: focusNode,
+        autofocus: true,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textInputAction: TextInputAction.next,
         textAlign: TextAlign.right,
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9., ]')),
+        ],
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          hintText: displayText,
+          hintStyle: GoogleFonts.inter(
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
+            color: Colors.black,
+            height: 1,
+          ),
+        ),
         style: GoogleFonts.inter(
           fontSize: 20,
           fontWeight: FontWeight.w900,
           color: Colors.black,
           height: 1,
         ),
+        onSubmitted: onSubmitted,
       ),
     );
   }
@@ -676,9 +766,13 @@ class _ExpenseSelectBox extends StatelessWidget {
 }
 
 class _ExpenseCommentBox extends StatelessWidget {
-  const _ExpenseCommentBox({required this.controller});
+  const _ExpenseCommentBox({
+    required this.controller,
+    required this.focusNode,
+  });
 
   final TextEditingController controller;
+  final FocusNode focusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -692,6 +786,7 @@ class _ExpenseCommentBox extends StatelessWidget {
         children: [
           TextField(
             controller: controller,
+            focusNode: focusNode,
             maxLines: null,
             expands: true,
             textAlignVertical: TextAlignVertical.top,

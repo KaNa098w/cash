@@ -112,6 +112,38 @@ class PosSyncService {
     return _localStore.loadQueueItemDetails(operationId);
   }
 
+  Future<void> updateQueueOperationPayload({
+    required String operationId,
+    required Map<String, dynamic> payload,
+  }) {
+    return _localStore.updateQueueOperationPayload(
+      operationId: operationId,
+      payload: payload,
+    );
+  }
+
+  Future<void> deleteQueueOperation(String operationId) {
+    return _localStore.deleteQueueOperation(operationId);
+  }
+
+  Future<void> rebindQueuedOperationsToCurrentContext({
+    required String deviceId,
+    String? posId,
+    String? storeId,
+    String? accountId,
+    String? userId,
+    String? sessionId,
+  }) {
+    return _localStore.rebindQueuedOperationsToCurrentContext(
+      deviceId: deviceId,
+      posId: posId,
+      storeId: storeId,
+      accountId: accountId,
+      userId: userId,
+      sessionId: sessionId,
+    );
+  }
+
   /// Check if a return access key is valid in the local DB.
   /// Pass [checkExpiry: false] for offline refund scenarios.
   Future<bool> checkReturnAccessKey(String key, {bool checkExpiry = true}) {
@@ -371,11 +403,13 @@ class PosSyncService {
     required String key,
     required String deviceId,
     int limit = 5,
+    void Function(QueuePushEvent event)? onProgress,
   }) {
     return _pushFuture ??= _runPushPending(
       key: key,
       deviceId: deviceId,
       limit: limit,
+      onProgress: onProgress,
     ).whenComplete(() => _pushFuture = null);
   }
 
@@ -383,6 +417,7 @@ class PosSyncService {
     required String key,
     required String deviceId,
     int limit = 5,
+    void Function(QueuePushEvent event)? onProgress,
   }) async {
     await initialize();
     await _localStore.ensureSyncState(posKey: key, deviceId: deviceId);
@@ -392,10 +427,44 @@ class PosSyncService {
 
     var ackedCount = 0;
     for (final record in records) {
+      onProgress?.call(
+        QueuePushEvent(
+          operationId: record.id,
+          type: record.type,
+          clientId: record.clientId,
+          title: _queueRecordTitle(record),
+          stage: QueuePushStage.sending,
+          message: 'Отправляется...',
+        ),
+      );
       final result = await _sendClaimedRecord(
         key: key,
         deviceId: deviceId,
         record: record,
+      );
+      onProgress?.call(
+        QueuePushEvent(
+          operationId: record.id,
+          type: record.type,
+          clientId: record.clientId,
+          title: _queueRecordTitle(record),
+          stage: switch (result.result) {
+            QueueSendResult.sent => QueuePushStage.success,
+            QueueSendResult.queued => QueuePushStage.queued,
+            QueueSendResult.manual => QueuePushStage.error,
+          },
+          message: switch (result.result) {
+            QueueSendResult.sent => 'Успешно отправлено',
+            QueueSendResult.queued =>
+              result.errorMessage?.trim().isNotEmpty == true
+                  ? result.errorMessage!.trim()
+                  : 'Не отправлено, останется в очереди',
+            QueueSendResult.manual =>
+              result.errorMessage?.trim().isNotEmpty == true
+                  ? result.errorMessage!.trim()
+                  : 'Ошибка, требуется ручная проверка',
+          },
+        ),
       );
       if (result.result == QueueSendResult.sent) {
         ackedCount++;
@@ -410,20 +479,45 @@ class PosSyncService {
     }
   }
 
+  Future<QueueOperationResult?> sendQueueOperationById({
+    required String key,
+    required String deviceId,
+    required String operationId,
+  }) async {
+    await initialize();
+    await _localStore.ensureSyncState(posKey: key, deviceId: deviceId);
+
+    final claimed = await _localStore.claimOperationById(operationId);
+    if (claimed == null) return null;
+
+    final result = await _sendClaimedRecord(
+      key: key,
+      deviceId: deviceId,
+      record: claimed,
+    );
+    if (result.result == QueueSendResult.sent) {
+      _syncedController.add(1);
+      _notifySalesHistoryChanged();
+      await _localStore.touchLastPush(key);
+      unawaited(_runBackgroundPull(key: key, deviceId: deviceId));
+    }
+    return result;
+  }
+
   Future<QueueOperationResult> createSale({
     required String key,
     required String deviceId,
     required SaleModel sale,
     bool sendInBackground = false,
   }) async {
+    final localPosSessionId = sale.posSessionId?.trim() ?? '';
     final localNumber = await _localStore.nextLocalSaleNumber();
     final payload = <String, dynamic>{
       'device_id': deviceId,
       'app_version': AppBuildInfo.appVersion,
       'client_sale_id': sale.localId,
       'local_number': localNumber,
-      if ((sale.posSessionId ?? '').trim().isNotEmpty)
-        'pos_session_id': sale.posSessionId!.trim(),
+      if (localPosSessionId.isNotEmpty) 'pos_session_id': localPosSessionId,
       'date': _formatDate(sale.date),
       'total_amount': sale.totalAmount,
       'payment_method': sale.paymentMethod,
@@ -465,6 +559,78 @@ class PosSyncService {
     );
   }
 
+  Future<void> registerOpenedSession({
+    required String sessionId,
+    required String userId,
+    required String deviceId,
+    String? serverSessionId,
+    required DateTime openedAt,
+  }) async {
+    final value = sessionId.trim();
+    if (value.isEmpty) {
+      throw Exception('openSession: server returned empty session id');
+    }
+
+    await _localStore.upsertSession(
+      sessionId: value,
+      userId: userId,
+      deviceId: deviceId,
+      serverSessionId: serverSessionId,
+      openedAt: openedAt,
+    );
+    await _localStore.markSessionSynced(value);
+  }
+
+  Future<QueueOperationResult> openSession({
+    required String key,
+    required String deviceId,
+    required String userId,
+    DateTime? openedAt,
+  }) async {
+    final clientSessionId = 'session_${_uuid.v7()}';
+    final effectiveOpenedAt = openedAt ?? DateTime.now();
+
+    await _localStore.upsertSession(
+      sessionId: clientSessionId,
+      serverSessionId: null,
+      userId: userId,
+      deviceId: deviceId,
+      openedAt: effectiveOpenedAt,
+    );
+
+    final payload = <String, dynamic>{
+      'device_id': deviceId,
+      'app_version': AppBuildInfo.appVersion,
+      'user_id': userId,
+    };
+
+    return _queueAndTrySend(
+      key: key,
+      deviceId: deviceId,
+      type: OutboxOperationType.sessionOpen,
+      clientId: clientSessionId,
+      payload: payload,
+    );
+  }
+
+  Future<void> registerClosedSession({
+    required String sessionId,
+    required double closingCashAmount,
+    required DateTime closedAt,
+  }) async {
+    final value = sessionId.trim();
+    if (value.isEmpty) {
+      throw Exception('closeSession: session id is empty');
+    }
+
+    await _localStore.closeSessionLocal(
+      sessionId: value,
+      closingCashAmount: closingCashAmount,
+      closedAt: closedAt,
+    );
+    await _localStore.markSessionSynced(value);
+  }
+
   Future<QueueOperationResult> createPayment({
     required String key,
     required String deviceId,
@@ -473,9 +639,11 @@ class PosSyncService {
     required bool isExpense,
     required num amount,
     required DateTime date,
+    String? comment,
     String? expenseTypeId,
     String? userId,
   }) async {
+    final localPosSessionId = posSessionId.trim();
     final clientId = 'payment_${_uuid.v7()}';
     final payload = <String, dynamic>{
       'device_id': deviceId,
@@ -484,8 +652,9 @@ class PosSyncService {
       'date': _formatDate(date),
       'is_expense': isExpense,
       'amount': amount.round(),
-      'pos_session_id': posSessionId,
+      'pos_session_id': localPosSessionId,
       'account_id': accountId,
+      if ((comment ?? '').trim().isNotEmpty) 'comment': comment!.trim(),
       if ((expenseTypeId ?? '').trim().isNotEmpty)
         'expense_type_id': expenseTypeId!.trim(),
       if ((userId ?? '').trim().isNotEmpty) 'created_by_id': userId!.trim(),
@@ -498,70 +667,6 @@ class PosSyncService {
       deviceId: deviceId,
       type: OutboxOperationType.payment,
       clientId: clientId,
-      payload: payload,
-    );
-  }
-
-  Future<QueueOperationResult> openSession({
-    required String key,
-    required String deviceId,
-    required String userId,
-    required DateTime openedAt,
-  }) async {
-    final clientId = 'session_${_uuid.v7()}';
-    final payload = <String, dynamic>{
-      'device_id': deviceId,
-      'app_version': AppBuildInfo.appVersion,
-      'client_session_id': clientId,
-      'opened_at': _formatDate(openedAt),
-      'user_id': userId,
-    };
-
-    await _localStore.upsertSession(
-      clientSessionId: clientId,
-      userId: userId,
-      deviceId: deviceId,
-      openedAt: openedAt,
-    );
-
-    return _queueAndTrySend(
-      key: key,
-      deviceId: deviceId,
-      type: OutboxOperationType.sessionOpen,
-      clientId: clientId,
-      payload: payload,
-    );
-  }
-
-  Future<QueueOperationResult> closeSession({
-    required String key,
-    required String deviceId,
-    required String clientSessionId,
-    required String userId,
-    required num closingCashAmount,
-    required DateTime closedAt,
-  }) async {
-    final payload = <String, dynamic>{
-      'device_id': deviceId,
-      'app_version': AppBuildInfo.appVersion,
-      'client_session_id': clientSessionId,
-      'closed_at': _formatDate(closedAt),
-      'user_id': userId,
-      'closing_cash_amount': double.parse(closingCashAmount.toStringAsFixed(2)),
-    };
-
-    await _localStore.closeSessionLocal(
-      clientSessionId: clientSessionId,
-      closingCashAmount: closingCashAmount.toDouble(),
-      closedAt: closedAt,
-    );
-
-    return _queueAndTrySend(
-      key: key,
-      deviceId: deviceId,
-      type: OutboxOperationType.sessionClose,
-      clientId: clientSessionId,
-      relatedClientId: clientSessionId,
       payload: payload,
     );
   }
@@ -581,13 +686,14 @@ class PosSyncService {
     required List<Map<String, dynamic>> items,
     String? returnAccessKey,
   }) async {
+    final localPosSessionId = posSessionId.trim();
     final clientId = 'refund_${_uuid.v7()}';
     final isOffline = saleId.isEmpty;
     final payload = <String, dynamic>{
       'device_id': deviceId,
       'app_version': AppBuildInfo.appVersion,
       'client_refund_id': clientId,
-      'pos_session_id': posSessionId,
+      'pos_session_id': localPosSessionId,
       'date': _formatDate(date),
       if (!isOffline)
         'sale_id': saleId
@@ -706,6 +812,10 @@ class PosSyncService {
     }
   }
 
+  Future<String> resolveServerSessionId(String sessionId) {
+    return _localStore.resolveServerSessionId(sessionId);
+  }
+
   Future<QueueOperationResult> _sendClaimedRecord({
     required String key,
     required String deviceId,
@@ -722,16 +832,8 @@ class PosSyncService {
           'device_id': deviceId,
         },
       );
+      await _applySuccessfulResponse(record, responseData);
       await _localStore.markOperationAcked(record.id);
-      if (record.type == OutboxOperationType.sessionOpen) {
-        final serverSessionId = responseData?['id']?.toString().trim() ?? '';
-        if (serverSessionId.isNotEmpty) {
-          await _localStore.setSessionServerId(
-            clientSessionId: record.clientId,
-            serverSessionId: serverSessionId,
-          );
-        }
-      }
       _markDedicatedTableSynced(record);
       return QueueOperationResult(
         result: QueueSendResult.sent,
@@ -740,6 +842,20 @@ class PosSyncService {
         payload: payloadForSend,
       );
     } catch (error) {
+      if (error is _WaitingForServerSessionId) {
+        await _localStore.deferOperation(
+          operationId: record.id,
+          message: error.message,
+        );
+        return QueueOperationResult(
+          result: QueueSendResult.queued,
+          type: record.type,
+          clientId: record.clientId,
+          payload: record.payload,
+          errorMessage: error.message,
+        );
+      }
+
       final errorCode = _remote.extractErrorCode(error);
       final errorMessage = _remote.extractErrorMessage(error);
       final errorDetails = _remote.extractErrorDetails(error);
@@ -795,28 +911,57 @@ class PosSyncService {
     }
   }
 
+  Future<void> _applySuccessfulResponse(
+    OutboxOperationRecord record,
+    Map<String, dynamic>? responseData,
+  ) async {
+    if (record.type != OutboxOperationType.sessionOpen) return;
+
+    final serverSessionId = responseData?['id']?.toString().trim() ?? '';
+    if (serverSessionId.isEmpty) {
+      throw Exception('openSession: missing response data.id');
+    }
+
+    await _localStore.bindServerSessionId(
+      clientSessionId: record.clientId,
+      serverSessionId: serverSessionId,
+    );
+  }
+
   Future<Map<String, dynamic>> _preparePayloadForSend(
       OutboxOperationRecord record) async {
     final payload = Map<String, dynamic>.from(record.payload);
+    await _attachServerSessionIdIfReady(record.type, payload);
     payload['app_version'] = AppBuildInfo.appVersion;
-    switch (record.type) {
+    return payload;
+  }
+
+  Future<void> _attachServerSessionIdIfReady(
+    OutboxOperationType type,
+    Map<String, dynamic> payload,
+  ) async {
+    switch (type) {
       case OutboxOperationType.sale:
       case OutboxOperationType.payment:
       case OutboxOperationType.refund:
-        final rawSessionId =
+        final currentSessionId =
             (payload['pos_session_id'] ?? '').toString().trim();
-        if (rawSessionId.isNotEmpty) {
-          final serverSessionId =
-              await _localStore.resolveServerSessionId(rawSessionId);
-          if ((serverSessionId ?? '').isNotEmpty) {
-            payload['pos_session_id'] = serverSessionId;
-          }
+        if (currentSessionId.isEmpty ||
+            !currentSessionId.startsWith('session_')) {
+          return;
         }
+        final serverSessionId =
+            await _localStore.findServerSessionId(currentSessionId);
+        if (serverSessionId == null || serverSessionId.isEmpty) {
+          throw const _WaitingForServerSessionId(
+            'Ожидаем получение server session id',
+          );
+        }
+        payload['pos_session_id'] = serverSessionId;
       case OutboxOperationType.sessionOpen:
       case OutboxOperationType.sessionClose:
-        break;
+        return;
     }
-    return payload;
   }
 
   void _markDedicatedTableSynced(OutboxOperationRecord record) {
@@ -845,4 +990,24 @@ class PosSyncService {
     return '${value.year}-${two(value.month)}-${two(value.day)} '
         '${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
   }
+
+  String _queueRecordTitle(OutboxOperationRecord record) {
+    final payload = record.payload;
+    return switch (record.type) {
+      OutboxOperationType.sale =>
+        'Чек №${payload['local_number'] ?? payload['client_sale_id'] ?? record.clientId}',
+      OutboxOperationType.payment =>
+        'Платеж ${payload['amount'] ?? record.clientId}'.trim(),
+      OutboxOperationType.refund =>
+        'Возврат ${payload['sale_id'] ?? record.clientId}',
+      OutboxOperationType.sessionOpen => 'Открытие смены',
+      OutboxOperationType.sessionClose => 'Закрытие смены',
+    };
+  }
+}
+
+class _WaitingForServerSessionId implements Exception {
+  const _WaitingForServerSessionId(this.message);
+
+  final String message;
 }

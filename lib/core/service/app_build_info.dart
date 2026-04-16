@@ -1,5 +1,5 @@
 class AppBuildInfo {
   const AppBuildInfo._();
 
-  static const String appVersion = '1.2.7';
+  static const String appVersion = '1.3.3';
 }

@@ -365,8 +365,6 @@ class PosSyncLocalStore {
         'accounts',
         'expense_types',
         'customers',
-        'outbox_operations',
-        'sync_errors',
         'sales_history',
         'return_access_keys',
         'sessions',
@@ -422,6 +420,7 @@ class PosSyncLocalStore {
         OutboxOperationStatus.sending.value,
       ],
     );
+    await normalizeLegacySessionReferences();
   }
 
   Future<SyncStateSnapshot?> loadSyncState(String posKey) async {
@@ -815,6 +814,42 @@ class PosSyncLocalStore {
     });
   }
 
+  Future<OutboxOperationRecord?> claimOperationById(String operationId) async {
+    final db = await _database;
+    return _inTransaction<OutboxOperationRecord?>(db, () {
+      final row = _firstRow(
+        db.select(
+          '''
+          SELECT *
+          FROM outbox_operations
+          WHERE id = ? AND status IN (?, ?)
+          LIMIT 1
+          ''',
+          [
+            operationId,
+            OutboxOperationStatus.pending.value,
+            OutboxOperationStatus.manual.value,
+          ],
+        ),
+      );
+      if (row == null) return null;
+      final now = _nowIso();
+      db.execute(
+        '''
+        UPDATE outbox_operations
+        SET status = ?, updated_at = ?
+        WHERE id = ?
+        ''',
+        [OutboxOperationStatus.sending.value, now, operationId],
+      );
+      return _recordFromRow({
+        ...row,
+        'status': OutboxOperationStatus.sending.value,
+        'updated_at': now,
+      });
+    });
+  }
+
   Future<List<OutboxOperationRecord>> claimPendingOperations(
       {int limit = 5}) async {
     final db = await _database;
@@ -905,7 +940,8 @@ class PosSyncLocalStore {
           operationId,
         ],
       );
-      if ((errorCode ?? '').trim().isEmpty && (errorMessage ?? '').trim().isEmpty) {
+      if ((errorCode ?? '').trim().isEmpty &&
+          (errorMessage ?? '').trim().isEmpty) {
         return;
       }
       db.execute(
@@ -927,6 +963,27 @@ class PosSyncLocalStore {
         ],
       );
     });
+  }
+
+  Future<void> deferOperation({
+    required String operationId,
+    String? message,
+  }) async {
+    final db = await _database;
+    final now = _nowIso();
+    db.execute(
+      '''
+      UPDATE outbox_operations
+      SET status = ?, last_error_code = NULL, last_error_message = ?, updated_at = ?
+      WHERE id = ?
+      ''',
+      [
+        OutboxOperationStatus.pending.value,
+        _nullableString(message),
+        now,
+        operationId,
+      ],
+    );
   }
 
   Future<void> markOperationManual({
@@ -1056,10 +1113,12 @@ class PosSyncLocalStore {
     );
 
     final queueItem = _queueItemFromRow(operationRow);
-    final payload = decodeJsonMap((operationRow['payload_json'] ?? '{}').toString());
+    final payload =
+        decodeJsonMap((operationRow['payload_json'] ?? '{}').toString());
 
     Map<String, dynamic>? lastErrorDetails;
-    final rawErrorPayload = latestErrorRow?['payload_json']?.toString().trim() ?? '';
+    final rawErrorPayload =
+        latestErrorRow?['payload_json']?.toString().trim() ?? '';
     if (rawErrorPayload.isNotEmpty) {
       try {
         lastErrorDetails = decodeJsonMap(rawErrorPayload);
@@ -1078,11 +1137,192 @@ class PosSyncLocalStore {
       payload: payload,
       title: queueItem.title,
       subtitle: queueItem.subtitle,
-      errorCode: latestErrorRow?['error_code']?.toString() ?? queueItem.errorCode,
-      errorMessage:
-          latestErrorRow?['error_message']?.toString() ?? queueItem.errorMessage,
+      errorCode:
+          latestErrorRow?['error_code']?.toString() ?? queueItem.errorCode,
+      errorMessage: latestErrorRow?['error_message']?.toString() ??
+          queueItem.errorMessage,
       lastErrorDetails: lastErrorDetails,
     );
+  }
+
+  Future<void> updateQueueOperationPayload({
+    required String operationId,
+    required Map<String, dynamic> payload,
+  }) async {
+    final db = await _database;
+    final normalizedPayload = Map<String, dynamic>.from(payload);
+    final now = _nowIso();
+    _inTransaction<void>(db, () {
+      final row = _firstRow(
+        db.select(
+          '''
+          SELECT id, type, client_id
+          FROM outbox_operations
+          WHERE id = ?
+          LIMIT 1
+          ''',
+          [operationId],
+        ),
+      );
+      if (row == null) return;
+
+      final type = OutboxOperationTypeX.fromValue(_string(row['type'])) ??
+          OutboxOperationType.sale;
+      final clientId = _string(row['client_id']);
+
+      db.execute(
+        '''
+        UPDATE outbox_operations
+        SET payload_json = ?, updated_at = ?
+        WHERE id = ?
+        ''',
+        [jsonEncode(normalizedPayload), now, operationId],
+      );
+
+      switch (type) {
+        case OutboxOperationType.sale:
+          final localNumber = _asInt(normalizedPayload['local_number']);
+          final receiptNumber = _string(
+            normalizedPayload['local_number'],
+            fallback: _string(normalizedPayload['number']),
+          );
+          db.execute(
+            '''
+            UPDATE sales
+            SET
+              local_number = CASE WHEN ? > 0 THEN ? ELSE local_number END,
+              number = CASE WHEN ? != '' THEN ? ELSE number END,
+              pos_session_id = COALESCE(?, pos_session_id),
+              pos_id = COALESCE(?, pos_id),
+              store_id = COALESCE(?, store_id),
+              account_id = COALESCE(?, account_id),
+              customer_id = COALESCE(?, customer_id),
+              created_by_id = COALESCE(?, created_by_id)
+            WHERE client_sale_id = ?
+            ''',
+            [
+              localNumber,
+              localNumber,
+              receiptNumber,
+              receiptNumber,
+              _nullableString(normalizedPayload['pos_session_id']),
+              _nullableString(normalizedPayload['pos_id']),
+              _nullableString(normalizedPayload['store_id']),
+              _nullableString(normalizedPayload['account_id']),
+              _nullableString(normalizedPayload['customer_id']),
+              _nullableString(normalizedPayload['user_id']),
+              clientId,
+            ],
+          );
+        case OutboxOperationType.payment:
+          db.execute(
+            '''
+            UPDATE payments
+            SET
+              pos_session_id = COALESCE(?, pos_session_id),
+              account_id = COALESCE(?, account_id),
+              expense_type_id = COALESCE(?, expense_type_id),
+              created_by_id = COALESCE(?, created_by_id)
+            WHERE client_payment_id = ?
+            ''',
+            [
+              _nullableString(normalizedPayload['pos_session_id']),
+              _nullableString(normalizedPayload['account_id']),
+              _nullableString(normalizedPayload['expense_type_id']),
+              _nullableString(normalizedPayload['created_by_id']),
+              clientId,
+            ],
+          );
+        case OutboxOperationType.refund:
+          db.execute(
+            '''
+            UPDATE refunds
+            SET
+              pos_session_id = COALESCE(?, pos_session_id),
+              client_sale_id = COALESCE(?, client_sale_id),
+              sale_id = COALESCE(?, sale_id),
+              pos_id = COALESCE(?, pos_id),
+              store_id = COALESCE(?, store_id),
+              account_id = COALESCE(?, account_id),
+              note = COALESCE(?, note)
+            WHERE client_refund_id = ?
+            ''',
+            [
+              _nullableString(normalizedPayload['pos_session_id']),
+              _nullableString(normalizedPayload['client_sale_id']),
+              _nullableString(normalizedPayload['sale_id']),
+              _nullableString(normalizedPayload['pos_id']),
+              _nullableString(normalizedPayload['store_id']),
+              _nullableString(normalizedPayload['account_id']),
+              _nullableString(normalizedPayload['note']),
+              clientId,
+            ],
+          );
+        case OutboxOperationType.sessionOpen:
+        case OutboxOperationType.sessionClose:
+          break;
+      }
+    });
+  }
+
+  Future<void> deleteQueueOperation(String operationId) async {
+    final db = await _database;
+    _inTransaction<void>(db, () {
+      final row = _firstRow(
+        db.select(
+          '''
+          SELECT id, type, client_id
+          FROM outbox_operations
+          WHERE id = ?
+          LIMIT 1
+          ''',
+          [operationId],
+        ),
+      );
+      if (row == null) return;
+
+      final type = OutboxOperationTypeX.fromValue(_string(row['type'])) ??
+          OutboxOperationType.sale;
+      final clientId = _string(row['client_id']);
+
+      db.execute(
+        'DELETE FROM sync_errors WHERE operation_id = ?',
+        [operationId],
+      );
+      db.execute(
+        'DELETE FROM outbox_operations WHERE id = ?',
+        [operationId],
+      );
+
+      switch (type) {
+        case OutboxOperationType.sale:
+          db.execute(
+            'DELETE FROM sale_items WHERE sale_id = ?',
+            [clientId],
+          );
+          db.execute(
+            'DELETE FROM sales WHERE client_sale_id = ? AND synced = 0',
+            [clientId],
+          );
+        case OutboxOperationType.payment:
+          db.execute(
+            'DELETE FROM payments WHERE client_payment_id = ? AND synced = 0',
+            [clientId],
+          );
+        case OutboxOperationType.refund:
+          db.execute(
+            'DELETE FROM refund_items WHERE refund_id = ?',
+            [clientId],
+          );
+          db.execute(
+            'DELETE FROM refunds WHERE client_refund_id = ? AND synced = 0',
+            [clientId],
+          );
+        case OutboxOperationType.sessionOpen:
+        case OutboxOperationType.sessionClose:
+          break;
+      }
+    });
   }
 
   void _applyPullChange(
@@ -1823,7 +2063,7 @@ class PosSyncLocalStore {
 
   /// Insert a new session into the local sessions table.
   Future<void> upsertSession({
-    required String clientSessionId,
+    required String sessionId,
     required String userId,
     required String deviceId,
     String? serverSessionId,
@@ -1841,7 +2081,7 @@ class PosSyncLocalStore {
       ON CONFLICT(client_session_id) DO NOTHING
       ''',
       [
-        clientSessionId,
+        sessionId,
         _nullableString(serverSessionId),
         userId,
         deviceId,
@@ -1849,39 +2089,341 @@ class PosSyncLocalStore {
         openedAt.toIso8601String(),
       ],
     );
+    await normalizeLegacySessionReferences();
   }
 
-  Future<void> setSessionServerId({
+  Future<void> bindServerSessionId({
     required String clientSessionId,
     required String serverSessionId,
   }) async {
+    final cleanClientSessionId = clientSessionId.trim();
+    final cleanServerSessionId = serverSessionId.trim();
+    if (cleanClientSessionId.isEmpty || cleanServerSessionId.isEmpty) return;
+
     final db = await _database;
-    final value = serverSessionId.trim();
-    if (value.isEmpty) return;
     db.execute(
-      'UPDATE sessions SET server_session_id = ?, synced = 1 WHERE client_session_id = ?',
-      [value, clientSessionId],
+      '''
+      UPDATE sessions
+      SET server_session_id = ?
+      WHERE client_session_id = ? OR server_session_id = ?
+      ''',
+      [cleanServerSessionId, cleanClientSessionId, cleanClientSessionId],
     );
+    await normalizeLegacySessionReferences();
   }
 
-  Future<String?> resolveServerSessionId(String sessionId) async {
+  Future<void> normalizeLegacySessionReferences() async {
     final db = await _database;
-    final raw = sessionId.trim();
-    if (raw.isEmpty) return null;
-    final row = _firstRow(
-      db.select(
+    _inTransaction<void>(db, () {
+      final rows = db.select(
         '''
-        SELECT server_session_id
+        SELECT client_session_id, server_session_id
         FROM sessions
-        WHERE client_session_id = ? OR server_session_id = ?
-        LIMIT 1
+        WHERE COALESCE(TRIM(server_session_id), '') <> ''
+          AND TRIM(client_session_id) <> TRIM(server_session_id)
         ''',
-        [raw, raw],
-      ),
-    );
-    if (row == null) return null;
-    final serverId = _nullableString(row['server_session_id']);
-    return serverId == null || serverId.trim().isEmpty ? null : serverId.trim();
+      );
+
+      for (final row in rows) {
+        final map = _rowMap(row);
+        final legacySessionId =
+            _nullableString(map['client_session_id'])?.trim() ?? '';
+        final serverSessionId =
+            _nullableString(map['server_session_id'])?.trim() ?? '';
+
+        if (legacySessionId.isEmpty || serverSessionId.isEmpty) {
+          continue;
+        }
+
+        db.execute(
+          'UPDATE sales SET pos_session_id = ? WHERE pos_session_id = ?',
+          [serverSessionId, legacySessionId],
+        );
+        db.execute(
+          'UPDATE payments SET pos_session_id = ? WHERE pos_session_id = ?',
+          [serverSessionId, legacySessionId],
+        );
+        db.execute(
+          'UPDATE refunds SET pos_session_id = ? WHERE pos_session_id = ?',
+          [serverSessionId, legacySessionId],
+        );
+
+        final opRows = db.select(
+          '''
+          SELECT id, payload_json
+          FROM outbox_operations
+          WHERE status IN (?, ?, ?)
+          ''',
+          [
+            OutboxOperationStatus.pending.value,
+            OutboxOperationStatus.sending.value,
+            OutboxOperationStatus.manual.value,
+          ],
+        );
+
+        for (final opRow in opRows) {
+          final opMap = _rowMap(opRow);
+          final rawPayload =
+              _nullableString(opMap['payload_json'])?.trim() ?? '';
+          if (rawPayload.isEmpty) continue;
+
+          final payload = decodeJsonMap(rawPayload);
+          var changed = false;
+
+          if ((payload['pos_session_id'] ?? '').toString().trim() ==
+              legacySessionId) {
+            payload['pos_session_id'] = serverSessionId;
+            changed = true;
+          }
+
+          if ((payload['session_id'] ?? '').toString().trim() ==
+              legacySessionId) {
+            payload['session_id'] = serverSessionId;
+            changed = true;
+          }
+
+          if ((payload['client_session_id'] ?? '').toString().trim() ==
+              legacySessionId) {
+            payload['client_session_id'] = serverSessionId;
+            changed = true;
+          }
+
+          if (!changed) continue;
+
+          db.execute(
+            '''
+            UPDATE outbox_operations
+            SET payload_json = ?, updated_at = ?
+            WHERE id = ?
+            ''',
+            [jsonEncode(payload), _nowIso(), _string(opMap['id'])],
+          );
+        }
+      }
+    });
+  }
+
+  Future<void> rebindQueuedOperationsToCurrentContext({
+    required String deviceId,
+    String? posId,
+    String? storeId,
+    String? accountId,
+    String? userId,
+    String? sessionId,
+  }) async {
+    final db = await _database;
+    final cleanDeviceId = deviceId.trim();
+    final cleanPosId = _nullableString(posId);
+    final cleanStoreId = _nullableString(storeId);
+    final cleanAccountId = _nullableString(accountId);
+    final cleanUserId = _nullableString(userId);
+    final cleanSessionId = _nullableString(sessionId);
+
+    _inTransaction<void>(db, () {
+      final opRows = db.select(
+        '''
+        SELECT id, type, payload_json
+        FROM outbox_operations
+        WHERE status IN (?, ?, ?)
+        ''',
+        [
+          OutboxOperationStatus.pending.value,
+          OutboxOperationStatus.sending.value,
+          OutboxOperationStatus.manual.value,
+        ],
+      );
+
+      for (final opRow in opRows) {
+        final row = _rowMap(opRow);
+        final type = OutboxOperationTypeX.fromValue(_string(row['type'])) ??
+            OutboxOperationType.sale;
+        final payload =
+            decodeJsonMap(_string(row['payload_json'], fallback: '{}'));
+        var changed = false;
+
+        if (cleanDeviceId.isNotEmpty &&
+            _string(payload['device_id']) != cleanDeviceId) {
+          payload['device_id'] = cleanDeviceId;
+          changed = true;
+        }
+
+        switch (type) {
+          case OutboxOperationType.sale:
+            changed = _applyPayloadValue(
+                  payload,
+                  'pos_id',
+                  cleanPosId,
+                ) ||
+                changed;
+            changed = _applyPayloadValue(
+                  payload,
+                  'store_id',
+                  cleanStoreId,
+                ) ||
+                changed;
+            changed = _applyPayloadValue(
+                  payload,
+                  'account_id',
+                  cleanAccountId,
+                ) ||
+                changed;
+            changed = _applyPayloadValue(
+                  payload,
+                  'user_id',
+                  cleanUserId,
+                ) ||
+                changed;
+            changed = _applyPayloadValue(
+                  payload,
+                  'pos_session_id',
+                  cleanSessionId,
+                ) ||
+                changed;
+            break;
+          case OutboxOperationType.payment:
+            changed = _applyPayloadValue(
+                  payload,
+                  'account_id',
+                  cleanAccountId,
+                ) ||
+                changed;
+            changed = _applyPayloadValue(
+                  payload,
+                  'created_by_id',
+                  cleanUserId,
+                ) ||
+                changed;
+            changed = _applyPayloadValue(
+                  payload,
+                  'pos_session_id',
+                  cleanSessionId,
+                ) ||
+                changed;
+            break;
+          case OutboxOperationType.refund:
+            changed = _applyPayloadValue(
+                  payload,
+                  'pos_session_id',
+                  cleanSessionId,
+                ) ||
+                changed;
+            changed = _applyPayloadValue(
+                  payload,
+                  'pos_id',
+                  cleanPosId,
+                ) ||
+                changed;
+            changed = _applyPayloadValue(
+                  payload,
+                  'store_id',
+                  cleanStoreId,
+                ) ||
+                changed;
+            changed = _applyPayloadValue(
+                  payload,
+                  'account_id',
+                  cleanAccountId,
+                ) ||
+                changed;
+            break;
+          case OutboxOperationType.sessionClose:
+            changed = _applyPayloadValue(
+                  payload,
+                  'user_id',
+                  cleanUserId,
+                ) ||
+                changed;
+            changed = _applyPayloadValue(
+                  payload,
+                  'client_session_id',
+                  cleanSessionId,
+                ) ||
+                changed;
+            changed = _applyPayloadValue(
+                  payload,
+                  'session_id',
+                  cleanSessionId,
+                ) ||
+                changed;
+            break;
+          case OutboxOperationType.sessionOpen:
+            break;
+        }
+
+        if (!changed) continue;
+
+        db.execute(
+          '''
+          UPDATE outbox_operations
+          SET payload_json = ?, updated_at = ?
+          WHERE id = ?
+          ''',
+          [jsonEncode(payload), _nowIso(), _string(row['id'])],
+        );
+      }
+
+      if (cleanSessionId != null) {
+        db.execute(
+          'UPDATE sales SET pos_session_id = ? WHERE synced = 0',
+          [cleanSessionId],
+        );
+        db.execute(
+          'UPDATE payments SET pos_session_id = ? WHERE synced = 0',
+          [cleanSessionId],
+        );
+        db.execute(
+          'UPDATE refunds SET pos_session_id = ? WHERE synced = 0',
+          [cleanSessionId],
+        );
+      }
+
+      if (cleanPosId != null ||
+          cleanStoreId != null ||
+          cleanAccountId != null ||
+          cleanUserId != null) {
+        db.execute(
+          '''
+          UPDATE sales
+          SET
+            pos_id = COALESCE(?, pos_id),
+            store_id = COALESCE(?, store_id),
+            account_id = COALESCE(?, account_id),
+            created_by_id = COALESCE(?, created_by_id)
+          WHERE synced = 0
+          ''',
+          [cleanPosId, cleanStoreId, cleanAccountId, cleanUserId],
+        );
+      }
+
+      if (cleanAccountId != null || cleanUserId != null) {
+        db.execute(
+          '''
+          UPDATE payments
+          SET
+            account_id = COALESCE(?, account_id),
+            created_by_id = COALESCE(?, created_by_id)
+          WHERE synced = 0
+          ''',
+          [cleanAccountId, cleanUserId],
+        );
+      }
+
+      if (cleanPosId != null ||
+          cleanStoreId != null ||
+          cleanAccountId != null) {
+        db.execute(
+          '''
+          UPDATE refunds
+          SET
+            pos_id = COALESCE(?, pos_id),
+            store_id = COALESCE(?, store_id),
+            account_id = COALESCE(?, account_id)
+          WHERE synced = 0
+          ''',
+          [cleanPosId, cleanStoreId, cleanAccountId],
+        );
+      }
+    });
   }
 
   Future<double> _resolveOpeningCashAmount(
@@ -1902,7 +2444,7 @@ class PosSyncLocalStore {
 
   /// Mark a session as closed in the local sessions table.
   Future<void> closeSessionLocal({
-    required String clientSessionId,
+    required String sessionId,
     required double closingCashAmount,
     required DateTime closedAt,
   }) async {
@@ -1911,10 +2453,43 @@ class PosSyncLocalStore {
       '''
       UPDATE sessions
       SET closing_cash_amount = ?, closed_at = ?, is_opened = 0
-      WHERE client_session_id = ?
+      WHERE client_session_id = ? OR server_session_id = ?
       ''',
-      [closingCashAmount, closedAt.toIso8601String(), clientSessionId],
+      [closingCashAmount, closedAt.toIso8601String(), sessionId, sessionId],
     );
+  }
+
+  Future<String> resolveServerSessionId(String sessionId) async {
+    final normalized = sessionId.trim();
+    if (normalized.isEmpty) return normalized;
+
+    final serverSessionId = await findServerSessionId(sessionId);
+    return serverSessionId ?? normalized;
+  }
+
+  Future<String?> findServerSessionId(String sessionId) async {
+    final normalized = sessionId.trim();
+    if (normalized.isEmpty) return null;
+
+    final db = await _database;
+    final sessionRow = _firstRow(
+      db.select(
+        '''
+        SELECT server_session_id
+        FROM sessions
+        WHERE client_session_id = ? OR server_session_id = ?
+        LIMIT 1
+        ''',
+        [normalized, normalized],
+      ),
+    );
+
+    final serverSessionId =
+        _nullableString(sessionRow?['server_session_id'])?.trim() ?? '';
+    if (serverSessionId.isEmpty || serverSessionId.startsWith('session_')) {
+      return null;
+    }
+    return serverSessionId;
   }
 
   /// Insert sale + items into dedicated local tables (separate from outbox).
@@ -2060,10 +2635,12 @@ class PosSyncLocalStore {
         'UPDATE sales SET synced = 1 WHERE client_sale_id = ?', [clientSaleId]);
   }
 
-  Future<void> markSessionSynced(String clientSessionId) async {
+  Future<void> markSessionSynced(String sessionId) async {
     final db = await _database;
-    db.execute('UPDATE sessions SET synced = 1 WHERE client_session_id = ?',
-        [clientSessionId]);
+    db.execute(
+      'UPDATE sessions SET synced = 1 WHERE client_session_id = ? OR server_session_id = ?',
+      [sessionId, sessionId],
+    );
   }
 
   Future<void> markPaymentSynced(String clientPaymentId) async {
@@ -2078,16 +2655,16 @@ class PosSyncLocalStore {
         [clientRefundId]);
   }
 
-  Future<ShiftReportData?> loadShiftReport(String clientSessionId) async {
+  Future<ShiftReportData?> loadShiftReport(String sessionId) async {
     final db = await _database;
     final sessionRow = _firstRow(
       db.select(
-        'SELECT * FROM sessions WHERE client_session_id = ? LIMIT 1',
-        [clientSessionId],
+        'SELECT * FROM sessions WHERE client_session_id = ? OR server_session_id = ? LIMIT 1',
+        [sessionId, sessionId],
       ),
     );
     if (sessionRow == null) return null;
-    final sessionIds = _sessionQueryIds(sessionRow, clientSessionId);
+    final sessionIds = _sessionQueryIds(sessionRow, sessionId);
     final sessionWhere = _sessionIdWhereClause(sessionIds.length);
 
     final salesRows = db.select(
@@ -2183,7 +2760,7 @@ class PosSyncLocalStore {
     final openingCashAmount = _asDouble(sessionRow['opening_cash_amount']);
 
     return ShiftReportData(
-      sessionId: clientSessionId,
+      sessionId: sessionId,
       openedAt: _parseDt(sessionRow['opened_at']),
       closedAt: _parseDt(sessionRow['closed_at']),
       openingCashAmount: openingCashAmount,
@@ -2207,16 +2784,16 @@ class PosSyncLocalStore {
   }
 
   Future<ShiftClosureSummaryData?> loadShiftClosureSummary(
-      String clientSessionId) async {
+      String sessionId) async {
     final db = await _database;
     final sessionRow = _firstRow(
       db.select(
-        'SELECT * FROM sessions WHERE client_session_id = ? LIMIT 1',
-        [clientSessionId],
+        'SELECT * FROM sessions WHERE client_session_id = ? OR server_session_id = ? LIMIT 1',
+        [sessionId, sessionId],
       ),
     );
     if (sessionRow == null) return null;
-    final sessionIds = _sessionQueryIds(sessionRow, clientSessionId);
+    final sessionIds = _sessionQueryIds(sessionRow, sessionId);
     final sessionWhere = _sessionIdWhereClause(sessionIds.length);
 
     num cashSalesTotal = 0;
@@ -2282,7 +2859,7 @@ class PosSyncLocalStore {
         expenseTotal;
 
     return ShiftClosureSummaryData(
-      sessionId: clientSessionId,
+      sessionId: sessionId,
       openingCashAmount: openingCashAmount,
       cashSalesTotal: cashSalesTotal,
       cardSalesTotal: cardSalesTotal,
@@ -2298,10 +2875,10 @@ class PosSyncLocalStore {
 
   List<Object?> _sessionQueryIds(
     Map<String, dynamic> sessionRow,
-    String clientSessionId,
+    String sessionId,
   ) {
     final ids = <String>{};
-    final clientId = clientSessionId.trim();
+    final clientId = sessionId.trim();
     if (clientId.isNotEmpty) {
       ids.add(clientId);
     }
@@ -2316,6 +2893,18 @@ class PosSyncLocalStore {
   String _sessionIdWhereClause(int count) {
     if (count <= 1) return '= ?';
     return 'IN (${List.filled(count, '?').join(', ')})';
+  }
+
+  bool _applyPayloadValue(
+    Map<String, dynamic> payload,
+    String key,
+    String? value,
+  ) {
+    final normalized = value?.trim() ?? '';
+    if (normalized.isEmpty) return false;
+    if ((payload[key] ?? '').toString().trim() == normalized) return false;
+    payload[key] = normalized;
+    return true;
   }
 
   QueueListItem _queueItemFromRow(Map<String, dynamic> row) {
