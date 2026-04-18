@@ -19,11 +19,9 @@ import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
-
 import 'core/di/api/app_config.dart';
 import 'core/di/api/service_locator.dart';
 import 'core/route/go_router.dart';
-
 import 'core/provider/auth_provider.dart';
 import 'features/domain/repositories/pos_repository.dart';
 import 'features/presentation/pages/auth/auth_bloc/auth_cubit.dart';

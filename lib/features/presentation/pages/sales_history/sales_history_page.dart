@@ -11,10 +11,12 @@ import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
-import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_models.dart'
+    show LocalAccount, QueueSendResult;
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/sales_history/models/refund_pick.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/error_bloc.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/refund_access_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sales_history_controller.dart';
@@ -577,6 +579,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     final key = auth.posKey?.trim() ?? '';
     final deviceId = auth.deviceId?.trim() ?? '';
     final posSessionId = auth.shiftId?.trim() ?? '';
+    final fallbackAccountId = auth.accountId?.trim() ?? '';
 
     if (key.isEmpty) return _snack('Нет posKey');
     if (deviceId.isEmpty) return _snack('Нет deviceId');
@@ -618,6 +621,59 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     );
 
     final sync = sl<PosSyncService>();
+
+    // Build payments[] based on the original sale's payment method
+    final salePaymentMethod = sale.paymentMethod.trim().toLowerCase();
+    final refundPaymentMethod = switch (salePaymentMethod) {
+      'card' => 'card',
+      'mixed' => 'mixed',
+      _ => 'cash',
+    };
+
+    final accounts = await sync.loadAccounts();
+    final cashAccount = accounts.firstWhere(
+      (a) => a.isCash,
+      orElse: () => LocalAccount(id: fallbackAccountId, name: ''),
+    );
+    final cardAccount = accounts.firstWhere(
+      (a) => !a.isCash && a.id != cashAccount.id,
+      orElse: () => cashAccount,
+    );
+
+    final refundClientId = 'refund_${DateTime.now().microsecondsSinceEpoch}';
+    final List<Map<String, dynamic>> refundPayments;
+    if (refundPaymentMethod == 'mixed') {
+      final half = totalAmount ~/ 2;
+      refundPayments = [
+        {
+          'account_id': cashAccount.id,
+          'amount': half,
+          'client_payment_id': '$refundClientId-cash',
+        },
+        {
+          'account_id': cardAccount.id,
+          'amount': totalAmount - half,
+          'client_payment_id': '$refundClientId-card',
+        },
+      ];
+    } else if (refundPaymentMethod == 'card') {
+      refundPayments = [
+        {
+          'account_id': cardAccount.id,
+          'amount': totalAmount,
+          'client_payment_id': '$refundClientId-card',
+        },
+      ];
+    } else {
+      refundPayments = [
+        {
+          'account_id': cashAccount.id,
+          'amount': totalAmount,
+          'client_payment_id': '$refundClientId-cash',
+        },
+      ];
+    }
+
     final refundId = (sale.refund?.id ?? '').trim();
     var effectiveRefundId = refundId;
     // Key: server item id for synced sales, productId for offline sales.
@@ -646,6 +702,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                   saleId: isSynced ? saleId : '',
                   clientSaleId: isSynced ? null : saleId,
                   totalAmount: totalAmount,
+                  paymentMethod: refundPaymentMethod,
+                  payments: refundPayments,
                   items: items,
                   date: DateTime.now(),
                   returnAccessKey: accessKey,
@@ -675,6 +733,19 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         refundId: effectiveRefundId,
         pickedBySaleItemId: pickedBySaleItemId,
       );
+      try {
+        await _printRefundReceipt(
+          sale: sale,
+          picks: picks,
+          totalAmount: totalAmount,
+          refundId: effectiveRefundId,
+          paymentMethod: refundPaymentMethod,
+        );
+      } catch (e) {
+        if (mounted) {
+          _snack('Ошибка печати чека возврата: $e');
+        }
+      }
       await _showRefundSuccessDialog(
         updated: refundId.isNotEmpty,
         itemsCount: picks.length,
@@ -690,6 +761,78 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         _controller.setRefundLoading(saleId, false, () => setState(() {}));
       }
     }
+  }
+
+  Future<void> _printRefundReceipt({
+    required SaleModel sale,
+    required List<RefundPick> picks,
+    required num totalAmount,
+    required String refundId,
+    required String paymentMethod,
+  }) async {
+    final auth = context.read<AuthTokenProvider>();
+    final printer = PrintService();
+    final pageFormat =
+        auth.receiptPaperMm == 57 ? PdfPageFormat.roll57 : PdfPageFormat.roll80;
+    final cashierName = (auth.activeUserName ?? '').trim().isEmpty
+        ? (sale.userId.trim().isEmpty ? '-' : sale.userId.trim())
+        : auth.activeUserName!.trim();
+
+    final picksByKey = <String, int>{
+      for (final pick in picks)
+        (pick.saleItemId.isNotEmpty ? pick.saleItemId : pick.productId):
+            pick.quantity,
+    };
+
+    final refundItems = sale.items.where((item) {
+      final key = item.id.isNotEmpty ? item.id : item.productId;
+      return picksByKey.containsKey(key);
+    }).map((item) {
+      final key = item.id.isNotEmpty ? item.id : item.productId;
+      final qty = (picksByKey[key] ?? 0).toDouble();
+      return ReceiptPdfItem(
+        name: (item.product?.name ?? '').trim().isEmpty
+            ? 'Товар ${item.productId}'
+            : item.product!.name,
+        quantity: qty,
+        unitPrice: item.price,
+        lineTotal: double.parse((item.price * qty).toStringAsFixed(2)),
+      );
+    }).toList(growable: false);
+
+    if (refundItems.isEmpty) return;
+
+    await printer.print80mmSilently(
+      () => buildReceiptPdf(
+        ReceiptPdfData(
+          pageFormat: pageFormat,
+          money: money,
+          receiptDate: DateTime.now(),
+          receiptNumber: formatPosReceiptNumber(
+            posNumber: auth.posNumber ?? '',
+            saleNumber: refundId,
+            fallback: sale.localId,
+          ),
+          cashierName: cashierName,
+          storeName: _storeName(auth),
+          items: refundItems,
+          total: totalAmount,
+          discountSum: 0,
+          paymentMethodLabel: switch (paymentMethod) {
+            'cash' => 'Наличные',
+            'card' => 'Безналичный',
+            'mixed' => 'Смешанная',
+            'credit' => 'В долг',
+            _ => paymentMethod.isEmpty ? '-' : paymentMethod,
+          },
+          isCashPayment: paymentMethod == 'cash',
+          documentTitle: 'ЧЕК ВОЗВРАТА',
+          footerText: 'Возврат успешно оформлен',
+        ),
+      ),
+      format: pageFormat,
+      printerName: auth.receiptPrinterName,
+    );
   }
 
   @override

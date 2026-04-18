@@ -10,6 +10,7 @@ import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart'
     show AuthTokenProvider;
+import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
@@ -190,27 +191,34 @@ class _PaymentPanelState extends State<PaymentPanel> {
               final storeId = auth.storeId?.trim() ?? '';
               final posId = auth.posId?.trim() ?? '';
               final userId = auth.activeUserId?.trim() ?? '';
-              final accountId = auth.accountId?.trim() ?? '';
+              final fallbackAccountId = auth.accountId?.trim() ?? '';
 
               if (key.isEmpty) return;
               if (deviceId.isEmpty) return;
               if (storeId.isEmpty) return;
               if (posId.isEmpty) return;
               if (userId.isEmpty) return;
-              if (accountId.isEmpty) return;
+              if (fallbackAccountId.isEmpty) return;
               if (posCubit.state.items.isEmpty) return;
 
               if (posCubit.state.paymentKind == PaymentKind.cash &&
+                  !_isMixedPayment &&
                   posCubit.state.received < posCubit.total) {
                 return;
               }
+
+              // Capture amounts before async gap
+              final isMixed = _isMixedPayment;
+              final cashInputAmt = _parseAmount(_cashCtrl.text).round();
 
               final saleItems = <SaleItemModel>[];
               for (final it in posCubit.state.items) {
                 final cv = it.product.conversionValue;
                 final qty = (cv != null && cv > 0) ? (it.qty * cv) : it.qty;
-                final price = it.product.price.round();
-                final totalPrice = (it.product.price * it.qty).round();
+                final unitPrice = it.effectiveUnitPrice;
+                final price = double.parse(unitPrice.toStringAsFixed(2));
+                final totalPrice =
+                    double.parse((unitPrice * qty).toStringAsFixed(2));
 
                 saleItems.add(
                   SaleItemModel(
@@ -224,25 +232,35 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 );
               }
 
-              final paymentMethod = switch (posCubit.state.paymentKind) {
-                PaymentKind.cash => 'cash',
-                PaymentKind.card => 'card',
-                PaymentKind.credit => 'credit',
-              };
+              final paymentMethod = isMixed
+                  ? 'mixed'
+                  : switch (posCubit.state.paymentKind) {
+                      PaymentKind.cash => 'cash',
+                      PaymentKind.card => 'card',
+                      PaymentKind.credit => 'credit',
+                    };
 
               final customerId =
                   context.read<PosCubit>().state.activeCustomer?.id;
 
+              final saleLocalId = const Uuid().v4();
+              final totalAmountInt = posCubit.total.round();
+              final exactTotal = double.parse(
+                saleItems
+                    .fold(0.0, (s, e) => s + e.totalPrice)
+                    .toStringAsFixed(2),
+              );
+
               final sale = SaleModel(
-                localId: const Uuid().v4(),
+                localId: saleLocalId,
                 number: '',
                 date: DateTime.now(),
-                totalAmount: posCubit.total.round(),
+                totalAmount: totalAmountInt,
                 paymentMethod: paymentMethod,
                 posId: posId,
                 storeId: storeId,
                 userId: userId,
-                accountId: accountId,
+                accountId: fallbackAccountId,
                 posSessionId: auth.shiftId?.trim(),
                 customerId: customerId,
                 items: saleItems
@@ -256,14 +274,63 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           measurementUnit: posCubit
                               .state.items[entry.key].product.measurementUnit,
                           arrivalCost: 0,
-                          sellingPrice:
-                              posCubit.state.items[entry.key].product.price,
+                          sellingPrice: posCubit
+                              .state.items[entry.key].effectiveUnitPrice,
                           wholesalePrice: 0,
                         ),
                       ),
                     )
                     .toList(),
               );
+
+              // Load accounts to find cash/card account IDs
+              final accounts = await sl<PosSyncService>().loadAccounts();
+              final cashAccount = accounts.firstWhere(
+                (a) => a.isCash,
+                orElse: () => LocalAccount(id: fallbackAccountId, name: ''),
+              );
+              final cardAccount = accounts.firstWhere(
+                (a) => !a.isCash && a.id != cashAccount.id,
+                orElse: () => cashAccount,
+              );
+
+              final List<Map<String, dynamic>> payments;
+              if (isMixed) {
+                final cashAmt = double.parse(
+                  cashInputAmt.clamp(0, exactTotal).toStringAsFixed(2),
+                );
+                final cardAmt = double.parse(
+                  (exactTotal - cashAmt).toStringAsFixed(2),
+                );
+                payments = [
+                  {
+                    'account_id': cashAccount.id,
+                    'amount': cashAmt,
+                    'client_payment_id': '$saleLocalId-cash',
+                  },
+                  {
+                    'account_id': cardAccount.id,
+                    'amount': cardAmt,
+                    'client_payment_id': '$saleLocalId-card',
+                  },
+                ];
+              } else if (paymentMethod == 'card') {
+                payments = [
+                  {
+                    'account_id': cardAccount.id,
+                    'amount': exactTotal,
+                    'client_payment_id': '$saleLocalId-card',
+                  },
+                ];
+              } else {
+                payments = [
+                  {
+                    'account_id': cashAccount.id,
+                    'amount': exactTotal,
+                    'client_payment_id': '$saleLocalId-cash',
+                  },
+                ];
+              }
 
               final repo = GetIt.I<SaleRepository>();
 
@@ -281,6 +348,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   key: key,
                   deviceId: deviceId,
                   sale: sale,
+                  payments: payments,
                 );
                 final result = outcome.result;
                 final printedSale = outcome.sale;
@@ -311,9 +379,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
                             (it) => ReceiptPdfItem(
                               name: it.product.name,
                               quantity: it.qty,
-                              unitPrice: it.product.price,
+                              unitPrice: it.effectiveUnitPrice,
                               lineTotal: it.sum,
-                              discountPercent: it.discount,
+                              discountPercent: it.effectiveDiscountPercent,
                             ),
                           )
                           .toList(),

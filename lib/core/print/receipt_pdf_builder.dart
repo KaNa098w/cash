@@ -78,6 +78,8 @@ class ReceiptPdfData {
     this.received,
     this.change,
     this.rightPaddingMm = 24,
+    this.documentTitle,
+    this.footerText = 'Спасибо за покупку!',
   });
 
   final PdfPageFormat pageFormat;
@@ -98,6 +100,8 @@ class ReceiptPdfData {
   final num? change;
 
   final double rightPaddingMm;
+  final String? documentTitle;
+  final String footerText;
 }
 
 class ShiftReportPdfData {
@@ -241,6 +245,7 @@ Future<pw.Document> buildReceiptPdf(ReceiptPdfData data) async {
   const itemFs = 7.6;
   const totalFs = 8.8;
   const footerFs = 8.0;
+  const titleFs = 8.4;
 
   pw.Widget rowKV(
     String key,
@@ -303,6 +308,14 @@ Future<pw.Document> buildReceiptPdf(ReceiptPdfData data) async {
         return pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.stretch,
           children: [
+            if ((data.documentTitle ?? '').trim().isNotEmpty) ...[
+              pw.Text(
+                data.documentTitle!.trim(),
+                style: pw.TextStyle(font: bold, fontSize: titleFs),
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.SizedBox(height: 4),
+            ],
             pw.Text(
               data.storeName,
               style: pw.TextStyle(font: base, fontSize: storeFs),
@@ -369,7 +382,7 @@ Future<pw.Document> buildReceiptPdf(ReceiptPdfData data) async {
             rowKV('Метод', data.paymentMethodLabel),
             pw.SizedBox(height: 6),
             pw.Text(
-              'Спасибо за покупку!',
+              data.footerText,
               style: pw.TextStyle(font: base, fontSize: footerFs),
               textAlign: pw.TextAlign.center,
             ),

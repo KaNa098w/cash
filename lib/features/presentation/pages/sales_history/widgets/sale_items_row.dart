@@ -36,6 +36,7 @@ class SaleItemRow extends StatelessWidget {
     final totalQty = toIntQty(item.quantity);
     final refundedQty = refundedQtyOf(item);
     final maxQty = availableQtyOf(item);
+    final hasRefund = refundedQty > 0;
 
     final checked = pick?.checked ?? false;
     final qty = (pick?.quantity ?? 0).clamp(0, maxQty);
@@ -49,13 +50,16 @@ class SaleItemRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: checked
             ? const Color(0xFFE9F6EF)
-            : Colors.white.withValues(alpha: 0.55),
+            : hasRefund
+                ? const Color(0xFFFFF8DB)
+                : Colors.white.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: checked
-              ? const Color(0xFF34A853).withValues(alpha: 0.35)
-              : Colors.black.withValues(alpha: 0.06),
-        ),
+        border: checked
+            ? Border.all(color: const Color(0xFF34A853).withValues(alpha: 0.35))
+            : hasRefund
+                ? Border.all(
+                    color: const Color(0xFFF2DF8A).withValues(alpha: 0.7))
+                : null,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -371,6 +371,22 @@ class ShiftClosureSummaryData {
   final num totalSalesAmount;
 }
 
+class LocalAccount {
+  const LocalAccount({
+    required this.id,
+    required this.name,
+    this.type,
+    this.visibleToPos = true,
+  });
+
+  final String id;
+  final String name;
+  final String? type;
+  final bool visibleToPos;
+
+  bool get isCash => type?.toLowerCase() == 'cash';
+}
+
 Map<String, dynamic> decodeJsonMap(String raw) {
   final decoded = jsonDecode(raw);
   if (decoded is Map<String, dynamic>) {

@@ -13,12 +13,14 @@ class SaleRepositoryImpl implements SaleRepository {
     required String key,
     required String deviceId,
     required SaleModel sale,
+    required List<Map<String, dynamic>> payments,
   }) async {
     try {
       final queueResult = await _syncService.createSale(
         key: key,
         deviceId: deviceId,
         sale: sale,
+        payments: payments,
         sendInBackground: true,
       );
 

@@ -10,12 +10,8 @@ class RefundSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = money0(total);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
-        borderRadius: BorderRadius.circular(14),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 10),
       child: Row(
         children: [
           Text('Выбрано: $count', style: const TextStyle(fontWeight: FontWeight.w700)),

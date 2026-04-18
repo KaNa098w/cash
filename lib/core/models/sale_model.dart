@@ -73,14 +73,19 @@ class SaleModel {
 
   // ---------------- API (POST) ----------------
   Map<String, dynamic> toApiJson() {
+    final exactTotal = double.parse(
+      items.fold(0.0, (s, e) => s + e.totalPrice).toStringAsFixed(2),
+    );
     return {
       "date": _formatDate(date),
-      "total_amount": totalAmount,
+      "total_amount": exactTotal,
       "payment_method": paymentMethod,
       "user_id": userId,
       "pos_id": posId,
-      if ((posSessionId ?? '').trim().isNotEmpty) "pos_session_id": posSessionId,
-      if (customerId != null && customerId!.isNotEmpty) "customer_id": customerId,
+      if ((posSessionId ?? '').trim().isNotEmpty)
+        "pos_session_id": posSessionId,
+      if (customerId != null && customerId!.isNotEmpty)
+        "customer_id": customerId,
       "store_id": storeId,
       "items": items.map((e) => e.toApiJson()).toList(),
     };
@@ -104,6 +109,8 @@ class SaleModel {
         ? RefundModel.fromJson(Map<String, dynamic>.from(refundRaw))
         : null;
 
+    final enrichedItems = _applyRefundQty(items, refund);
+
     return SaleModel(
       localId: (json["id"] ?? "").toString(),
       number: (json["number"] ?? "").toString(),
@@ -116,7 +123,7 @@ class SaleModel {
       accountId: accountId,
       userId: userId,
       posSessionId: json["pos_session_id"]?.toString(),
-      items: items,
+      items: enrichedItems,
       refund: refund,
     );
   }
@@ -136,7 +143,7 @@ class SaleModel {
       "storeId": storeId,
       "customerId": customerId,
       "items": items.map((e) => e.toJson()).toList(),
-      "refund": refund?.toJson(), // ✅ теперь работает
+      "refund": refund?.toJson(),
     };
   }
 
@@ -154,19 +161,22 @@ class SaleModel {
         ? RefundModel.fromJson(Map<String, dynamic>.from(refundRaw))
         : null;
 
+    final enrichedItems = _applyRefundQty(items, refund);
+
     return SaleModel(
       localId: (json["localId"] ?? "").toString(),
       number: (json["number"] ?? "").toString(),
       userId: (json["userId"] ?? "").toString(),
       accountId: (json["accountId"] ?? "").toString(),
       posSessionId: json["posSessionId"]?.toString(),
-      date: DateTime.tryParse((json["date"] ?? "").toString()) ?? DateTime.now(),
+      date:
+          DateTime.tryParse((json["date"] ?? "").toString()) ?? DateTime.now(),
       totalAmount: _toInt(json["totalAmount"]),
       paymentMethod: (json["paymentMethod"] ?? "cash").toString(),
       posId: (json["posId"] ?? "").toString(),
       storeId: (json["storeId"] ?? "").toString(),
       customerId: (json["customerId"] as String?),
-      items: items,
+      items: enrichedItems,
       refund: refund,
     );
   }
@@ -205,6 +215,33 @@ class SaleModel {
 
   static int _toIntMoney(dynamic v) => _toInt(v);
 
+  static List<SaleItemModel> _applyRefundQty(
+    List<SaleItemModel> items,
+    RefundModel? refund,
+  ) {
+    if (refund == null || refund.items.isEmpty) return items;
+
+    // saleItemId → refunded qty; fallback key: productId
+    final byItemId = <String, int>{};
+    final byProductId = <String, int>{};
+    for (final ri in refund.items) {
+      if (ri.saleItemId.trim().isNotEmpty) {
+        byItemId[ri.saleItemId] = (byItemId[ri.saleItemId] ?? 0) + ri.quantity;
+      }
+      if (ri.productId.trim().isNotEmpty) {
+        byProductId[ri.productId] =
+            (byProductId[ri.productId] ?? 0) + ri.quantity;
+      }
+    }
+
+    return items.map((item) {
+      if (item.refund_quantity != null && item.refund_quantity! > 0)
+        return item;
+      final qty = byItemId[item.id] ?? byProductId[item.productId] ?? 0;
+      return qty > 0 ? item.copyWith(refund_quantity: qty) : item;
+    }).toList(growable: false);
+  }
+
   static DateTime _parseApiDate(dynamic v) {
     final s = (v ?? '').toString().trim();
     if (s.isEmpty) return DateTime.now();
@@ -231,8 +268,8 @@ class SaleItemModel {
   /// ✅ исходное кол-во в продаже
   final double quantity;
 
-  final int price;
-  final int totalPrice;
+  final double price;
+  final double totalPrice;
 
   /// ✅ сколько уже возвращено (может быть null/0)
   final int? refund_quantity;
@@ -254,8 +291,8 @@ class SaleItemModel {
     String? productId,
     ProductModel? product,
     double? quantity,
-    int? price,
-    int? totalPrice,
+    double? price,
+    double? totalPrice,
     int? refund_quantity,
   }) {
     return SaleItemModel(
@@ -292,8 +329,8 @@ class SaleItemModel {
       productId: (json["product_id"] ?? "").toString(),
       product: product,
       quantity: SaleModel._toDouble(json["quantity"]),
-      price: SaleModel._toIntMoney(json["price"]),
-      totalPrice: SaleModel._toIntMoney(json["total_price"]),
+      price: SaleModel._toDouble(json["price"]),
+      totalPrice: SaleModel._toDouble(json["total_price"]),
       refund_quantity: json["refund_quantity"] == null
           ? null
           : SaleModel._toInt(json["refund_quantity"]),
@@ -325,8 +362,8 @@ class SaleItemModel {
       productId: (json["productId"] ?? "").toString(),
       product: product,
       quantity: SaleModel._toDouble(json["quantity"]),
-      price: SaleModel._toInt(json["price"]),
-      totalPrice: SaleModel._toInt(json["totalPrice"]),
+      price: SaleModel._toDouble(json["price"]),
+      totalPrice: SaleModel._toDouble(json["totalPrice"]),
       refund_quantity: json["refund_quantity"] == null
           ? null
           : SaleModel._toInt(json["refund_quantity"]),

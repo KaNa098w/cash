@@ -3,10 +3,24 @@
     "allow": [
       "Read(//c/Users/USER/**)",
       "Read(//mnt/c/**)",
-      "Read(//d//**)"
+      "Read(//d//**)",
+      "Bash(flutter pub *)",
+      "Bash(flutter --version)",
+      "Read(//Users/beyinfotech/development/flutter/**)",
+      "Bash(flutter build *)",
+      "Bash(flutter precache *)",
+      "Read(//Users/beyinfotech/fvm/versions/3.27.4/bin/cache/artifacts/engine/darwin-x64/FlutterMacOS.xcframework/macos-arm64_x86_64/FlutterMacOS.framework/Versions/A/**)",
+      "Read(//Users/beyinfotech/fvm/versions/3.27.4/bin/cache/artifacts/engine/darwin-x64/**)",
+      "Bash(xattr -l \"/Users/beyinfotech/development/flutter/bin/cache/artifacts/engine/darwin-x64-profile/FlutterMacOS.xcframework/macos-arm64_x86_64/FlutterMacOS.framework/Versions/A/FlutterMacOS\")",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(flutter doctor *)",
+      "Read(//Users/flutter/packages/flutter_tools/lib/src/**)",
+      "Bash(unzip -o /tmp/flutter_macos_framework_debug.zip -d /Users/beyinfotech/development/flutter/bin/cache/artifacts/engine/darwin-x64)",
+      "Bash(flutter analyze *)"
     ],
     "additionalDirectories": [
-      "C:\\Users\\USER\\.claude"
+      "C:\\Users\\USER\\.claude",
+      "/Users/beyinfotech/development/flutter/bin/cache/artifacts/engine/darwin-x64"
     ]
   }
 }

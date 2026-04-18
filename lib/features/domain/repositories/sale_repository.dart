@@ -18,6 +18,7 @@ abstract class SaleRepository {
     required String key,
     required String deviceId,
     required SaleModel sale,
+    required List<Map<String, dynamic>> payments,
   });
 
   Future<void> syncPendingSales({

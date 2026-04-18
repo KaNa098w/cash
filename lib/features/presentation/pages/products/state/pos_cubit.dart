@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
@@ -19,6 +20,29 @@ class PosCubit extends Cubit<PosState> {
 
   PosCubit(this.repo) : super(PosState.initial()) {
     unawaited(_restorePersistedState());
+  }
+
+  void _logAddedProductToCart({
+    required Product product,
+    required double addedQty,
+    required double cartQty,
+    required bool discountApplied,
+  }) {
+    final payload = <String, dynamic>{
+      'event': 'product_added_to_cart',
+      'product': product.toJson(),
+      'added_qty': addedQty,
+      'cart_qty': cartQty,
+      'effective_unit_price': discountApplied && product.priceAfterDiscount > 0
+          ? product.priceAfterDiscount
+          : product.price,
+      'discount_applied': discountApplied,
+    };
+
+    developer.log(
+      const JsonEncoder.withIndent('  ').convert(payload),
+      name: 'PosCubit',
+    );
   }
 
   void _emitAndPersist(PosState nextState) {
@@ -52,12 +76,6 @@ class PosCubit extends Cubit<PosState> {
     emit(PosState.initial());
   }
 
-  double _normalizedMaxQty(Product product) {
-    final qty = product.quantity;
-    if (qty.isNaN || qty.isInfinite) return 0;
-    return qty < 0 ? 0 : qty;
-  }
-
   List<PosTicket> _updateActiveTicketItems(
     List<CartItem> Function(List<CartItem>) updater,
   ) {
@@ -77,11 +95,8 @@ class PosCubit extends Cubit<PosState> {
   }
 
   Product _mapProductModelToProduct(ProductModel m) {
-    final id = (m.id?.toString().isNotEmpty ?? false)
-        ? m.id!.toString()
-        : (m.id?.toString().isNotEmpty ?? false)
-            ? m.id!.toString()
-            : m.name;
+    final id =
+        (m.id?.toString().isNotEmpty ?? false) ? m.id!.toString() : m.name;
 
     return Product(
       id: id,
@@ -91,6 +106,9 @@ class PosCubit extends Cubit<PosState> {
       quantity: m.quantity,
       measurementUnit: m.measurementUnit,
       conversionValue: m.conversionValue,
+      discountType: m.discountType,
+      discountPercent: m.discountPercent,
+      priceAfterDiscount: m.priceAfterDiscount,
     );
   }
 
@@ -142,10 +160,11 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void addWithQty(Product p, double qty) {
-    final maxQty = _normalizedMaxQty(p);
-    if (maxQty <= 0 || qty <= 0 || qty.isNaN || qty.isInfinite) return;
+    if (qty <= 0 || qty.isNaN || qty.isInfinite) return;
 
     int? selectedIndex; // какой индекс выбрать после добавления/увеличения
+    double? updatedCartQty;
+    bool? updatedDiscountApplied;
 
     final tickets = _updateActiveTicketItems((items) {
       final list = List<CartItem>.from(items);
@@ -153,12 +172,21 @@ class PosCubit extends Cubit<PosState> {
 
       if (idx >= 0) {
         final it = list[idx];
-        final nextQty = (it.qty + qty) > maxQty ? maxQty : (it.qty + qty);
-        list[idx] = it.copyWith(qty: nextQty);
+        list[idx] = it.copyWith(
+          qty: it.qty + qty,
+          discountApplied: it.discountApplied || p.discountType == 'fixed',
+        );
+        updatedCartQty = list[idx].qty;
+        updatedDiscountApplied = list[idx].discountApplied;
         selectedIndex = idx;
       } else {
-        final initialQty = qty > maxQty ? maxQty : qty;
-        list.add(CartItem(product: p, qty: initialQty));
+        list.add(CartItem(
+          product: p,
+          qty: qty,
+          discountApplied: p.discountType == 'fixed',
+        ));
+        updatedCartQty = list.last.qty;
+        updatedDiscountApplied = list.last.discountApplied;
         selectedIndex = list.length - 1;
       }
 
@@ -169,6 +197,13 @@ class PosCubit extends Cubit<PosState> {
       tickets: tickets,
       selectedItemIndex: selectedIndex,
     ));
+
+    _logAddedProductToCart(
+      product: p,
+      addedQty: qty,
+      cartQty: updatedCartQty ?? qty,
+      discountApplied: updatedDiscountApplied ?? false,
+    );
   }
 
   void addFromProductModel(ProductModel m, {double qty = 1}) {
@@ -222,13 +257,11 @@ class PosCubit extends Cubit<PosState> {
       final list = List<CartItem>.from(items);
       if (index >= 0 && index < list.length) {
         final current = list[index];
-        final maxQty = _normalizedMaxQty(current.product);
         final normalizedQty = ProductModel.isPiecesMeasurementUnit(
                 current.product.measurementUnit)
             ? qty.roundToDouble()
             : qty;
-        final nextQty = normalizedQty > maxQty ? maxQty : normalizedQty;
-        list[index] = current.copyWith(qty: nextQty);
+        list[index] = current.copyWith(qty: normalizedQty);
       }
       return list;
     });
@@ -261,10 +294,56 @@ class PosCubit extends Cubit<PosState> {
 
   double get total => state.items.fold<double>(0, (p, e) => p + e.sum);
 
-  double get discountSum => state.items.fold<double>(
-        0,
-        (p, e) => p + (e.product.price * e.qty) * (e.discount / 100),
-      );
+  double get discountSum => state.items.fold<double>(0, (p, e) {
+        if (e.discountApplied && e.product.priceAfterDiscount > 0) {
+          return p + (e.product.price - e.product.priceAfterDiscount) * e.qty;
+        }
+        return p + (e.product.price * e.qty) * (e.discount / 100);
+      });
+
+  bool _hasAvailableProductDiscount(CartItem item) {
+    return item.product.discountPercent > 0 &&
+        item.product.priceAfterDiscount > 0 &&
+        item.product.priceAfterDiscount < item.product.price;
+  }
+
+  void applyAvailableDiscount(int index) {
+    final items = state.items;
+    if (index < 0 || index >= items.length) return;
+    final item = items[index];
+    if (item.product.discountType != 'automatic') return;
+    if (item.discountApplied || !_hasAvailableProductDiscount(item)) return;
+
+    final tickets = _updateActiveTicketItems((ticketItems) {
+      final list = List<CartItem>.from(ticketItems);
+      if (index >= 0 && index < list.length) {
+        list[index] = list[index].copyWith(
+          discountApplied: true,
+        );
+      }
+      return list;
+    });
+    _emitAndPersist(state.copyWith(tickets: tickets));
+  }
+
+  void removeAvailableDiscount(int index) {
+    final items = state.items;
+    if (index < 0 || index >= items.length) return;
+    final item = items[index];
+    if (item.product.discountType != 'automatic') return;
+    if (!item.discountApplied) return;
+
+    final tickets = _updateActiveTicketItems((ticketItems) {
+      final list = List<CartItem>.from(ticketItems);
+      if (index >= 0 && index < list.length) {
+        list[index] = list[index].copyWith(
+          discountApplied: false,
+        );
+      }
+      return list;
+    });
+    _emitAndPersist(state.copyWith(tickets: tickets));
+  }
 
   void setPaymentKind(PaymentKind kind) {
     _emitAndPersist(state.copyWith(paymentKind: kind));
@@ -322,7 +401,7 @@ class PosCubit extends Cubit<PosState> {
     final lastId = ids.isEmpty ? 0 : ids.reduce((a, b) => a > b ? a : b);
     final newId = lastId + 1;
 
-    final newTicket = PosTicket(id: newId, items: []);
+    final newTicket = PosTicket(id: newId, items: const []);
 
     _emitAndPersist(
       state.copyWith(

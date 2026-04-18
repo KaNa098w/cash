@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class FooterControlsOnly extends StatelessWidget {
@@ -31,9 +30,9 @@ class FooterControlsOnly extends StatelessWidget {
 
   static const double _gap = 10;
 
-  static const double _kSmallBtnW = 102;
-  static const double _kSmallBtnH = 66;
-  static const double _r = 8;
+  static const double _kSmallBtnW = 116;
+  static const double _kSmallBtnH = 70;
+  static const double _r = 8.70588;
 
   static const double _totalW = 338;
   static const double _totalH = 58;
@@ -94,7 +93,7 @@ class FooterControlsOnly extends StatelessWidget {
                       '-',
                       style: GoogleFonts.inter(
                         fontSize: s(22),
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w600,
                         color: Colors.black,
                       ),
                     ),
@@ -110,7 +109,7 @@ class FooterControlsOnly extends StatelessWidget {
                       '+',
                       style: GoogleFonts.inter(
                         fontSize: s(22),
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w600,
                         color: Colors.black,
                       ),
                     ),
@@ -139,17 +138,53 @@ class FooterControlsOnly extends StatelessWidget {
                     radius: radius,
                     background: _btnGrey,
                     onTap: onQuick,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        '\u0411\u044b\u0441\u0442\u0440\u044b\u0435\n\u0442\u043e\u0432\u0430\u0440\u044b',
-                        maxLines: 2,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(
-                          fontSize: s(14),
-                          fontWeight: FontWeight.w700,
-                          color: Colors.black87,
-                          height: 1.05,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: s(6),
+                        vertical: s(4),
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '\u0411\u044b\u0441\u0442\u0440\u044b\u0435\n\u0442\u043e\u0432\u0430\u0440\u044b',
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontSize: s(15),
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black,
+                            height: 1.06,
+                            letterSpacing: -0.1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: rowGap),
+                  _SmallBtn(
+                    width: smallBtnW,
+                    height: smallBtnH,
+                    radius: radius,
+                    background: _btnYellow,
+                    onTap: onPayCard,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: s(6),
+                        vertical: s(4),
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'Универсальный\nпродукт',
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontSize: s(15),
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black,
+                            height: 1.06,
+                            letterSpacing: -0.1,
+                          ),
                         ),
                       ),
                     ),
@@ -169,26 +204,11 @@ class FooterControlsOnly extends StatelessWidget {
                         softWrap: false,
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
-                          fontSize: s(13),
-                          fontWeight: FontWeight.w800,
+                          fontSize: s(15),
+                          fontWeight: FontWeight.w600,
                           color: Colors.white,
                         ),
                       ),
-                    ),
-                  ),
-                  SizedBox(width: rowGap),
-                  _SmallBtn(
-                    width: smallBtnW,
-                    height: smallBtnH,
-                    radius: radius,
-                    background: _btnYellow,
-                    onTap: onPayCard,
-                    child: SvgPicture.asset(
-                      'assets/svg/card.svg',
-                      width: s(22),
-                      height: s(22),
-                      colorFilter:
-                          const ColorFilter.mode(Colors.white, BlendMode.srcIn),
                     ),
                   ),
                   SizedBox(width: rowGap),
@@ -235,6 +255,9 @@ class _SmallBtn extends StatelessWidget {
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
           elevation: 0,
+          padding: EdgeInsets.zero,
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           backgroundColor: background,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(radius),
@@ -343,7 +366,7 @@ class _PayBtn extends StatelessWidget {
           '\u041e\u041f\u041b\u0410\u0422\u0410',
           style: GoogleFonts.inter(
             fontSize: fontSize,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w600,
             color: onTap == null ? Colors.white70 : Colors.white,
             letterSpacing: 0.3,
           ),

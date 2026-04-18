@@ -96,6 +96,10 @@ class PosSyncService {
     return _localStore.loadExpenseTypes();
   }
 
+  Future<List<LocalAccount>> loadAccounts() {
+    return _localStore.loadAccounts();
+  }
+
   Future<List<LocalCustomer>> loadCustomers() {
     return _localStore.loadCustomers();
   }
@@ -211,8 +215,9 @@ class PosSyncService {
     var retryCount = 0;
     while (!snapshot.isReady) {
       if (snapshot.isFailed) {
-        if (retryCount >= 3)
+        if (retryCount >= 3) {
           throw Exception('Snapshot failed after $retryCount retries');
+        }
         retryCount++;
         onProgress?.call(SyncProgress(
             progress: 0.05,
@@ -278,8 +283,8 @@ class PosSyncService {
         detail: '${customers.length} покупателей'));
     final posInfo = await _remote.fetchPosInfo(key: key);
 
-    onProgress
-        ?.call(SyncProgress(progress: 0.73, stage: 'Сохраняем данные...'));
+    onProgress?.call(
+        const SyncProgress(progress: 0.73, stage: 'Сохраняем данные...'));
     await _localStore.replaceBootstrapData(
       posKey: key,
       deviceId: deviceId,
@@ -508,10 +513,16 @@ class PosSyncService {
     required String key,
     required String deviceId,
     required SaleModel sale,
+    required List<Map<String, dynamic>> payments,
     bool sendInBackground = false,
   }) async {
     final localPosSessionId = sale.posSessionId?.trim() ?? '';
     final localNumber = await _localStore.nextLocalSaleNumber();
+    final exactTotal = double.parse(
+      sale.items
+          .fold(0.0, (sum, item) => sum + item.totalPrice)
+          .toStringAsFixed(2),
+    );
     final payload = <String, dynamic>{
       'device_id': deviceId,
       'app_version': AppBuildInfo.appVersion,
@@ -519,11 +530,10 @@ class PosSyncService {
       'local_number': localNumber,
       if (localPosSessionId.isNotEmpty) 'pos_session_id': localPosSessionId,
       'date': _formatDate(sale.date),
-      'total_amount': sale.totalAmount,
+      'total_amount': exactTotal,
       'payment_method': sale.paymentMethod,
       'pos_id': sale.posId,
       'store_id': sale.storeId,
-      'account_id': sale.accountId,
       'user_id': sale.userId,
       if ((sale.customerId ?? '').trim().isNotEmpty)
         'customer_id': sale.customerId!.trim(),
@@ -540,6 +550,7 @@ class PosSyncService {
             },
           )
           .toList(growable: false),
+      'payments': payments,
     };
 
     await _localStore.insertSaleLocal(
@@ -682,6 +693,8 @@ class PosSyncService {
     /// Client-side client_sale_id. Required when [saleId] is empty (offline refund).
     String? clientSaleId,
     required int totalAmount,
+    required String paymentMethod,
+    required List<Map<String, dynamic>> payments,
     required DateTime date,
     required List<Map<String, dynamic>> items,
     String? returnAccessKey,
@@ -700,6 +713,8 @@ class PosSyncService {
       else if ((clientSaleId ?? '').isNotEmpty)
         'client_sale_id': clientSaleId!,
       'total_amount': totalAmount,
+      'payment_method': paymentMethod,
+      'payments': payments,
       'items': items,
       if ((returnAccessKey ?? '').trim().isNotEmpty)
         'return_access_key': returnAccessKey!.trim(),

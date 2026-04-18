@@ -74,6 +74,8 @@ class SaleCard extends StatelessWidget {
         return 'Наличная';
       case 'card':
         return 'Безналичная';
+      case 'mixed':
+        return 'Смешанная';
       case 'credit':
         return 'В долг';
       default:
@@ -88,6 +90,8 @@ class SaleCard extends StatelessWidget {
         return const Color(0xFFE6F4EA);
       case 'card':
         return const Color(0xFFE0ECFF);
+      case 'mixed':
+        return const Color(0xFFF3E8FF);
       case 'credit':
         return const Color(0xFFFFE6D6);
       default:
@@ -101,6 +105,8 @@ class SaleCard extends StatelessWidget {
         return const Color(0xFF258808);
       case 'card':
         return const Color(0xFF1D4ED8);
+      case 'mixed':
+        return const Color(0xFF7C3AED);
       case 'credit':
         return const Color(0xFFB54708);
       default:
@@ -114,6 +120,7 @@ class SaleCard extends StatelessWidget {
   Color get dateFg => const Color(0xFF425A4E);
   Color get actionBlueMuted => const Color(0xFF6A8C84);
   Color get actionDarkMuted => const Color(0xFF6F7671);
+
   String get cashierDisplayName {
     final name = cashierName.trim();
     if (name.isNotEmpty) return name;
@@ -136,31 +143,95 @@ class SaleCard extends StatelessWidget {
         final invoiceBtnWidth = desktopNarrow ? 130.0 : 170.0;
         final printBtnWidth = desktopNarrow ? 180.0 : 220.0;
 
-        return Column(
-          children: [
-            InkWell(
-              borderRadius: BorderRadius.circular(_radius),
-              onTap: onToggle,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFFEFC),
-                  borderRadius: BorderRadius.circular(_radius),
-                  boxShadow: [
-                    BoxShadow(
-                        color: cardShadow,
-                        blurRadius: 18,
-                        offset: const Offset(0, 6)),
-                  ],
-                ),
-                child: compact
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFEFC),
+            borderRadius: BorderRadius.circular(_radius),
+            boxShadow: [
+              BoxShadow(
+                  color: cardShadow,
+                  blurRadius: 18,
+                  offset: const Offset(0, 6)),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(_radius),
+            child: Column(
+              children: [
+                InkWell(
+                  onTap: onToggle,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 22, vertical: 14),
+                    child: compact
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      saleNumber(sale),
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w700),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  _DateBadge(
+                                    text: fmtSaleDate(sale.date),
+                                    bg: dateBg,
+                                    border: dateBorder,
+                                    fg: dateFg,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      children: [
+                                        StatusChip(
+                                            label: paymentLabel,
+                                            bg: paymentBg,
+                                            fg: paymentFg),
+                                        if (hasRefund)
+                                          const _RefundStatusBadge(),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      cashierDisplayName,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    money0(sale.totalAmount),
+                                    textAlign: TextAlign.right,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w700),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Icon(Icons.more_horiz,
+                                      size: 22,
+                                      color:
+                                          Colors.black.withValues(alpha: 0.55)),
+                                ],
+                              ),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              SizedBox(
+                                width: saleNumberWidth,
                                 child: Text(
                                   saleNumber(sale),
                                   overflow: TextOverflow.ellipsis,
@@ -168,188 +239,88 @@ class SaleCard extends StatelessWidget {
                                       fontWeight: FontWeight.w700),
                                 ),
                               ),
-                              const SizedBox(width: 10),
-                              _DateBadge(
-                                text: fmtSaleDate(sale.date),
-                                bg: dateBg,
-                                border: dateBorder,
-                                fg: dateFg,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    StatusChip(
-                                        label: paymentLabel,
-                                        bg: paymentBg,
-                                        fg: paymentFg),
-                                    if (hasRefund) const _RefundStatusBadge(),
-                                  ],
+                              SizedBox(
+                                width: dateWidth,
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: _DateBadge(
+                                    text: fmtSaleDate(sale.date),
+                                    bg: dateBg,
+                                    border: dateBorder,
+                                    fg: dateFg,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
+                              SizedBox(
+                                width: statusWidth,
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      StatusChip(
+                                          label: paymentLabel,
+                                          bg: paymentBg,
+                                          fg: paymentFg),
+                                      if (hasRefund)
+                                        const _RefundStatusBadge(),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                  width: cashierWidth,
+                                  child: Text(cashierDisplayName,
+                                      overflow: TextOverflow.ellipsis)),
+                              const Spacer(),
+                              SizedBox(
+                                width: amountWidth,
                                 child: Text(
-                                  cashierDisplayName,
-                                  overflow: TextOverflow.ellipsis,
+                                  money0(sale.totalAmount),
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700),
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              Text(
-                                money0(sale.totalAmount),
-                                textAlign: TextAlign.right,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w700),
+                              Icon(
+                                expanded
+                                    ? Icons.expand_less
+                                    : Icons.more_horiz,
+                                size: 22,
+                                color: const Color(0xFF7A837E),
                               ),
-                              const SizedBox(width: 8),
-                              Icon(Icons.more_horiz,
-                                  size: 22,
-                                  color: Colors.black.withValues(alpha: 0.55)),
                             ],
                           ),
-                        ],
-                      )
-                    : Row(
-                        children: [
-                          SizedBox(
-                            width: saleNumberWidth,
-                            child: Text(
-                              saleNumber(sale),
-                              overflow: TextOverflow.ellipsis,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                          SizedBox(
-                            width: dateWidth,
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: _DateBadge(
-                                text: fmtSaleDate(sale.date),
-                                bg: dateBg,
-                                border: dateBorder,
-                                fg: dateFg,
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                            width: statusWidth,
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [
-                                  StatusChip(
-                                      label: paymentLabel,
-                                      bg: paymentBg,
-                                      fg: paymentFg),
-                                  if (hasRefund) const _RefundStatusBadge(),
-                                ],
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                              width: cashierWidth,
-                              child: Text(cashierDisplayName,
-                                  overflow: TextOverflow.ellipsis)),
-                          const Spacer(),
-                          SizedBox(
-                            width: amountWidth,
-                            child: Text(
-                              money0(sale.totalAmount),
-                              textAlign: TextAlign.right,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          const Icon(Icons.more_horiz,
-                              size: 22, color: Color(0xFF7A837E)),
-                        ],
-                      ),
-              ),
-            ),
-            if (expanded) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFFEFC),
-                  borderRadius: BorderRadius.circular(_radius),
-                  boxShadow: [
-                    BoxShadow(
-                        color: cardShadow,
-                        blurRadius: 18,
-                        offset: const Offset(0, 6)),
-                  ],
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SaleItemsBox(
-                      items: sale.items,
-                      picks: picks,
-                      onToggleItem: onToggleItem,
-                      onQtyChanged: onQtyChanged,
-                      refundedQtyOf: refundedQtyOf,
-                      availableQtyOf: availableQtyOf,
-                    ),
-                    const SizedBox(height: 14),
-                    if (compact) ...[
-                      RefundSummary(count: selectedCount, total: selectedTotal),
-                      const SizedBox(height: 12),
-                      BottomActionButton(
-                        label:
-                            selectedCount == 0 ? 'Возврат' : 'Оформить возврат',
-                        width: actionWidth,
-                        fontSize: 16,
-                        bg: selectedCount == 0
-                            ? const Color(0xFFB0B0B0)
-                            : actionDarkMuted,
-                        onTap: (selectedCount == 0 || refundLoading)
-                            ? null
-                            : onSubmitRefund,
-                        loading: refundLoading,
-                      ),
-                      const SizedBox(height: 12),
-                      BottomActionButton(
-                        label: 'Накладная',
-                        width: actionWidth,
-                        fontSize: 16,
-                        bg: actionBlueMuted,
-                        onTap: invoicePrintDisabled ? null : onPrintInvoice,
-                        loading: invoicePrintLoading,
-                      ),
-                      const SizedBox(height: 12),
-                      BottomActionButton(
-                        label: 'Распечатать чек',
-                        width: actionWidth,
-                        fontSize: 16,
-                        bg: actionBlueMuted,
-                        onTap: receiptPrintDisabled ? null : onPrintReceipt,
-                        loading: receiptPrintLoading,
-                      ),
-                    ] else
-                      Row(
-                        children: [
-                          Expanded(
-                              child: RefundSummary(
-                                  count: selectedCount, total: selectedTotal)),
-                          const SizedBox(width: 12),
+                if (expanded) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SaleItemsBox(
+                          items: sale.items,
+                          picks: picks,
+                          onToggleItem: onToggleItem,
+                          onQtyChanged: onQtyChanged,
+                          refundedQtyOf: refundedQtyOf,
+                          availableQtyOf: availableQtyOf,
+                        ),
+                        const SizedBox(height: 14),
+                        if (compact) ...[
+                          RefundSummary(
+                              count: selectedCount, total: selectedTotal),
+                          const SizedBox(height: 12),
                           BottomActionButton(
                             label: selectedCount == 0
                                 ? 'Возврат'
                                 : 'Оформить возврат',
-                            width: refundBtnWidth,
+                            width: actionWidth,
                             fontSize: 16,
                             bg: selectedCount == 0
                                 ? const Color(0xFFB0B0B0)
@@ -359,31 +330,75 @@ class SaleCard extends StatelessWidget {
                                 : onSubmitRefund,
                             loading: refundLoading,
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(height: 12),
                           BottomActionButton(
-                              label: 'Накладная',
-                              width: invoiceBtnWidth,
-                              fontSize: 16,
-                              bg: actionBlueMuted,
-                              onTap:
-                                  invoicePrintDisabled ? null : onPrintInvoice,
-                              loading: invoicePrintLoading),
-                          const SizedBox(width: 12),
+                            label: 'Накладная',
+                            width: actionWidth,
+                            fontSize: 16,
+                            bg: actionBlueMuted,
+                            onTap: invoicePrintDisabled ? null : onPrintInvoice,
+                            loading: invoicePrintLoading,
+                          ),
+                          const SizedBox(height: 12),
                           BottomActionButton(
-                              label: 'Распечатать чек',
-                              width: printBtnWidth,
-                              fontSize: 16,
-                              bg: actionBlueMuted,
-                              onTap:
-                                  receiptPrintDisabled ? null : onPrintReceipt,
-                              loading: receiptPrintLoading),
-                        ],
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ],
+                            label: 'Распечатать чек',
+                            width: actionWidth,
+                            fontSize: 16,
+                            bg: actionBlueMuted,
+                            onTap: receiptPrintDisabled ? null : onPrintReceipt,
+                            loading: receiptPrintLoading,
+                          ),
+                        ] else
+                          Row(
+                            children: [
+                              Expanded(
+                                  child: RefundSummary(
+                                      count: selectedCount,
+                                      total: selectedTotal)),
+                              const SizedBox(width: 12),
+                              BottomActionButton(
+                                label: selectedCount == 0
+                                    ? 'Возврат'
+                                    : 'Оформить возврат',
+                                width: refundBtnWidth,
+                                fontSize: 16,
+                                bg: selectedCount == 0
+                                    ? const Color(0xFFB0B0B0)
+                                    : actionDarkMuted,
+                                onTap: (selectedCount == 0 || refundLoading)
+                                    ? null
+                                    : onSubmitRefund,
+                                loading: refundLoading,
+                              ),
+                              const SizedBox(width: 12),
+                              BottomActionButton(
+                                  label: 'Накладная',
+                                  width: invoiceBtnWidth,
+                                  fontSize: 16,
+                                  bg: actionBlueMuted,
+                                  onTap: invoicePrintDisabled
+                                      ? null
+                                      : onPrintInvoice,
+                                  loading: invoicePrintLoading),
+                              const SizedBox(width: 12),
+                              BottomActionButton(
+                                  label: 'Распечатать чек',
+                                  width: printBtnWidth,
+                                  fontSize: 16,
+                                  bg: actionBlueMuted,
+                                  onTap: receiptPrintDisabled
+                                      ? null
+                                      : onPrintReceipt,
+                                  loading: receiptPrintLoading),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         );
       },
     );

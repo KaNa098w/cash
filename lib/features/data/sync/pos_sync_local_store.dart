@@ -683,6 +683,21 @@ class PosSyncLocalStore {
     });
   }
 
+  Future<List<LocalAccount>> loadAccounts() async {
+    final db = await _database;
+    final rows = db.select(
+      'SELECT id, name, type, COALESCE(visible_to_pos, 1) AS visible_to_pos FROM accounts ORDER BY name COLLATE NOCASE;',
+    );
+    return rows.map((row) {
+      return LocalAccount(
+        id: row['id'].toString(),
+        name: row['name'].toString(),
+        type: row['type']?.toString(),
+        visibleToPos: (row['visible_to_pos'] as int? ?? 1) == 1,
+      );
+    }).toList(growable: false);
+  }
+
   Future<List<ProductModel>> loadProducts() async {
     final db = await _database;
     final rows = db
@@ -1964,7 +1979,7 @@ class PosSyncLocalStore {
       'sku': _nullableString(raw['sku']),
       'category_id': _nullableString(raw['category_id']),
       'category_name': categoryName,
-      'price': _asDouble(raw['selling_price'] ?? raw['price']),
+      'price': _asDouble(raw['price_after_discount'] ?? raw['selling_price'] ?? raw['price']),
       'arrival_cost': _asDouble(raw['arrival_cost']),
       'wholesale_price': _asDouble(raw['wholesale_price']),
       'quantity': _asDouble(raw['quantity']),
@@ -2581,6 +2596,7 @@ class PosSyncLocalStore {
     final db = await _database;
     final clientRefundId = _string(payload['client_refund_id']);
     if (clientRefundId.isEmpty) return;
+    final now = DateTime.now().toIso8601String();
     _inTransaction<void>(db, () {
       db.execute(
         '''
@@ -2626,6 +2642,11 @@ class PosSyncLocalStore {
           idx++;
         }
       }
+
+      // Update sales_history raw_json so refund_quantity is reflected immediately
+      final historyPayload = Map<String, dynamic>.from(payload)
+        ..['id'] = clientRefundId;
+      _applyRefundToSalesHistory(db, historyPayload, now);
     });
   }
 
@@ -2974,8 +2995,8 @@ class PosSyncLocalStore {
               saleId: (payload['client_sale_id'] ?? '').toString(),
               productId: productId,
               quantity: _asDouble(map['quantity']),
-              price: _asInt(map['price']),
-              totalPrice: _asInt(map['total_price']),
+              price: _asDouble(map['price']),
+              totalPrice: _asDouble(map['total_price']),
               product: productName.isEmpty
                   ? null
                   : sale_models.ProductModel(

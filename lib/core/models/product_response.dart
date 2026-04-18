@@ -22,6 +22,19 @@ class ProductModel {
   /// null — если measurement_unit == штуки (конвертация не нужна).
   final double? conversionValue;
 
+  // ── Скидки (из нового API) ──────────────────────────────────────────
+  /// "automatic" | "fixed" | "forbidden" | null
+  final String? discountType;
+  final double discountPercent;
+  final double discountAmount;
+  /// Финальная цена за единицу с учётом скидки.
+  /// Именно её POS ставит в строку продажи.
+  final double priceAfterDiscount;
+
+  /// Цена для корзины: priceAfterDiscount если > 0, иначе sellingPrice.
+  double get effectivePrice =>
+      priceAfterDiscount > 0 ? priceAfterDiscount : sellingPrice;
+
   ProductModel({
     required this.id,
     required this.name,
@@ -38,6 +51,10 @@ class ProductModel {
     this.categoryId,
     this.globalProductId,
     this.conversionValue,
+    this.discountType,
+    this.discountPercent = 0.0,
+    this.discountAmount = 0.0,
+    this.priceAfterDiscount = 0.0,
   });
 
   static String normalizeMeasurementUnit(String measurementUnit) {
@@ -131,6 +148,10 @@ class ProductModel {
       categoryId: _asString(json['category_id']),
       globalProductId: _asString(json['global_product_id']),
       conversionValue: conversionValue,
+      discountType: _asString(json['discount_type']),
+      discountPercent: _asDouble(json['discount_percent']),
+      discountAmount: _asDouble(json['discount_amount']),
+      priceAfterDiscount: _asDouble(json['price_after_discount']),
     );
   }
 
@@ -151,6 +172,10 @@ class ProductModel {
       'category_id': categoryId,
       'global_product_id': globalProductId,
       'conversion_value': conversionValue,
+      'discount_type': discountType,
+      'discount_percent': discountPercent,
+      'discount_amount': discountAmount,
+      'price_after_discount': priceAfterDiscount,
     };
   }
 }

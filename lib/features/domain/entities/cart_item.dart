@@ -4,9 +4,17 @@ import 'product.dart';
 class CartItem extends Equatable {
   final Product product;
   final double qty;
-  final double discount; // percent
+  final double discount; // legacy percent discount, usually 0
 
-  const CartItem({required this.product, this.qty = 1, this.discount = 0});
+  /// Applied server discount for this line item.
+  final bool discountApplied;
+
+  const CartItem({
+    required this.product,
+    this.qty = 1,
+    this.discount = 0,
+    this.discountApplied = false,
+  });
 
   factory CartItem.fromJson(Map<String, dynamic> json) => CartItem(
         product: Product.fromJson(
@@ -16,19 +24,46 @@ class CartItem extends Equatable {
         ),
         qty: (json['qty'] as num?)?.toDouble() ?? 1,
         discount: (json['discount'] as num?)?.toDouble() ?? 0,
+        discountApplied: json['discountApplied'] == true,
       );
 
-  double get sum => (product.price * qty) * (1 - discount / 100);
+  /// Effective unit price: uses priceAfterDiscount when discount is applied.
+  double get effectiveUnitPrice {
+    if (discountApplied && product.priceAfterDiscount > 0) {
+      return product.priceAfterDiscount;
+    }
+    return product.price;
+  }
 
-  CartItem copyWith({Product? product, double? qty, double? discount}) =>
-      CartItem(product: product ?? this.product, qty: qty ?? this.qty, discount: discount ?? this.discount);
+  double get effectiveDiscountPercent {
+    if (discountApplied && product.discountPercent > 0) {
+      return product.discountPercent;
+    }
+    return discount;
+  }
+
+  double get sum => effectiveUnitPrice * qty * (1 - discount / 100);
+
+  CartItem copyWith({
+    Product? product,
+    double? qty,
+    double? discount,
+    bool? discountApplied,
+  }) =>
+      CartItem(
+        product: product ?? this.product,
+        qty: qty ?? this.qty,
+        discount: discount ?? this.discount,
+        discountApplied: discountApplied ?? this.discountApplied,
+      );
 
   Map<String, dynamic> toJson() => {
         'product': product.toJson(),
         'qty': qty,
         'discount': discount,
+        'discountApplied': discountApplied,
       };
 
   @override
-  List<Object?> get props => [product, qty, discount];
+  List<Object?> get props => [product, qty, discount, discountApplied];
 }

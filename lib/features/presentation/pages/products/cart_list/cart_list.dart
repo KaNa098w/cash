@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:leemon_app/core/models/product_response.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
+import 'package:leemon_app/features/domain/entities/cart_item.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/features/presentation/widgets/footer_status.dart'
     show TouchDeleteDialog;
@@ -118,124 +119,161 @@ class CartList extends StatelessWidget {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 12, vertical: 10),
                                 child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  // превью
-                                  Container(
-                                    width: 30,
-                                    height: 30,
-                                    decoration: BoxDecoration(
-                                      color: ThemeColors.grey,
-                                      border: Border.all(
-                                        color: const Color(0xFFE5E7EB),
-                                      ),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 20),
-
-                                  // Наименование + метки
-                                  Expanded(
-                                    child: Text(
-                                      '${_shortProductNameKeepEnd(it.product.name)} (${formatQtyByUnit(it.product.quantity, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit})',
-                                      style: const TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-
-                                  // Цена
-                                  SizedBox(
-                                    width: 100,
-                                    child: Text(
-                                      money(it.product.price),
-                                      textAlign: TextAlign.right,
-                                      style: const TextStyle(fontSize: kCartFs),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
-
-                                  SizedBox(
-                                    width: 120,
-                                    child: InkWell(
-                                      onTap: () {
-                                        context.read<PosCubit>().selectItem(i);
-                                        _showQtyDialog(
-                                          context,
-                                          index: i,
-                                          initialQty: it.qty,
-                                          productName: it.product.name,
-                                          currentQtyLabel:
-                                              '${formatQtyByUnit(it.product.quantity, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit}',
-                                        );
-                                      },
-
-                                      // убираем эффекты как и в строке
-                                      splashFactory: NoSplash.splashFactory,
-                                      overlayColor:
-                                          const WidgetStatePropertyAll(
-                                              Colors.transparent),
-                                      splashColor: Colors.transparent,
-                                      highlightColor: Colors.transparent,
-                                      hoverColor: Colors.transparent,
-
-                                      borderRadius: BorderRadius.circular(10),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 6),
-                                        decoration: BoxDecoration(
-                                          color: isSelected
-                                              ? Colors.white
-                                              // тот же фон что и у выбранной карточки
-                                              : Colors.transparent,
-                                          borderRadius:
-                                              BorderRadius.circular(10),
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    // превью
+                                    Container(
+                                      width: 30,
+                                      height: 30,
+                                      decoration: BoxDecoration(
+                                        color: ThemeColors.grey,
+                                        border: Border.all(
+                                          color: const Color(0xFFE5E7EB),
                                         ),
-                                        alignment: Alignment.center,
-                                        child: Text(
-                                          '${formatQtyByUnit(it.qty, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit}',
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                              fontSize: kCartFs),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 20),
+
+                                    // Наименование + метки
+                                    Expanded(
+                                      child: Text(
+                                        '${_shortProductNameKeepEnd(it.product.name)} (${formatQtyByUnit(it.product.quantity, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit})',
+                                        style: const TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+
+                                    // Цена
+                                    SizedBox(
+                                      width: 100,
+                                      child: _PriceCell(it),
+                                    ),
+                                    const SizedBox(width: 16),
+
+                                    SizedBox(
+                                      width: 120,
+                                      child: InkWell(
+                                        onTap: () {
+                                          context
+                                              .read<PosCubit>()
+                                              .selectItem(i);
+                                          _showQtyDialog(
+                                            context,
+                                            index: i,
+                                            initialQty: it.qty,
+                                            productName: it.product.name,
+                                            currentQtyLabel:
+                                                '${formatQtyByUnit(it.product.quantity, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit}',
+                                          );
+                                        },
+
+                                        // убираем эффекты как и в строке
+                                        splashFactory: NoSplash.splashFactory,
+                                        overlayColor:
+                                            const WidgetStatePropertyAll(
+                                                Colors.transparent),
+                                        splashColor: Colors.transparent,
+                                        highlightColor: Colors.transparent,
+                                        hoverColor: Colors.transparent,
+
+                                        borderRadius: BorderRadius.circular(10),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: isSelected
+                                                ? Colors.white
+                                                // тот же фон что и у выбранной карточки
+                                                : Colors.transparent,
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                          ),
+                                          alignment: Alignment.center,
+                                          child: Text(
+                                            '${formatQtyByUnit(it.qty, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit}',
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                                fontSize: kCartFs),
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
 
-                                  const SizedBox(width: 40),
+                                    const SizedBox(width: 40),
 
-                                  // Скидка
-                                  SizedBox(
-                                    width: 70,
-                                    child: _DiscountChip(
-                                      it.discount.toStringAsFixed(0),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
+                                    // Скидка
+                                    SizedBox(
+                                      width: 110,
+                                      child: _DiscountCell(
+                                        item: it,
+                                        onApply: () async {
+                                          context
+                                              .read<PosCubit>()
+                                              .selectItem(i);
+                                          if (!_canApplyAutomaticDiscount(it)) {
+                                            return;
+                                          }
 
-                                  // Сумма
-                                  SizedBox(
-                                    width: 150,
-                                    child: Text(
-                                      money(it.sum),
-                                      textAlign: TextAlign.right,
-                                      style: const TextStyle(
-                                        fontSize: kCartFs,
-                                        fontWeight: FontWeight.w600,
+                                          final confirmed =
+                                              await _confirmApplyAutomaticDiscount(
+                                            context,
+                                            productName: it.product.name,
+                                            discountPercent:
+                                                it.product.discountPercent,
+                                          );
+                                          if (!confirmed || !context.mounted) {
+                                            return;
+                                          }
+                                          context
+                                              .read<PosCubit>()
+                                              .applyAvailableDiscount(i);
+                                        },
+                                        onRemove: () {
+                                          context
+                                              .read<PosCubit>()
+                                              .selectItem(i);
+                                          _confirmRemoveAutomaticDiscount(
+                                            context,
+                                            productName: it.product.name,
+                                          ).then((confirmed) {
+                                            if (!confirmed ||
+                                                !context.mounted) {
+                                              return;
+                                            }
+                                            context
+                                                .read<PosCubit>()
+                                                .removeAvailableDiscount(i);
+                                          });
+                                        },
                                       ),
                                     ),
-                                  ),
+                                    const SizedBox(width: 16),
 
-                                  IconButton(
-                                    icon: const Icon(Icons.close, size: 18),
-                                    onPressed: () =>
-                                        context.read<PosCubit>().removeAt(i),
-                                    tooltip: 'Удалить',
-                                  ),
-                                ],
+                                    // Сумма
+                                    SizedBox(
+                                      width: 150,
+                                      child: Text(
+                                        money(it.sum),
+                                        textAlign: TextAlign.right,
+                                        style: const TextStyle(
+                                          fontSize: kCartFs,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+
+                                    IconButton(
+                                      icon: const Icon(Icons.close, size: 18),
+                                      onPressed: () =>
+                                          context.read<PosCubit>().removeAt(i),
+                                      tooltip: 'Удалить',
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -294,7 +332,7 @@ class _Header extends StatelessWidget {
           const SizedBox(width: 25),
           cell('Количество', w: 120),
           const SizedBox(width: 25),
-          cell('Скидка', w: 70),
+          cell('Скидка', w: 110),
           const SizedBox(width: 25),
           cell('Сумма', w: 140),
           const SizedBox(width: 60),
@@ -304,27 +342,290 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _DiscountChip extends StatelessWidget {
-  final String text;
-  const _DiscountChip(this.text);
+class _PriceCell extends StatelessWidget {
+  final CartItem item;
+  const _PriceCell(this.item);
 
   @override
   Widget build(BuildContext context) {
+    final showDiscounted = item.discountApplied &&
+        item.product.priceAfterDiscount > 0 &&
+        item.product.priceAfterDiscount < item.product.price;
+
+    if (showDiscounted) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            money(item.product.priceAfterDiscount),
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: kCartFs),
+          ),
+        ],
+      );
+    }
+
+    return Text(
+      money(item.product.price),
+      textAlign: TextAlign.right,
+      style: const TextStyle(fontSize: kCartFs),
+    );
+  }
+}
+
+class _DiscountCell extends StatelessWidget {
+  final CartItem item;
+  final VoidCallback? onApply;
+  final VoidCallback? onRemove;
+  const _DiscountCell({
+    required this.item,
+    this.onApply,
+    this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dt = item.product.discountType;
+    final pct = item.product.discountPercent;
+    final hasRealDiscount = _hasConfiguredDiscount(item);
+    final pctStr = pct == pct.roundToDouble()
+        ? pct.toInt().toString()
+        : pct.toStringAsFixed(1);
+
+    // Нет скидки или запрещена
+    if (dt == null || dt.isEmpty || dt == 'forbidden' || !hasRealDiscount) {
+      return _singleChip('0%', filled: false, active: false);
+    }
+
+    // Скидка сразу применяется и недоступна для изменения
+    if (dt == 'fixed') {
+      return _singleChip('$pctStr%', filled: true, active: true);
+    }
+
+    if (dt == 'automatic') {
+      if (item.discountApplied) {
+        return GestureDetector(
+          onTap: onRemove,
+          child: _singleChip('$pctStr%', filled: true, active: true),
+        );
+      }
+      return GestureDetector(
+        onTap: onApply,
+        child: _singleChip(
+          '0%',
+          filled: false,
+          active: true,
+          outlinedActive: true,
+        ),
+      );
+    }
+
+    return _singleChip('0%', filled: false, active: false);
+  }
+
+  bool _hasConfiguredDiscount(CartItem item) {
+    return item.product.discountPercent > 0 &&
+        item.product.priceAfterDiscount > 0 &&
+        item.product.priceAfterDiscount < item.product.price;
+  }
+
+  Widget _singleChip(
+    String text, {
+    required bool filled,
+    required bool active,
+    bool outlinedActive = false,
+  }) {
+    const softGreen = Color(0xFF258808);
+    const softGreenBg = Color(0xFFCBE9C5);
+    const softGreenBorder = Color(0xFFCBE9C5);
+    final bg = active && filled ? softGreenBg : const Color(0xFFF3F4F6);
+    final border = active && filled
+        ? softGreenBorder
+        : outlinedActive
+            ? softGreen
+            : const Color(0xFFE5E7EB);
+    final fg = active && filled
+        ? softGreen
+        : outlinedActive
+            ? softGreen
+            : const Color(0xFF9CA3AF);
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      constraints: const BoxConstraints(minWidth: 64.242, minHeight: 29.397),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: const Color(0xFFEFFAF0),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFD1F2D7)),
+        color: bg,
+        borderRadius: BorderRadius.circular(14.3445),
+        border: Border.all(color: border),
       ),
       child: Text(
-        '$text%',
-        style: const TextStyle(
-          fontSize: kCartFs,
-          color: Color(0xFF16A34A),
-          fontWeight: FontWeight.w600,
-        ),
+        text,
+        style: TextStyle(fontSize: 16, color: fg, fontWeight: FontWeight.w900),
         textAlign: TextAlign.center,
+      ),
+    );
+  }
+}
+
+bool _canApplyAutomaticDiscount(CartItem item) {
+  return item.product.discountType == 'automatic' &&
+      !item.discountApplied &&
+      item.product.discountPercent > 0 &&
+      item.product.priceAfterDiscount > 0 &&
+      item.product.priceAfterDiscount < item.product.price;
+}
+
+Future<bool> _confirmApplyAutomaticDiscount(
+  BuildContext context, {
+  required String productName,
+  required double discountPercent,
+}) async {
+  final pctStr = discountPercent == discountPercent.roundToDouble()
+      ? discountPercent.toInt().toString()
+      : discountPercent.toStringAsFixed(1);
+
+  final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) => _DiscountConfirmDialog(
+          title: 'Применить скидку',
+          message:
+              'Применить возможную скидку $pctStr% для товара "$productName"?',
+          confirmLabel: 'Применить',
+          confirmColor: const Color(0xFF16A34A),
+        ),
+      ) ??
+      false;
+
+  return confirmed;
+}
+
+Future<bool> _confirmRemoveAutomaticDiscount(
+  BuildContext context, {
+  required String productName,
+}) async {
+  final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) => _DiscountConfirmDialog(
+          title: 'Убрать скидку',
+          message: 'Хотите убрать скидку у товара "$productName"?',
+          confirmLabel: 'Убрать',
+          confirmColor: const Color(0xFFBE3A14),
+        ),
+      ) ??
+      false;
+
+  return confirmed;
+}
+
+class _DiscountConfirmDialog extends StatelessWidget {
+  const _DiscountConfirmDialog({
+    required this.title,
+    required this.message,
+    required this.confirmLabel,
+    required this.confirmColor,
+  });
+
+  final String title;
+  final String message;
+  final String confirmLabel;
+  final Color confirmColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      backgroundColor: Colors.transparent,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.14),
+                  blurRadius: 28,
+                  offset: const Offset(0, 18),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  message,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    height: 1.4,
+                    color: Color(0xFF4B5563),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(58),
+                          side: const BorderSide(color: Color(0xFFD1D5DB)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                        ),
+                        child: const Text(
+                          'Нет',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF374151),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(58),
+                          backgroundColor: confirmColor,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                        ),
+                        child: Text(
+                          confirmLabel,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

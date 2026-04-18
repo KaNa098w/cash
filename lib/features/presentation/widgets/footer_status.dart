@@ -13,6 +13,9 @@ import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/domain/entities/payment.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_models.dart'
+    show LocalAccount;
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
@@ -61,7 +64,7 @@ class _FooterDesktop extends StatelessWidget {
     final storeId = auth.storeId?.trim() ?? '';
     final posId = auth.posId?.trim() ?? '';
     final userId = auth.activeUserId?.trim() ?? '';
-    final accountId = auth.accountId?.trim() ?? '';
+    final fallbackAccountId = auth.accountId?.trim() ?? '';
 
     if (key.isEmpty) {
       ScaffoldMessenger.of(context)
@@ -83,7 +86,7 @@ class _FooterDesktop extends StatelessWidget {
           .showSnackBar(const SnackBar(content: Text('Нет posId')));
       return;
     }
-    if (accountId.isEmpty) {
+    if (fallbackAccountId.isEmpty) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Нет accountId')));
       return;
@@ -119,11 +122,10 @@ class _FooterDesktop extends StatelessWidget {
       final saleItems = <SaleItemModel>[];
       for (final it in posCubit.state.items) {
         final cv = it.product.conversionValue;
-        // Для конвертируемых товаров отправляем количество
-        // в единице измерения товара, а не во внутренних штуках.
         final qty = (cv != null && cv > 0) ? (it.qty * cv) : it.qty;
-        final price = it.product.price.round();
-        final totalPrice = (it.product.price * it.qty).round();
+        final unitPrice = it.effectiveUnitPrice;
+        final price = double.parse(unitPrice.toStringAsFixed(2));
+        final totalPrice = double.parse((unitPrice * qty).toStringAsFixed(2));
 
         saleItems.add(
           SaleItemModel(
@@ -138,17 +140,22 @@ class _FooterDesktop extends StatelessWidget {
       }
 
       final customerId = posCubit.state.activeCustomer?.id;
+      final saleLocalId = const Uuid().v4();
+      final totalAmountInt = total.round();
+      final exactTotal = double.parse(
+        saleItems.fold(0.0, (s, e) => s + e.totalPrice).toStringAsFixed(2),
+      );
 
       final sale = SaleModel(
-        localId: const Uuid().v4(),
+        localId: saleLocalId,
         number: '',
         date: DateTime.now(),
-        totalAmount: total.round(),
-        paymentMethod: 'card', // ✅ сразу card
+        totalAmount: totalAmountInt,
+        paymentMethod: 'card',
         posId: posId,
         storeId: storeId,
         userId: userId,
-        accountId: accountId,
+        accountId: fallbackAccountId,
         posSessionId: auth.shiftId?.trim(),
         customerId: customerId,
         items: saleItems
@@ -162,7 +169,8 @@ class _FooterDesktop extends StatelessWidget {
                   measurementUnit:
                       posCubit.state.items[entry.key].product.measurementUnit,
                   arrivalCost: 0,
-                  sellingPrice: posCubit.state.items[entry.key].product.price,
+                  sellingPrice:
+                      posCubit.state.items[entry.key].effectiveUnitPrice,
                   wholesalePrice: 0,
                 ),
               ),
@@ -170,9 +178,32 @@ class _FooterDesktop extends StatelessWidget {
             .toList(),
       );
 
+      final sync = GetIt.I<PosSyncService>();
+      final accounts = await sync.loadAccounts();
+      final cashAccount = accounts.firstWhere(
+        (a) => a.isCash,
+        orElse: () => LocalAccount(id: fallbackAccountId, name: ''),
+      );
+      final cardAccount = accounts.firstWhere(
+        (a) => !a.isCash && a.id != cashAccount.id,
+        orElse: () => cashAccount,
+      );
+
+      final payments = [
+        {
+          'account_id': cardAccount.id,
+          'amount': exactTotal,
+          'client_payment_id': '$saleLocalId-card',
+        },
+      ];
+
       final repo = GetIt.I<SaleRepository>();
-      final outcome =
-          await repo.createSale(key: key, deviceId: deviceId, sale: sale);
+      final outcome = await repo.createSale(
+        key: key,
+        deviceId: deviceId,
+        sale: sale,
+        payments: payments,
+      );
       final result = outcome.result;
       final printedSale = outcome.sale;
 
@@ -226,9 +257,9 @@ class _FooterDesktop extends StatelessWidget {
                   (it) => ReceiptPdfItem(
                     name: it.product.name,
                     quantity: it.qty,
-                    unitPrice: it.product.price,
+                    unitPrice: it.effectiveUnitPrice,
                     lineTotal: it.sum,
-                    discountPercent: it.discount,
+                    discountPercent: it.effectiveDiscountPercent,
                   ),
                 )
                 .toList(),

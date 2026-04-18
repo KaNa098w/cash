@@ -3,14 +3,20 @@ import 'package:equatable/equatable.dart';
 class Product extends Equatable {
   final String id;
   final String name;
-  final double price;
-  final double vat; // percent, eg 20
-  final double quantity; // stock quantity (in product's measurement unit)
-  final String measurementUnit;
 
-  /// Сколько штук в 1 единице измерения товара.
-  /// null — если товар продаётся в штуках (конвертация не нужна).
+  /// Base selling price (before any discount).
+  final double price;
+  final double vat;
+  final double quantity;
+  final String measurementUnit;
   final double? conversionValue;
+
+  /// "automatic" | "fixed" | "forbidden" | null
+  final String? discountType;
+  final double discountPercent;
+
+  /// Unit price after server-computed discount. 0 if no discount.
+  final double priceAfterDiscount;
 
   const Product({
     required this.id,
@@ -20,6 +26,9 @@ class Product extends Equatable {
     this.quantity = 0,
     this.measurementUnit = 'шт.',
     this.conversionValue,
+    this.discountType,
+    this.discountPercent = 0,
+    this.priceAfterDiscount = 0,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) => Product(
@@ -30,6 +39,10 @@ class Product extends Equatable {
         quantity: (json['quantity'] as num?)?.toDouble() ?? 0,
         measurementUnit: (json['measurementUnit'] ?? 'шт.').toString(),
         conversionValue: (json['conversionValue'] as num?)?.toDouble(),
+        discountType: json['discountType']?.toString(),
+        discountPercent: (json['discountPercent'] as num?)?.toDouble() ?? 0,
+        priceAfterDiscount:
+            (json['priceAfterDiscount'] as num?)?.toDouble() ?? 0,
       );
 
   Map<String, dynamic> toJson() => {
@@ -40,9 +53,22 @@ class Product extends Equatable {
         'quantity': quantity,
         'measurementUnit': measurementUnit,
         'conversionValue': conversionValue,
+        'discountType': discountType,
+        'discountPercent': discountPercent,
+        'priceAfterDiscount': priceAfterDiscount,
       };
 
   @override
-  List<Object?> get props =>
-      [id, name, price, vat, quantity, measurementUnit, conversionValue];
+  List<Object?> get props => [
+        id,
+        name,
+        price,
+        vat,
+        quantity,
+        measurementUnit,
+        conversionValue,
+        discountType,
+        discountPercent,
+        priceAfterDiscount,
+      ];
 }

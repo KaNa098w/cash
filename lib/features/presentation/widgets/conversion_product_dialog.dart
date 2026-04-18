@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,27 +18,11 @@ Future<bool> addProductToCartWithConversionFlow(
     return true;
   }
 
-  final posCubit = context.read<PosCubit>();
-  final existingQty = posCubit.state.items
-      .where((item) => item.product.id == (product.id ?? product.name))
-      .fold<double>(0, (sum, item) => sum + item.qty);
-  final remainingQty = math.max(0.0, product.quantity - existingQty).toDouble();
-
-  if (remainingQty <= 0) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Недостаточно остатка для товара "${product.name}"'),
-      ),
-    );
-    return false;
-  }
-
   final qtyToAdd = await showDialog<double>(
     context: context,
     barrierDismissible: true,
     builder: (_) => _ConversionProductDialog(
       product: product,
-      remainingQty: remainingQty,
     ),
   );
 
@@ -55,11 +38,9 @@ enum _InputTarget { measurement, pieces }
 class _ConversionProductDialog extends StatefulWidget {
   const _ConversionProductDialog({
     required this.product,
-    required this.remainingQty,
   });
 
   final ProductModel product;
-  final double remainingQty;
 
   @override
   State<_ConversionProductDialog> createState() =>
@@ -179,10 +160,10 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
     final product = widget.product;
     final cv = product.conversionValue ?? 0;
     final measurementValue = _parseValue(_measurementController.text) ?? 0;
-    final piecesValue = (_parseValue(_piecesController.text) ?? 0).roundToDouble();
+    final piecesValue =
+        (_parseValue(_piecesController.text) ?? 0).roundToDouble();
     final totalAmount = piecesValue * product.sellingPrice;
-    final exceedsStock = piecesValue > widget.remainingQty;
-    final canConfirm = piecesValue > 0 && !exceedsStock;
+    final canConfirm = piecesValue > 0;
 
     return Dialog(
       elevation: 0,
@@ -276,8 +257,8 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                           label: product.measurementUnit,
                           controller: _measurementController,
                           focusNode: _measurementFocusNode,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
                           inputFormatters: [
                             FilteringTextInputFormatter.allow(
                               RegExp(r'^[0-9]*[.,]?[0-9]*$'),
@@ -287,7 +268,8 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                           hintText: '0',
                           onChanged: (_) => _scheduleSync(),
                           onTap: () {
-                            setState(() => _activeTarget = _InputTarget.measurement);
+                            setState(
+                                () => _activeTarget = _InputTarget.measurement);
                             _measurementFocusNode.requestFocus();
                           },
                         ),
@@ -298,10 +280,11 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                           label: 'Количество, шт.',
                           controller: _piecesController,
                           focusNode: _piecesFocusNode,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(decimal: false),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: false),
                           inputFormatters: [
-                            FilteringTextInputFormatter.allow(RegExp(r'^[0-9]*$')),
+                            FilteringTextInputFormatter.allow(
+                                RegExp(r'^[0-9]*$')),
                           ],
                           selected: _activeTarget == _InputTarget.pieces,
                           hintText: '0',
@@ -348,7 +331,8 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              child: const Text('Очистить', style: TextStyle(color: Colors.black)),
+                              child: const Text('Очистить',
+                                  style: TextStyle(color: Colors.black)),
                             ),
                           ),
                         ],
@@ -403,16 +387,6 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                       ],
                     ),
                   ),
-                  if (piecesValue > 0 && exceedsStock) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      'Недостаточно остатка. Доступно только ${_formatNumber(widget.remainingQty * cv)} ${product.measurementUnit}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFFB42318),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
                   const SizedBox(height: 14),
                   Row(
                     children: [
@@ -426,7 +400,10 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                               borderRadius: BorderRadius.circular(14),
                             ),
                           ),
-                          child: const Text('Отмена', style: TextStyle(color: Colors.black),),
+                          child: const Text(
+                            'Отмена',
+                            style: TextStyle(color: Colors.black),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -438,8 +415,7 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                                   final finalPieces =
                                       (_parseValue(_piecesController.text) ?? 0)
                                           .roundToDouble();
-                                  if (finalPieces <= 0 ||
-                                      finalPieces > widget.remainingQty) {
+                                  if (finalPieces <= 0) {
                                     return;
                                   }
                                   Navigator.of(context).pop(finalPieces);
