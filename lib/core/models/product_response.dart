@@ -17,6 +17,7 @@ class ProductModel {
 
   final String? categoryId;
   final String? globalProductId;
+  final bool isUniversal;
 
   /// Сколько штук в 1 единице измерения.
   /// null — если measurement_unit == штуки (конвертация не нужна).
@@ -27,6 +28,7 @@ class ProductModel {
   final String? discountType;
   final double discountPercent;
   final double discountAmount;
+
   /// Финальная цена за единицу с учётом скидки.
   /// Именно её POS ставит в строку продажи.
   final double priceAfterDiscount;
@@ -50,6 +52,7 @@ class ProductModel {
     this.coverUrl,
     this.categoryId,
     this.globalProductId,
+    this.isUniversal = false,
     this.conversionValue,
     this.discountType,
     this.discountPercent = 0.0,
@@ -147,6 +150,9 @@ class ProductModel {
       coverUrl: _asString(json['cover_url']),
       categoryId: _asString(json['category_id']),
       globalProductId: _asString(json['global_product_id']),
+      isUniversal: json['is_universal'] == true ||
+          json['is_universal'] == 1 ||
+          json['is_universal']?.toString().trim() == '1',
       conversionValue: conversionValue,
       discountType: _asString(json['discount_type']),
       discountPercent: _asDouble(json['discount_percent']),
@@ -171,6 +177,7 @@ class ProductModel {
       'cover_url': coverUrl,
       'category_id': categoryId,
       'global_product_id': globalProductId,
+      'is_universal': isUniversal ? 1 : 0,
       'conversion_value': conversionValue,
       'discount_type': discountType,
       'discount_percent': discountPercent,

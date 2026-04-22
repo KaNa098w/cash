@@ -77,6 +77,11 @@ class ReceiptPdfData {
     this.discountSum = 0,
     this.received,
     this.change,
+    this.customerName,
+    this.previousDebt,
+    this.newDebt,
+    this.debtAmount,
+    this.paidNow,
     this.rightPaddingMm = 24,
     this.documentTitle,
     this.footerText = 'Спасибо за покупку!',
@@ -98,6 +103,11 @@ class ReceiptPdfData {
   final bool isCashPayment;
   final num? received;
   final num? change;
+  final String? customerName;
+  final num? previousDebt;
+  final num? newDebt;
+  final num? debtAmount;
+  final num? paidNow;
 
   final double rightPaddingMm;
   final String? documentTitle;
@@ -336,6 +346,13 @@ Future<pw.Document> buildReceiptPdf(ReceiptPdfData data) async {
               'Кассир: ${data.cashierName}',
               style: pw.TextStyle(font: base, fontSize: metaFs),
             ),
+            if ((data.customerName ?? '').trim().isNotEmpty) ...[
+              pw.SizedBox(height: 2),
+              pw.Text(
+                'Клиент: ${data.customerName!.trim()}',
+                style: pw.TextStyle(font: base, fontSize: metaFs),
+              ),
+            ],
             divider(),
             for (final it in data.items) ...[
               pw.Text(it.name,
@@ -377,6 +394,16 @@ Future<pw.Document> buildReceiptPdf(ReceiptPdfData data) async {
               pw.SizedBox(height: 3),
               rowKV('Получено', data.money(data.received ?? 0)),
               rowKV('Сдача', data.money(data.change ?? 0), strong: true),
+            ],
+            if (data.debtAmount != null) ...[
+              pw.SizedBox(height: 3),
+              rowKV('Оплачено сейчас', data.money(data.paidNow ?? 0)),
+              rowKV('В долг', data.money(data.debtAmount ?? 0), strong: true),
+            ],
+            if (data.previousDebt != null || data.newDebt != null) ...[
+              pw.SizedBox(height: 3),
+              rowKV('Предыдущий долг', data.money(data.previousDebt ?? 0)),
+              rowKV('Новый долг', data.money(data.newDebt ?? 0), strong: true),
             ],
             pw.SizedBox(height: 4),
             rowKV('Метод', data.paymentMethodLabel),

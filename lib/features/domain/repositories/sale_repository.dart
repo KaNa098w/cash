@@ -7,10 +7,12 @@ class CreateSaleOutcome {
   const CreateSaleOutcome({
     required this.result,
     required this.sale,
+    this.errorMessage,
   });
 
   final CreateSaleResult result;
   final SaleModel sale;
+  final String? errorMessage;
 }
 
 abstract class SaleRepository {
@@ -19,6 +21,7 @@ abstract class SaleRepository {
     required String deviceId,
     required SaleModel sale,
     required List<Map<String, dynamic>> payments,
+    bool requireOnline = false,
   });
 
   Future<void> syncPendingSales({

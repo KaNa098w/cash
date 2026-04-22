@@ -8,6 +8,13 @@ class SaleModel {
 
   final int totalAmount;
   final String paymentMethod;
+  final String? paymentType;
+  final int paidAmount;
+  final int debtAmount;
+  final String? paidPaymentMethod;
+  final DateTime? dueDate;
+  final String? comment;
+  final String? idempotencyKey;
 
   final String posId;
   final String storeId;
@@ -29,6 +36,13 @@ class SaleModel {
     required this.date,
     required this.totalAmount,
     required this.paymentMethod,
+    this.paymentType,
+    this.paidAmount = 0,
+    this.debtAmount = 0,
+    this.paidPaymentMethod,
+    this.dueDate,
+    this.comment,
+    this.idempotencyKey,
     required this.posId,
     required this.storeId,
     required this.userId,
@@ -45,6 +59,13 @@ class SaleModel {
     DateTime? date,
     int? totalAmount,
     String? paymentMethod,
+    String? paymentType,
+    int? paidAmount,
+    int? debtAmount,
+    String? paidPaymentMethod,
+    DateTime? dueDate,
+    String? comment,
+    String? idempotencyKey,
     String? posId,
     String? storeId,
     String? userId,
@@ -60,6 +81,13 @@ class SaleModel {
       date: date ?? this.date,
       totalAmount: totalAmount ?? this.totalAmount,
       paymentMethod: paymentMethod ?? this.paymentMethod,
+      paymentType: paymentType ?? this.paymentType,
+      paidAmount: paidAmount ?? this.paidAmount,
+      debtAmount: debtAmount ?? this.debtAmount,
+      paidPaymentMethod: paidPaymentMethod ?? this.paidPaymentMethod,
+      dueDate: dueDate ?? this.dueDate,
+      comment: comment ?? this.comment,
+      idempotencyKey: idempotencyKey ?? this.idempotencyKey,
       posId: posId ?? this.posId,
       storeId: storeId ?? this.storeId,
       userId: userId ?? this.userId,
@@ -80,6 +108,15 @@ class SaleModel {
       "date": _formatDate(date),
       "total_amount": exactTotal,
       "payment_method": paymentMethod,
+      if ((paymentType ?? '').trim().isNotEmpty) "payment_type": paymentType,
+      if (paidAmount > 0) "paid_amount": paidAmount,
+      if (debtAmount > 0) "debt_amount": debtAmount,
+      if ((paidPaymentMethod ?? '').trim().isNotEmpty)
+        "paid_payment_method": paidPaymentMethod,
+      if (dueDate != null) "due_date": _formatIsoDate(dueDate!),
+      if ((comment ?? '').trim().isNotEmpty) "comment": comment,
+      if ((idempotencyKey ?? '').trim().isNotEmpty)
+        "idempotency_key": idempotencyKey,
       "user_id": userId,
       "pos_id": posId,
       if ((posSessionId ?? '').trim().isNotEmpty)
@@ -117,6 +154,13 @@ class SaleModel {
       date: _parseApiDate(json["date"]),
       totalAmount: _toIntMoney(json["total_amount"]),
       paymentMethod: (json["payment_method"] ?? "cash").toString(),
+      paymentType: json["payment_type"]?.toString(),
+      paidAmount: _toIntMoney(json["paid_amount"]),
+      debtAmount: _toIntMoney(json["debt_amount"]),
+      paidPaymentMethod: json["paid_payment_method"]?.toString(),
+      dueDate: _parseApiDateOrNull(json["due_date"]),
+      comment: json["comment"]?.toString(),
+      idempotencyKey: json["idempotency_key"]?.toString(),
       posId: (json["pos_id"] ?? "").toString(),
       storeId: (json["store_id"] ?? "").toString(),
       customerId: json["customer_id"]?.toString(),
@@ -139,6 +183,13 @@ class SaleModel {
       "date": date.toIso8601String(),
       "totalAmount": totalAmount,
       "paymentMethod": paymentMethod,
+      "paymentType": paymentType,
+      "paidAmount": paidAmount,
+      "debtAmount": debtAmount,
+      "paidPaymentMethod": paidPaymentMethod,
+      "dueDate": dueDate?.toIso8601String(),
+      "comment": comment,
+      "idempotencyKey": idempotencyKey,
       "posId": posId,
       "storeId": storeId,
       "customerId": customerId,
@@ -173,6 +224,13 @@ class SaleModel {
           DateTime.tryParse((json["date"] ?? "").toString()) ?? DateTime.now(),
       totalAmount: _toInt(json["totalAmount"]),
       paymentMethod: (json["paymentMethod"] ?? "cash").toString(),
+      paymentType: json["paymentType"]?.toString(),
+      paidAmount: _toInt(json["paidAmount"]),
+      debtAmount: _toInt(json["debtAmount"]),
+      paidPaymentMethod: json["paidPaymentMethod"]?.toString(),
+      dueDate: _parseApiDateOrNull(json["dueDate"]),
+      comment: json["comment"]?.toString(),
+      idempotencyKey: json["idempotencyKey"]?.toString(),
       posId: (json["posId"] ?? "").toString(),
       storeId: (json["storeId"] ?? "").toString(),
       customerId: (json["customerId"] as String?),
@@ -251,14 +309,27 @@ class SaleModel {
     return DateTime.tryParse(isoLike) ?? DateTime.now();
   }
 
+  static DateTime? _parseApiDateOrNull(dynamic v) {
+    final s = (v ?? '').toString().trim();
+    if (s.isEmpty) return null;
+    final isoLike = s.contains(' ') ? s.replaceFirst(' ', 'T') : s;
+    return DateTime.tryParse(isoLike);
+  }
+
   static String _two(int v) => v.toString().padLeft(2, '0');
 
   static String _formatDate(DateTime d) {
     return '${d.year}-${_two(d.month)}-${_two(d.day)} ${_two(d.hour)}:${_two(d.minute)}:${_two(d.second)}';
   }
+
+  static String _formatIsoDate(DateTime d) {
+    return '${d.year}-${_two(d.month)}-${_two(d.day)}';
+  }
 }
 
 class SaleItemModel {
+  static const universalProductDisplayName = 'Универсальный продукт';
+
   final String id;
   final String saleId;
 
@@ -284,6 +355,24 @@ class SaleItemModel {
     this.product,
     this.refund_quantity,
   });
+
+  bool get isUniversalProduct {
+    if (product?.isUniversal == true) return true;
+    final normalized = (product?.name ?? '')
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), ' ');
+    return normalized == 'универсальный продукт' ||
+        normalized == 'универсальный товар pos' ||
+        normalized == 'универсальный товар';
+  }
+
+  String get displayProductName {
+    if (isUniversalProduct) return universalProductDisplayName;
+    final name = (product?.name ?? '').trim();
+    if (name.isNotEmpty) return name;
+    return 'Товар $productId';
+  }
 
   SaleItemModel copyWith({
     String? id,
@@ -385,6 +474,7 @@ class ProductModel {
 
   final String? categoryId;
   final String? globalProductId;
+  final bool isUniversal;
 
   ProductModel({
     required this.id,
@@ -397,6 +487,7 @@ class ProductModel {
     this.localBarcode,
     this.categoryId,
     this.globalProductId,
+    this.isUniversal = false,
   });
 
   static String? _asString(dynamic v) {
@@ -425,6 +516,9 @@ class ProductModel {
       wholesalePrice: _asDouble(json['wholesale_price']),
       categoryId: _asString(json['category_id']),
       globalProductId: _asString(json['global_product_id']),
+      isUniversal: json['is_universal'] == true ||
+          json['is_universal'] == 1 ||
+          json['is_universal']?.toString().trim() == '1',
     );
   }
 
@@ -440,6 +534,7 @@ class ProductModel {
       'wholesale_price': wholesalePrice,
       'category_id': categoryId,
       'global_product_id': globalProductId,
+      'is_universal': isUniversal ? 1 : 0,
     };
   }
 }

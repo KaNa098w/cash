@@ -10,6 +10,7 @@ class Product extends Equatable {
   final double quantity;
   final String measurementUnit;
   final double? conversionValue;
+  final bool isUniversal;
 
   /// "automatic" | "fixed" | "forbidden" | null
   final String? discountType;
@@ -26,6 +27,7 @@ class Product extends Equatable {
     this.quantity = 0,
     this.measurementUnit = 'шт.',
     this.conversionValue,
+    this.isUniversal = false,
     this.discountType,
     this.discountPercent = 0,
     this.priceAfterDiscount = 0,
@@ -39,6 +41,7 @@ class Product extends Equatable {
         quantity: (json['quantity'] as num?)?.toDouble() ?? 0,
         measurementUnit: (json['measurementUnit'] ?? 'шт.').toString(),
         conversionValue: (json['conversionValue'] as num?)?.toDouble(),
+        isUniversal: json['isUniversal'] == true,
         discountType: json['discountType']?.toString(),
         discountPercent: (json['discountPercent'] as num?)?.toDouble() ?? 0,
         priceAfterDiscount:
@@ -53,6 +56,7 @@ class Product extends Equatable {
         'quantity': quantity,
         'measurementUnit': measurementUnit,
         'conversionValue': conversionValue,
+        'isUniversal': isUniversal,
         'discountType': discountType,
         'discountPercent': discountPercent,
         'priceAfterDiscount': priceAfterDiscount,
@@ -67,8 +71,40 @@ class Product extends Equatable {
         quantity,
         measurementUnit,
         conversionValue,
+        isUniversal,
         discountType,
         discountPercent,
         priceAfterDiscount,
       ];
+
+  Product copyWith({
+    String? id,
+    String? name,
+    double? price,
+    double? vat,
+    double? quantity,
+    String? measurementUnit,
+    double? conversionValue,
+    bool clearConversionValue = false,
+    bool? isUniversal,
+    String? discountType,
+    double? discountPercent,
+    double? priceAfterDiscount,
+  }) {
+    return Product(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      price: price ?? this.price,
+      vat: vat ?? this.vat,
+      quantity: quantity ?? this.quantity,
+      measurementUnit: measurementUnit ?? this.measurementUnit,
+      conversionValue: clearConversionValue
+          ? null
+          : (conversionValue ?? this.conversionValue),
+      isUniversal: isUniversal ?? this.isUniversal,
+      discountType: discountType ?? this.discountType,
+      discountPercent: discountPercent ?? this.discountPercent,
+      priceAfterDiscount: priceAfterDiscount ?? this.priceAfterDiscount,
+    );
+  }
 }

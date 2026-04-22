@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
@@ -14,6 +16,7 @@ class SaleRepositoryImpl implements SaleRepository {
     required String deviceId,
     required SaleModel sale,
     required List<Map<String, dynamic>> payments,
+    bool requireOnline = false,
   }) async {
     try {
       final queueResult = await _syncService.createSale(
@@ -21,20 +24,36 @@ class SaleRepositoryImpl implements SaleRepository {
         deviceId: deviceId,
         sale: sale,
         payments: payments,
-        sendInBackground: true,
+        sendInBackground: !requireOnline,
+        requireOnline: requireOnline,
       );
 
       final localNumber = queueResult.payload['local_number']?.toString() ?? '';
       final printedSale = sale.copyWith(number: localNumber);
 
       return CreateSaleOutcome(
-        result: queueResult.result == QueueSendResult.manual
-            ? CreateSaleResult.rejected
-            : CreateSaleResult.sent,
+        result: requireOnline
+            ? (queueResult.result == QueueSendResult.sent
+                ? CreateSaleResult.sent
+                : CreateSaleResult.rejected)
+            : (queueResult.result == QueueSendResult.manual
+                ? CreateSaleResult.rejected
+                : CreateSaleResult.sent),
         sale: printedSale,
+        errorMessage: queueResult.errorMessage,
       );
-    } catch (_) {
-      return CreateSaleOutcome(result: CreateSaleResult.rejected, sale: sale);
+    } catch (error, stackTrace) {
+      developer.log(
+        'createSale failed',
+        name: 'SaleRepositoryImpl',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return CreateSaleOutcome(
+        result: CreateSaleResult.rejected,
+        sale: sale,
+        errorMessage: error.toString(),
+      );
     }
   }
 

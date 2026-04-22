@@ -13,12 +13,16 @@ class CustomerLite {
   final String name;
   final String phone;
   final num balance;
+  final num debtLimit;
+  final bool debtAllowed;
 
   const CustomerLite({
     required this.id,
     required this.name,
     required this.phone,
     required this.balance,
+    this.debtLimit = 0,
+    this.debtAllowed = true,
   });
 }
 
@@ -244,6 +248,8 @@ class _CustomerCreateDialogState extends State<CustomerCreateDialog> {
           name: created.name,
           phone: _formatKzPhone(created.phone),
           balance: 0,
+          debtLimit: 0,
+          debtAllowed: true,
         ),
       );
     } on DioException catch (e) {

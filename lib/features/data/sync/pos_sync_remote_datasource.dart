@@ -223,14 +223,34 @@ class PosSyncRemoteDataSource {
     final body = error.response?.data;
     final data = _asMapOrNull(body);
     final nestedError = _nestedMap(data?['error']);
+    final details = _formatValidationErrors(
+      data?['errors'] ?? nestedError?['errors'],
+    );
     final message = nestedError?['message'] ??
         data?['message'] ??
         data?['error_message'] ??
         error.message;
     final normalized = message?.toString().trim();
-    return (normalized == null || normalized.isEmpty)
+    final base = (normalized == null || normalized.isEmpty)
         ? error.toString()
         : normalized;
+    return details.isEmpty ? base : '$base $details';
+  }
+
+  String _formatValidationErrors(dynamic errors) {
+    if (errors is! Map) return '';
+    final parts = <String>[];
+    errors.forEach((key, value) {
+      if (value is List) {
+        final message = value.map((e) => e.toString()).join(', ');
+        if (message.trim().isNotEmpty) parts.add('$key: $message');
+      } else {
+        final message = value?.toString().trim() ?? '';
+        if (message.isNotEmpty) parts.add('$key: $message');
+      }
+    });
+    if (parts.isEmpty) return '';
+    return parts.join('; ');
   }
 
   bool isManualErrorCode(String code) {

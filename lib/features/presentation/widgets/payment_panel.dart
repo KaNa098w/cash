@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -10,8 +12,10 @@ import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart'
     show AuthTokenProvider;
+import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
+import 'package:leemon_app/features/domain/entities/cart_item.dart';
 import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_dialog.dart';
@@ -72,6 +76,50 @@ class _PaymentPanelState extends State<PaymentPanel> {
     return double.tryParse(text.replaceAll(',', '.')) ?? 0;
   }
 
+  num _readNum(dynamic source, List<String> keys) {
+    if (source is! Map) return 0;
+    for (final key in keys) {
+      final value = source[key];
+      if (value is num) return value;
+      final parsed = num.tryParse((value ?? '').toString().trim());
+      if (parsed != null) return parsed;
+    }
+    return 0;
+  }
+
+  bool _readBool(dynamic source, List<String> keys, {bool fallback = true}) {
+    if (source is! Map) return fallback;
+    for (final key in keys) {
+      final value = source[key];
+      if (value is bool) return value;
+      final normalized = (value ?? '').toString().trim().toLowerCase();
+      if (normalized == 'true' || normalized == '1') return true;
+      if (normalized == 'false' || normalized == '0') return false;
+    }
+    return fallback;
+  }
+
+  DateTime _defaultDebtDueDate(DateTime date) {
+    return date.add(const Duration(days: 30));
+  }
+
+  String _normalizePaymentMethodLabel(String raw) {
+    switch (raw.trim().toLowerCase()) {
+      case 'cash':
+        return 'Наличные';
+      case 'card':
+        return 'Безналичный';
+      case 'mixed':
+        return 'Смешанная';
+      case 'debt':
+      case 'credit':
+      case 'partial_debt':
+        return 'В долг';
+      default:
+        return raw.trim().isEmpty ? '-' : raw.trim();
+    }
+  }
+
   void _setText(
     BuildContext context,
     String text, {
@@ -109,7 +157,23 @@ class _PaymentPanelState extends State<PaymentPanel> {
               id: e.id,
               name: e.name,
               phone: e.phone,
-              balance: 0,
+              balance: _readNum(
+                e.rawJson,
+                const ['balance', 'debt_balance', 'current_debt'],
+              ),
+              debtLimit: _readNum(
+                e.rawJson,
+                const ['debt_limit', 'credit_limit', 'limit', 'max_debt'],
+              ),
+              debtAllowed: _readBool(
+                e.rawJson,
+                const [
+                  'debt_allowed',
+                  'allow_debt',
+                  'credit_allowed',
+                  'allow_credit',
+                ],
+              ),
             ),
           )
           .toList();
@@ -127,6 +191,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
           id: selected.id,
           name: selected.name,
           phone: selected.phone,
+          balance: selected.balance,
+          debtLimit: selected.debtLimit,
+          debtAllowed: selected.debtAllowed,
         ),
       );
     } catch (_) {
@@ -143,7 +210,60 @@ class _PaymentPanelState extends State<PaymentPanel> {
     return s;
   }
 
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _showMissingDebtCustomerDialog() async {
+    if (!mounted) return;
+
+    final shouldPick = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => const _MissingDebtCustomerDialog(),
+    );
+
+    if (!mounted) return;
+    if (shouldPick == true) {
+      await _pickCustomer();
+    }
+  }
+
   final _printService = PrintService();
+
+  double _saleQuantityForItem(CartItem it) {
+    if (it.product.isUniversal) return it.qty;
+    final cv = it.product.conversionValue;
+    return (cv != null && cv > 0) ? (it.qty * cv) : it.qty;
+  }
+
+  Future<PosCustomer?> _validateDebtCustomerOnline({
+    required String posKey,
+    required PosCustomer customer,
+  }) async {
+    final customers = await sl<CustomersRemoteDataSource>().listCustomers(
+      key: posKey,
+      size: 500,
+    );
+    for (final remote in customers) {
+      if (remote.id != customer.id) continue;
+      return PosCustomer(
+        id: remote.id,
+        name: remote.name,
+        phone: remote.phone,
+        balance: remote.balance,
+        debtLimit: remote.debtLimit,
+        debtAllowed: remote.debtAllowed,
+      );
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -173,6 +293,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
             final total = cubit.total;
             final change = cubit.change.clamp(0, double.infinity);
             final hasItems = state.items.isNotEmpty;
+            final isDebtSale = state.paymentKind == PaymentKind.credit;
             final hasSelectedPaymentMethod =
                 state.paymentKind == PaymentKind.card ||
                     state.paymentKind == PaymentKind.credit ||
@@ -193,28 +314,98 @@ class _PaymentPanelState extends State<PaymentPanel> {
               final userId = auth.activeUserId?.trim() ?? '';
               final fallbackAccountId = auth.accountId?.trim() ?? '';
 
-              if (key.isEmpty) return;
-              if (deviceId.isEmpty) return;
-              if (storeId.isEmpty) return;
-              if (posId.isEmpty) return;
-              if (userId.isEmpty) return;
-              if (fallbackAccountId.isEmpty) return;
-              if (posCubit.state.items.isEmpty) return;
+              if (key.isEmpty) {
+                _showError('Не найден ключ POS');
+                return;
+              }
+              if (deviceId.isEmpty) {
+                _showError('Не найден device_id терминала');
+                return;
+              }
+              if (storeId.isEmpty) {
+                _showError('Не найден магазин терминала');
+                return;
+              }
+              if (posId.isEmpty) {
+                _showError('Не найден идентификатор POS');
+                return;
+              }
+              if (userId.isEmpty) {
+                _showError('Не выбран кассир');
+                return;
+              }
+              if (posCubit.state.items.isEmpty) {
+                _showError('Корзина пустая');
+                return;
+              }
 
               if (posCubit.state.paymentKind == PaymentKind.cash &&
                   !_isMixedPayment &&
                   posCubit.state.received < posCubit.total) {
+                _showError('Недостаточно наличных для оплаты');
                 return;
+              }
+              if (isDebtSale && posCubit.state.activeCustomer == null) {
+                await _showMissingDebtCustomerDialog();
+                return;
+              }
+
+              var selectedCustomer = posCubit.state.activeCustomer;
+              if (isDebtSale && selectedCustomer != null) {
+                PosCustomer debtCustomer;
+                try {
+                  final verified = await _validateDebtCustomerOnline(
+                    posKey: key,
+                    customer: selectedCustomer,
+                  );
+                  if (verified == null) {
+                    _showError(
+                      'Этот покупатель недоступен для текущей кассы. Выполните синхронизацию или выберите другого покупателя.',
+                    );
+                    return;
+                  }
+                  debtCustomer = verified;
+                  selectedCustomer = verified;
+                  posCubit.setCustomerForActiveTicket(verified);
+                } catch (error, stackTrace) {
+                  developer.log(
+                    'Debt customer validation failed',
+                    name: 'PaymentPanel',
+                    error: error,
+                    stackTrace: stackTrace,
+                  );
+                  _showError(
+                    'Не удалось проверить покупателя для продажи в долг. Проверьте интернет.',
+                  );
+                  return;
+                }
+
+                if (!debtCustomer.debtAllowed) {
+                  _showError('Клиенту запрещены продажи в долг');
+                  return;
+                }
+                final currentDebt = debtCustomer.balance.toDouble();
+                final debtSalePaidNow =
+                    _parseAmount(_cashCtrl.text).clamp(0, posCubit.total);
+                final nextDebt =
+                    currentDebt + (posCubit.total - debtSalePaidNow);
+                final debtLimit = debtCustomer.debtLimit.toDouble();
+                if (debtLimit > 0 && nextDebt > debtLimit) {
+                  _showError(
+                    'Лимит долга превышен: ${money(nextDebt)} из ${money(debtLimit)}',
+                  );
+                  return;
+                }
               }
 
               // Capture amounts before async gap
               final isMixed = _isMixedPayment;
               final cashInputAmt = _parseAmount(_cashCtrl.text).round();
+              final totalAmountInt = posCubit.total.round();
 
               final saleItems = <SaleItemModel>[];
               for (final it in posCubit.state.items) {
-                final cv = it.product.conversionValue;
-                final qty = (cv != null && cv > 0) ? (it.qty * cv) : it.qty;
+                final qty = _saleQuantityForItem(it);
                 final unitPrice = it.effectiveUnitPrice;
                 final price = double.parse(unitPrice.toStringAsFixed(2));
                 final totalPrice =
@@ -232,24 +423,32 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 );
               }
 
-              final paymentMethod = isMixed
-                  ? 'mixed'
-                  : switch (posCubit.state.paymentKind) {
-                      PaymentKind.cash => 'cash',
-                      PaymentKind.card => 'card',
-                      PaymentKind.credit => 'credit',
-                    };
-
-              final customerId =
-                  context.read<PosCubit>().state.activeCustomer?.id;
-
-              final saleLocalId = const Uuid().v4();
-              final totalAmountInt = posCubit.total.round();
               final exactTotal = double.parse(
                 saleItems
                     .fold(0.0, (s, e) => s + e.totalPrice)
                     .toStringAsFixed(2),
               );
+
+              final debtPaidNow = isDebtSale
+                  ? _parseAmount(_cashCtrl.text).clamp(0, exactTotal).round()
+                  : 0;
+              final debtAmount =
+                  isDebtSale ? (exactTotal - debtPaidNow).round() : 0;
+              final paymentMethod = isDebtSale
+                  ? 'debt'
+                  : isMixed
+                      ? 'mixed'
+                      : switch (posCubit.state.paymentKind) {
+                          PaymentKind.cash => 'cash',
+                          PaymentKind.card => 'card',
+                          PaymentKind.credit => 'debt',
+                        };
+
+              final customerId = isDebtSale
+                  ? selectedCustomer?.id.trim()
+                  : posCubit.state.activeCustomer?.id.trim();
+
+              final saleLocalId = const Uuid().v4();
 
               final sale = SaleModel(
                 localId: saleLocalId,
@@ -257,6 +456,16 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 date: DateTime.now(),
                 totalAmount: totalAmountInt,
                 paymentMethod: paymentMethod,
+                paymentType: isDebtSale ? paymentMethod : null,
+                paidAmount: isDebtSale ? debtPaidNow : totalAmountInt,
+                debtAmount: isDebtSale ? debtAmount : 0,
+                paidPaymentMethod:
+                    isDebtSale && debtPaidNow > 0 ? 'cash' : null,
+                dueDate:
+                    isDebtSale ? _defaultDebtDueDate(DateTime.now()) : null,
+                comment: isDebtSale ? 'Продажа в долг' : null,
+                idempotencyKey:
+                    '$posId-${DateTime.now().millisecondsSinceEpoch}-$saleLocalId',
                 posId: posId,
                 storeId: storeId,
                 userId: userId,
@@ -295,7 +504,15 @@ class _PaymentPanelState extends State<PaymentPanel> {
               );
 
               final List<Map<String, dynamic>> payments;
-              if (isMixed) {
+              if (isDebtSale) {
+                payments = [
+                  {
+                    'account_id': cashAccount.id,
+                    'amount': exactTotal,
+                    'client_payment_id': '$saleLocalId-debt',
+                  },
+                ];
+              } else if (isMixed) {
                 final cashAmt = double.parse(
                   cashInputAmt.clamp(0, exactTotal).toStringAsFixed(2),
                 );
@@ -349,9 +566,24 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   deviceId: deviceId,
                   sale: sale,
                   payments: payments,
+                  requireOnline: isDebtSale,
                 );
                 final result = outcome.result;
                 final printedSale = outcome.sale;
+
+                if (result == CreateSaleResult.rejected) {
+                  final message = (outcome.errorMessage ?? '').trim();
+                  developer.log(
+                    'Sale rejected. method=${sale.paymentMethod}, requireOnline=$isDebtSale, message=$message',
+                    name: 'PaymentPanel',
+                  );
+                  _showError(
+                    message.isEmpty
+                        ? 'Продажа в долг не прошла. Проверьте интернет и настройки клиента.'
+                        : message,
+                  );
+                  return;
+                }
 
                 await _printService.print80mmSilently(
                   () => buildReceiptPdf(
@@ -387,21 +619,29 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           .toList(),
                       total: posCubit.total,
                       discountSum: posCubit.discountSum,
-                      paymentMethodLabel: switch (paymentKind) {
-                        PaymentKind.cash => 'Наличные',
-                        PaymentKind.card => 'Безналичный',
-                        PaymentKind.credit => 'В долг',
-                      },
+                      paymentMethodLabel: _normalizePaymentMethodLabel(
+                          printedSale.paymentMethod),
                       isCashPayment: paymentKind == PaymentKind.cash,
-                      received: posCubit.state.received,
-                      change: posCubit.change,
+                      received: isDebtSale
+                          ? printedSale.paidAmount
+                          : posCubit.state.received,
+                      change: isDebtSale ? 0 : posCubit.change,
+                      customerName: selectedCustomer?.name,
+                      previousDebt:
+                          isDebtSale ? selectedCustomer?.balance : null,
+                      newDebt: isDebtSale
+                          ? (selectedCustomer?.balance ?? 0) +
+                              printedSale.debtAmount
+                          : null,
+                      debtAmount: isDebtSale ? printedSale.debtAmount : null,
+                      paidNow: isDebtSale ? printedSale.paidAmount : null,
+                      documentTitle: isDebtSale ? 'ПРОДАЖА В ДОЛГ' : null,
                     ),
                   ),
                   printerName: auth.receiptPrinterName,
                 );
 
                 if (!context.mounted) return;
-                if (result == CreateSaleResult.rejected) return;
                 saleCompleted = true;
                 lastSaleAmountNotifier.value = printedSale.totalAmount;
                 setState(() {
@@ -413,7 +653,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 Navigator.of(this.context).pop();
                 posCubit.clearAfterPayment();
               } catch (_) {
-                if (!mounted) return;
+                _showError('Не удалось провести оплату');
               } finally {
                 if (mounted && !saleCompleted) {
                   setState(() => _paying = false);
@@ -523,6 +763,14 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 (customerName != null && customerName.isNotEmpty)
                     ? customerName
                     : 'ПОКУПАТЕЛЬ';
+            final hasSelectedCustomer = state.activeCustomer != null;
+            final currentDebt = state.activeCustomer?.balance.toDouble() ?? 0;
+            final debtLimit = state.activeCustomer?.debtLimit.toDouble() ?? 0;
+            final debtPaidNow = isDebtSale
+                ? _parseAmount(_cashCtrl.text).clamp(0, total).toDouble()
+                : 0.0;
+            final projectedDebt =
+                isDebtSale ? currentDebt + (total - debtPaidNow) : currentDebt;
             return Shortcuts(
               shortcuts: const <ShortcutActivator, Intent>{
                 SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
@@ -785,56 +1033,92 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           fontSize: 11,
                           onTap: () {},
                         ),
-                        Positioned(
-                          left: 299.417,
-                          top: 208.732,
-                          width: 121.306,
-                          height: 46.4758,
-                          child: _WhiteButton(
-                            text: '+1 000',
-                            onTap: () => addQuick(1000),
+                        if (!isDebtSale) ...[
+                          Positioned(
+                            left: 299.417,
+                            top: 208.732,
+                            width: 121.306,
+                            height: 46.4758,
+                            child: _WhiteButton(
+                              text: '+1 000',
+                              onTap: () => addQuick(1000),
+                            ),
                           ),
-                        ),
-                        Positioned(
-                          left: 435.312,
-                          top: 208.732,
-                          width: 121.306,
-                          height: 46.4758,
-                          child: _WhiteButton(
-                            text: '+2 000',
-                            onTap: () => addQuick(2000),
+                          Positioned(
+                            left: 435.312,
+                            top: 208.732,
+                            width: 121.306,
+                            height: 46.4758,
+                            child: _WhiteButton(
+                              text: '+2 000',
+                              onTap: () => addQuick(2000),
+                            ),
                           ),
-                        ),
-                        Positioned(
-                          left: 299.417,
-                          top: 267.794,
-                          width: 121.306,
-                          height: 46.4758,
-                          child: _WhiteButton(
-                            text: '+5 000',
-                            onTap: () => addQuick(5000),
+                          Positioned(
+                            left: 299.417,
+                            top: 267.794,
+                            width: 121.306,
+                            height: 46.4758,
+                            child: _WhiteButton(
+                              text: '+5 000',
+                              onTap: () => addQuick(5000),
+                            ),
                           ),
-                        ),
-                        Positioned(
-                          left: 435.312,
-                          top: 267.794,
-                          width: 121.306,
-                          height: 46.4758,
-                          child: _WhiteButton(
-                            text: '+10 000',
-                            onTap: () => addQuick(10000),
+                          Positioned(
+                            left: 435.312,
+                            top: 267.794,
+                            width: 121.306,
+                            height: 46.4758,
+                            child: _WhiteButton(
+                              text: '+10 000',
+                              onTap: () => addQuick(10000),
+                            ),
                           ),
-                        ),
+                        ] else
+                          Positioned(
+                            left: 299.417,
+                            top: 208.732,
+                            width: 257.201,
+                            height: 105.538,
+                            child: _DebtSummaryBox(
+                              customerName: customerButtonText,
+                              currentDebt: currentDebt,
+                              debtLimit: debtLimit,
+                              saleAmount: total,
+                              paidNow: debtPaidNow,
+                              projectedDebt: projectedDebt,
+                              money: money,
+                              debtAllowed:
+                                  state.activeCustomer?.debtAllowed ?? false,
+                            ),
+                          ),
                         Positioned(
                           left: 299.934,
                           top: 323.387,
                           width: 256.169,
                           height: 29.1575,
-                          child: _WhiteButton(
-                            text: customerButtonText,
-                            onTap: _pickCustomer,
-                            borderRadius: 4.64873,
-                            borderColor: Colors.black,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _WhiteButton(
+                                  text: customerButtonText,
+                                  onTap: _pickCustomer,
+                                  borderRadius: 4.64873,
+                                  borderColor: Colors.black,
+                                ),
+                              ),
+                              if (hasSelectedCustomer) ...[
+                                const SizedBox(width: 6),
+                                SizedBox(
+                                  width: 30,
+                                  height: 29.1575,
+                                  child: _CustomerClearButton(
+                                    onTap: () =>
+                                        cubit.clearCustomerForActiveTicket(),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                         Positioned(
@@ -862,7 +1146,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
                               _setText(context, _fmt(total));
                               _cashFocusNode.requestFocus();
                             },
-                            selected: false,
+                            selected: state.paymentKind == PaymentKind.cash &&
+                                !_isMixedPayment &&
+                                state.received >= total,
                           ),
                         ),
                         Positioned(
@@ -954,6 +1240,213 @@ class _TopAmountBox extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MissingDebtCustomerDialog extends StatelessWidget {
+  const _MissingDebtCustomerDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 28),
+      backgroundColor: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 430),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [
+              BoxShadow(
+                blurRadius: 28,
+                offset: Offset(0, 18),
+                color: Color(0x33000000),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF7ED),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: const Color(0xFFF59E0B),
+                          width: 1.1,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.person_search_rounded,
+                        color: Color(0xFFEA580C),
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Выберите покупателя',
+                            style: GoogleFonts.inter(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              height: 1.1,
+                              color: const Color(0xFF111827),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Для продажи в долг нужно указать покупателя. После выбора можно продолжить оплату.',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              height: 1.35,
+                              color: const Color(0xFF6B7280),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 48,
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF374151),
+                            side: const BorderSide(color: Color(0xFFD1D5DB)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            'Закрыть',
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: SizedBox(
+                        height: 48,
+                        child: FilledButton.icon(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          icon: const Icon(Icons.person_add_alt_1_rounded),
+                          label: Text(
+                            'Выбрать',
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF33CC99),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DebtSummaryBox extends StatelessWidget {
+  const _DebtSummaryBox({
+    required this.customerName,
+    required this.currentDebt,
+    required this.debtLimit,
+    required this.saleAmount,
+    required this.paidNow,
+    required this.projectedDebt,
+    required this.money,
+    required this.debtAllowed,
+  });
+
+  final String customerName;
+  final double currentDebt;
+  final double debtLimit;
+  final double saleAmount;
+  final double paidNow;
+  final double projectedDebt;
+  final String Function(num) money;
+  final bool debtAllowed;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasCustomer =
+        customerName.trim().isNotEmpty && customerName.trim() != 'ПОКУПАТЕЛЬ';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFF59E0B), width: 1.2),
+      ),
+      child: DefaultTextStyle(
+        style: GoogleFonts.inter(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: const Color(0xFF7C2D12),
+          height: 1.2,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              hasCustomer ? customerName : 'Клиент не выбран',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF9A3412),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text('Текущий долг: ${money(currentDebt)}'),
+            Text(
+                'Лимит долга: ${debtLimit > 0 ? money(debtLimit) : "Без лимита"}'),
+            Text('Сумма продажи: ${money(saleAmount)}'),
+            Text('Оплачено сейчас: ${money(paidNow)}'),
+            Text(
+              'Итоговый долг: ${money(projectedDebt)}'
+              '${debtAllowed ? "" : "  •  запрет"}',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1260,6 +1753,38 @@ class _WhiteButton extends StatelessWidget {
   }
 }
 
+class _CustomerClearButton extends StatelessWidget {
+  const _CustomerClearButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Убрать покупателя',
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: const Color(0xFFD15850),
+          padding: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4.64873),
+            side: const BorderSide(color: Color(0xFFD15850), width: 1.033),
+          ),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+        ),
+        child: const Icon(
+          Icons.close_rounded,
+          size: 20,
+          color: Color(0xFFD15850),
+        ),
+      ),
+    );
+  }
+}
+
 class _GreyButton extends StatelessWidget {
   const _GreyButton({
     required this.text,
@@ -1273,7 +1798,7 @@ class _GreyButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = selected ? const Color(0xFF33CC99) : const Color(0xFFBBBBBB);
+    final bg = selected ? const Color.fromARGB(255, 240, 167, 57) : const Color(0xFFBBBBBB);
 
     return TextButton(
       onPressed: onTap,

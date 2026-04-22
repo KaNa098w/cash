@@ -6,6 +6,7 @@ import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/domain/entities/cart_item.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 import 'package:leemon_app/features/presentation/widgets/footer_status.dart'
     show TouchDeleteDialog;
 import 'package:leemon_app/features/presentation/widgets/keypad_widget.dart';
@@ -138,7 +139,10 @@ class CartList extends StatelessWidget {
                                     // Наименование + метки
                                     Expanded(
                                       child: Text(
-                                        '${_shortProductNameKeepEnd(it.product.name)} (${formatQtyByUnit(it.product.quantity, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit})',
+                                        it.product.isUniversal
+                                            ? _shortProductNameKeepEnd(
+                                                it.product.name)
+                                            : '${_shortProductNameKeepEnd(it.product.name)} (${formatQtyByUnit(it.product.quantity, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit})',
                                         style: const TextStyle(
                                           fontSize: 20,
                                           fontWeight: FontWeight.w600,
@@ -151,7 +155,33 @@ class CartList extends StatelessWidget {
                                     // Цена
                                     SizedBox(
                                       width: 100,
-                                      child: _PriceCell(it),
+                                      child: InkWell(
+                                        onTap: it.product.isUniversal
+                                            ? () async {
+                                                context
+                                                    .read<PosCubit>()
+                                                    .selectItem(i);
+                                                final price =
+                                                    await _showUniversalPriceDialog(
+                                                  context,
+                                                  initialPrice:
+                                                      it.effectiveUnitPrice,
+                                                );
+                                                if (!context.mounted ||
+                                                    price == null) {
+                                                  return;
+                                                }
+                                                context
+                                                    .read<PosCubit>()
+                                                    .setPrice(i, price);
+                                              }
+                                            : null,
+                                        splashFactory: NoSplash.splashFactory,
+                                        overlayColor:
+                                            const WidgetStatePropertyAll(
+                                                Colors.transparent),
+                                        child: _PriceCell(it),
+                                      ),
                                     ),
                                     const SizedBox(width: 16),
 
@@ -286,6 +316,150 @@ class CartList extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<double?> _showUniversalPriceDialog(
+  BuildContext context, {
+  required double initialPrice,
+}) async {
+  String initialText = initialPrice.toStringAsFixed(2);
+  initialText = initialText
+      .replaceFirst(RegExp(r'\.?0+$'), '')
+      .replaceAll(RegExp(r'^$'), '0');
+
+  return showDialog<double>(
+    context: context,
+    barrierDismissible: true,
+    builder: (_) => _UniversalPriceDialog(initialText: initialText),
+  );
+}
+
+class _UniversalPriceDialog extends StatefulWidget {
+  const _UniversalPriceDialog({required this.initialText});
+
+  final String initialText;
+
+  @override
+  State<_UniversalPriceDialog> createState() => _UniversalPriceDialogState();
+}
+
+class _UniversalPriceDialogState extends State<_UniversalPriceDialog> {
+  late String _text;
+
+  @override
+  void initState() {
+    super.initState();
+    _text = widget.initialText;
+  }
+
+  double get _amount => double.tryParse(_text.replaceAll(',', '.')) ?? 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final canConfirm = _amount > 0;
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 24,
+                  offset: const Offset(0, 14),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Введите сумму',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  height: 58,
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                  ),
+                  child: Text(
+                    _text.isEmpty ? '0' : _text,
+                    style: const TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                AmountKeypad(
+                  text: _text,
+                  showQuickRows: false,
+                  onChanged: (value) => setState(() => _text = value),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Отмена'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: canConfirm
+                            ? () => Navigator.of(context).pop(_amount)
+                            : null,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                          backgroundColor: const Color(0xFFF9B32C),
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          'Сохранить ${money(_amount)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

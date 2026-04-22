@@ -29,6 +29,7 @@ class CartItem extends Equatable {
 
   /// Effective unit price: uses priceAfterDiscount when discount is applied.
   double get effectiveUnitPrice {
+    if (product.isUniversal) return product.price;
     if (discountApplied && product.priceAfterDiscount > 0) {
       return product.priceAfterDiscount;
     }
@@ -36,13 +37,17 @@ class CartItem extends Equatable {
   }
 
   double get effectiveDiscountPercent {
+    if (product.isUniversal) return 0;
     if (discountApplied && product.discountPercent > 0) {
       return product.discountPercent;
     }
     return discount;
   }
 
-  double get sum => effectiveUnitPrice * qty * (1 - discount / 100);
+  double get sum {
+    if (product.isUniversal) return effectiveUnitPrice * qty;
+    return effectiveUnitPrice * qty * (1 - discount / 100);
+  }
 
   CartItem copyWith({
     Product? product,

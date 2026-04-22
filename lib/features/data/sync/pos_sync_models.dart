@@ -91,6 +91,7 @@ class QueuePushEvent {
 
 class QueueOperationResult {
   const QueueOperationResult({
+    required this.operationId,
     required this.result,
     required this.type,
     required this.clientId,
@@ -99,6 +100,7 @@ class QueueOperationResult {
     this.errorMessage,
   });
 
+  final String operationId;
   final QueueSendResult result;
   final OutboxOperationType type;
   final String clientId;

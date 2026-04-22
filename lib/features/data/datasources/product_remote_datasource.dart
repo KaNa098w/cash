@@ -14,7 +14,6 @@ class ProductRemoteDataSource {
     return _getProductsPage(page: page, perPage: perPage, key: key);
   }
 
-  /// Внутренний метод, получающий одну страницу.
   Future<PaginatedProducts> _getProductsPage({
     required int page,
     required int perPage,
@@ -32,7 +31,7 @@ class ProductRemoteDataSource {
       final data = response.data;
 
       if (data is! Map<String, dynamic>) {
-        throw Exception(
+        throw Exception(                                                                                                                                                                                                                                                                                                                                                                                                              
           'Invalid products response format: expected Map, got ${data.runtimeType}',
         );
       }
@@ -72,8 +71,6 @@ class ProductRemoteDataSource {
     }
   }
 
-  /// Получить ВСЕ продукты со всех страниц.
-  /// Используем для синка в Hive.
   Future<List<ProductModel>> getAllProducts({
     required String key,
     int perPage = 50,

@@ -106,6 +106,7 @@ class PosCubit extends Cubit<PosState> {
       quantity: m.quantity,
       measurementUnit: m.measurementUnit,
       conversionValue: m.conversionValue,
+      isUniversal: m.isUniversal,
       discountType: m.discountType,
       discountPercent: m.discountPercent,
       priceAfterDiscount: m.priceAfterDiscount,
@@ -117,7 +118,10 @@ class PosCubit extends Cubit<PosState> {
     final idx = tickets.indexWhere((t) => t.id == state.activeTicketId);
     if (idx == -1) return;
 
-    tickets[idx] = tickets[idx].copyWith(items: const []);
+    tickets[idx] = tickets[idx].copyWith(
+      items: const [],
+      clearCustomer: true,
+    );
 
     _emitAndPersist(state.copyWith(
       tickets: tickets,
@@ -211,6 +215,58 @@ class PosCubit extends Cubit<PosState> {
     addWithQty(product, qty);
   }
 
+  void addUniversalProduct(ProductModel m, {required double price}) {
+    if (price <= 0 || price.isNaN || price.isInfinite) return;
+
+    final product = _mapProductModelToProduct(m).copyWith(
+      name: 'Универсальный продукт',
+      price: double.parse(price.toStringAsFixed(2)),
+      quantity: 0,
+      measurementUnit: 'шт.',
+      clearConversionValue: true,
+      isUniversal: true,
+      discountType: 'forbidden',
+      discountPercent: 0,
+      priceAfterDiscount: 0,
+    );
+
+    int? selectedIndex;
+    final tickets = _updateActiveTicketItems((items) {
+      final list = List<CartItem>.from(items);
+      list.add(CartItem(product: product, qty: 1, discountApplied: false));
+      selectedIndex = list.length - 1;
+      return list;
+    });
+
+    _emitAndPersist(state.copyWith(
+      tickets: tickets,
+      selectedItemIndex: selectedIndex,
+    ));
+  }
+
+  void setPrice(int index, double price) {
+    if (index < 0 || index >= state.items.length) return;
+    if (price <= 0 || price.isNaN || price.isInfinite) return;
+    final item = state.items[index];
+    if (!item.product.isUniversal) return;
+
+    final normalizedPrice = double.parse(price.toStringAsFixed(2));
+    final tickets = _updateActiveTicketItems((items) {
+      final list = List<CartItem>.from(items);
+      if (index >= 0 && index < list.length) {
+        final current = list[index];
+        list[index] = current.copyWith(
+          product: current.product.copyWith(price: normalizedPrice),
+          discount: 0,
+          discountApplied: false,
+        );
+      }
+      return list;
+    });
+
+    _emitAndPersist(state.copyWith(tickets: tickets));
+  }
+
   void removeAt(int index) {
     final itemsBefore = state.items;
     if (index < 0 || index >= itemsBefore.length) return;
@@ -257,10 +313,12 @@ class PosCubit extends Cubit<PosState> {
       final list = List<CartItem>.from(items);
       if (index >= 0 && index < list.length) {
         final current = list[index];
-        final normalizedQty = ProductModel.isPiecesMeasurementUnit(
-                current.product.measurementUnit)
-            ? qty.roundToDouble()
-            : qty;
+        final normalizedQty = current.product.isUniversal
+            ? qty
+            : ProductModel.isPiecesMeasurementUnit(
+                    current.product.measurementUnit)
+                ? qty.roundToDouble()
+                : qty;
         list[index] = current.copyWith(qty: normalizedQty);
       }
       return list;
@@ -295,6 +353,7 @@ class PosCubit extends Cubit<PosState> {
   double get total => state.items.fold<double>(0, (p, e) => p + e.sum);
 
   double get discountSum => state.items.fold<double>(0, (p, e) {
+        if (e.product.isUniversal) return p;
         if (e.discountApplied && e.product.priceAfterDiscount > 0) {
           return p + (e.product.price - e.product.priceAfterDiscount) * e.qty;
         }
@@ -311,6 +370,7 @@ class PosCubit extends Cubit<PosState> {
     final items = state.items;
     if (index < 0 || index >= items.length) return;
     final item = items[index];
+    if (item.product.isUniversal) return;
     if (item.product.discountType != 'automatic') return;
     if (item.discountApplied || !_hasAvailableProductDiscount(item)) return;
 
@@ -330,6 +390,7 @@ class PosCubit extends Cubit<PosState> {
     final items = state.items;
     if (index < 0 || index >= items.length) return;
     final item = items[index];
+    if (item.product.isUniversal) return;
     if (item.product.discountType != 'automatic') return;
     if (!item.discountApplied) return;
 

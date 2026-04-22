@@ -4,11 +4,17 @@ class CustomerDto {
   final String id;
   final String name;
   final String phone;
+  final num balance;
+  final num debtLimit;
+  final bool debtAllowed;
 
   CustomerDto({
     required this.id,
     required this.name,
     required this.phone,
+    this.balance = 0,
+    this.debtLimit = 0,
+    this.debtAllowed = true,
   });
 
   factory CustomerDto.fromJson(Map<String, dynamic> json) {
@@ -16,7 +22,54 @@ class CustomerDto {
     final name = json['name']?.toString() ?? '';
     final phone = json['phone']?.toString() ?? '';
     if (id.isEmpty) throw Exception('CustomerDto: missing id');
-    return CustomerDto(id: id, name: name, phone: phone);
+    return CustomerDto(
+      id: id,
+      name: name,
+      phone: phone,
+      balance: _readNum(
+        json,
+        const ['balance', 'debt_balance', 'current_debt', 'current_balance'],
+      ),
+      debtLimit: _readNum(
+        json,
+        const ['debt_limit', 'credit_limit', 'limit', 'max_debt'],
+      ),
+      debtAllowed: _readBool(
+        json,
+        const [
+          'debt_allowed',
+          'allow_debt',
+          'credit_allowed',
+          'allow_credit',
+        ],
+        fallback: true,
+      ),
+    );
+  }
+
+  static num _readNum(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value is num) return value;
+      final parsed = num.tryParse((value ?? '').toString().trim());
+      if (parsed != null) return parsed;
+    }
+    return 0;
+  }
+
+  static bool _readBool(
+    Map<String, dynamic> json,
+    List<String> keys, {
+    required bool fallback,
+  }) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value is bool) return value;
+      final normalized = (value ?? '').toString().trim().toLowerCase();
+      if (normalized == 'true' || normalized == '1') return true;
+      if (normalized == 'false' || normalized == '0') return false;
+    }
+    return fallback;
   }
 }
 

@@ -2712,6 +2712,8 @@ class PosSyncLocalStore {
           transferTotal += amount;
           break;
         case 'credit':
+        case 'debt':
+        case 'partial_debt':
           creditTotal += amount;
           break;
       }
@@ -2840,6 +2842,8 @@ class PosSyncLocalStore {
           transferSalesTotal += amount;
           break;
         case 'credit':
+        case 'debt':
+        case 'partial_debt':
           creditSalesTotal += amount;
           break;
       }
@@ -3017,6 +3021,13 @@ class PosSyncLocalStore {
       date: _parseDt(payload['date']) ?? DateTime.now(),
       totalAmount: _asInt(payload['total_amount']),
       paymentMethod: (payload['payment_method'] ?? 'cash').toString(),
+      paymentType: payload['payment_type']?.toString(),
+      paidAmount: _asInt(payload['paid_amount']),
+      debtAmount: _asInt(payload['debt_amount']),
+      paidPaymentMethod: payload['paid_payment_method']?.toString(),
+      dueDate: _parseDt(payload['due_date']),
+      comment: payload['comment']?.toString(),
+      idempotencyKey: payload['idempotency_key']?.toString(),
       posId: (payload['pos_id'] ?? '').toString(),
       storeId: (payload['store_id'] ?? '').toString(),
       userId: (payload['user_id'] ?? '').toString(),

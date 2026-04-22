@@ -1,29 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
-import 'package:get_it/get_it.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/features/presentation/widgets/quit_products_screen.dart';
-import 'package:pdf/pdf.dart';
-import 'package:leemon_app/core/models/sale_model.dart'
-    show ProductModel, SaleItemModel, SaleModel;
-import 'package:leemon_app/core/print/print_service.dart';
-import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
-import 'package:leemon_app/features/domain/entities/payment.dart';
-import 'package:leemon_app/features/data/sync/pos_sync_models.dart'
-    show LocalAccount;
-import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
-import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_state.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 import 'package:leemon_app/features/presentation/widgets/conversion_product_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/footer_panels_widget.dart';
 import 'package:leemon_app/features/presentation/widgets/live_data_text.dart';
 import 'package:leemon_app/features/presentation/widgets/payment_panel.dart';
-import 'package:uuid/uuid.dart';
 
 class FooterStatus extends StatelessWidget {
   const FooterStatus({super.key});
@@ -53,480 +42,6 @@ class _FooterDesktop extends StatelessWidget {
           builder: (ctx) => TouchDeleteDialog(productName: productName),
         ) ??
         false;
-  }
-
-  Future<void> _payByCardWithPrint(BuildContext context) async {
-    final posCubit = context.read<PosCubit>();
-    final auth = context.read<AuthTokenProvider>();
-
-    final key = auth.posKey?.trim() ?? '';
-    final deviceId = auth.deviceId?.trim() ?? '';
-    final storeId = auth.storeId?.trim() ?? '';
-    final posId = auth.posId?.trim() ?? '';
-    final userId = auth.activeUserId?.trim() ?? '';
-    final fallbackAccountId = auth.accountId?.trim() ?? '';
-
-    if (key.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Нет posKey')));
-      return;
-    }
-    if (deviceId.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Нет deviceId')));
-      return;
-    }
-    if (storeId.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Нет storeId')));
-      return;
-    }
-    if (posId.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Нет posId')));
-      return;
-    }
-    if (fallbackAccountId.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Нет accountId')));
-      return;
-    }
-    if (userId.trim().isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Нет userId')));
-      return;
-    }
-    if (posCubit.state.items.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Корзина пустая')));
-      return;
-    }
-
-    final total = posCubit.total;
-    final pageFormat =
-        auth.receiptPaperMm == 57 ? PdfPageFormat.roll57 : PdfPageFormat.roll80;
-    final ok = await _confirmCardPayment(context, amount: money(total));
-    if (!context.mounted) return;
-    if (!ok) return;
-
-    posCubit.setPaymentKind(PaymentKind.card);
-    posCubit.setReceived(total);
-
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-
-    try {
-      final saleItems = <SaleItemModel>[];
-      for (final it in posCubit.state.items) {
-        final cv = it.product.conversionValue;
-        final qty = (cv != null && cv > 0) ? (it.qty * cv) : it.qty;
-        final unitPrice = it.effectiveUnitPrice;
-        final price = double.parse(unitPrice.toStringAsFixed(2));
-        final totalPrice = double.parse((unitPrice * qty).toStringAsFixed(2));
-
-        saleItems.add(
-          SaleItemModel(
-            productId: it.product.id,
-            quantity: qty,
-            price: price,
-            totalPrice: totalPrice,
-            id: '',
-            saleId: '',
-          ),
-        );
-      }
-
-      final customerId = posCubit.state.activeCustomer?.id;
-      final saleLocalId = const Uuid().v4();
-      final totalAmountInt = total.round();
-      final exactTotal = double.parse(
-        saleItems.fold(0.0, (s, e) => s + e.totalPrice).toStringAsFixed(2),
-      );
-
-      final sale = SaleModel(
-        localId: saleLocalId,
-        number: '',
-        date: DateTime.now(),
-        totalAmount: totalAmountInt,
-        paymentMethod: 'card',
-        posId: posId,
-        storeId: storeId,
-        userId: userId,
-        accountId: fallbackAccountId,
-        posSessionId: auth.shiftId?.trim(),
-        customerId: customerId,
-        items: saleItems
-            .asMap()
-            .entries
-            .map(
-              (entry) => entry.value.copyWith(
-                product: ProductModel(
-                  id: posCubit.state.items[entry.key].product.id,
-                  name: posCubit.state.items[entry.key].product.name,
-                  measurementUnit:
-                      posCubit.state.items[entry.key].product.measurementUnit,
-                  arrivalCost: 0,
-                  sellingPrice:
-                      posCubit.state.items[entry.key].effectiveUnitPrice,
-                  wholesalePrice: 0,
-                ),
-              ),
-            )
-            .toList(),
-      );
-
-      final sync = GetIt.I<PosSyncService>();
-      final accounts = await sync.loadAccounts();
-      final cashAccount = accounts.firstWhere(
-        (a) => a.isCash,
-        orElse: () => LocalAccount(id: fallbackAccountId, name: ''),
-      );
-      final cardAccount = accounts.firstWhere(
-        (a) => !a.isCash && a.id != cashAccount.id,
-        orElse: () => cashAccount,
-      );
-
-      final payments = [
-        {
-          'account_id': cardAccount.id,
-          'amount': exactTotal,
-          'client_payment_id': '$saleLocalId-card',
-        },
-      ];
-
-      final repo = GetIt.I<SaleRepository>();
-      final outcome = await repo.createSale(
-        key: key,
-        deviceId: deviceId,
-        sale: sale,
-        payments: payments,
-      );
-      final result = outcome.result;
-      final printedSale = outcome.sale;
-
-      if (!context.mounted) return;
-      Navigator.of(context).pop(); // закрыть лоадер
-
-      if (result == CreateSaleResult.rejected) {
-        await showDialog<void>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text('Оплата не прошла'),
-            content: const Text('Сервер отклонил продажу.'),
-            actions: [
-              ElevatedButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Ок'),
-              ),
-            ],
-          ),
-        );
-        return;
-      }
-
-      final printer = PrintService();
-
-      await printer.print80mmSilently(
-        () => buildReceiptPdf(
-          ReceiptPdfData(
-            pageFormat: pageFormat,
-            money: money,
-            receiptDate: printedSale.date,
-            receiptNumber: formatPosReceiptNumber(
-              posNumber: auth.posNumber ?? '',
-              saleNumber: printedSale.number,
-              fallback: printedSale.localId,
-            ),
-            cashierName: (auth.activeUserName ?? '').trim().isEmpty
-                ? userId
-                : auth.activeUserName!.trim(),
-            storeName: (() {
-              final name = (auth.storeName ?? '').trim();
-              if (name.isNotEmpty) return name;
-              final posName = (auth.posName ?? '').trim();
-              if (posName.isNotEmpty) return posName;
-              return 'Магазин';
-            })(),
-            items: posCubit.state.items
-                .map(
-                  (it) => ReceiptPdfItem(
-                    name: it.product.name,
-                    quantity: it.qty,
-                    unitPrice: it.effectiveUnitPrice,
-                    lineTotal: it.sum,
-                    discountPercent: it.effectiveDiscountPercent,
-                  ),
-                )
-                .toList(),
-            total: posCubit.total,
-            discountSum: posCubit.discountSum,
-            paymentMethodLabel: 'Безналичный',
-            isCashPayment: false,
-            received: posCubit.state.received,
-            change: posCubit.change,
-          ),
-        ),
-        printerName: auth.receiptPrinterName,
-      );
-
-      if (!context.mounted) return;
-      await showDialog<void>(
-        context: context,
-        barrierDismissible: true,
-        barrierColor: Colors.black.withValues(alpha: 0.45),
-        builder: (ctx) {
-          const message = 'Продажа сохранена.\nЧек распечатан.';
-
-          return Dialog(
-            insetPadding:
-                const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // ✅ success icon
-                    Container(
-                      width: 54,
-                      height: 54,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFDCFCE7), // light green
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(
-                        Icons.check_circle_rounded,
-                        color: Color(0xFF16A34A),
-                        size: 30,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    Text(
-                      'Оплата успешна',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF111827),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF9FAFB),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFFE5E7EB)),
-                      ),
-                      child: Text(
-                        message,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          height: 1.3,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF374151),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 14),
-                    const Divider(height: 1),
-                    const SizedBox(height: 12),
-
-                    SizedBox(
-                      width: double.infinity,
-                      height: 44,
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.of(ctx).pop(),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF16A34A),
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(
-                          'Готово',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.2,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      );
-
-      posCubit.clearAfterPayment();
-    } catch (e) {
-      if (context.mounted) {
-        Navigator.of(context).maybePop(); // если лоадер ещё открыт
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка безнала: $e')),
-        );
-      }
-    }
-  }
-
-  Future<bool> _confirmCardPayment(
-    BuildContext context, {
-    required String amount,
-  }) async {
-    final theme = Theme.of(context);
-
-    final res = await showDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      barrierColor: Colors.black.withValues(alpha: 0.45),
-      builder: (ctx) {
-        return Dialog(
-          backgroundColor: ThemeColors.greyB,
-          insetPadding:
-              const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // icon
-                  Container(
-                    width: 54,
-                    height: 54,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF), // light blue
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.credit_card_rounded,
-                      color: Color(0xFF2563EB),
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  Text(
-                    'Безналичная оплата',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF111827),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // amount card
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF9FAFB),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          'Сумма к оплате',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: const Color(0xFF6B7280),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          amount,
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w900,
-                            color: const Color(0xFF111827),
-                            height: 1,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 14),
-                  const Divider(height: 1),
-                  const SizedBox(height: 12),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SizedBox(
-                          height: 44,
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.of(ctx).pop(false),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF111827),
-                              side: const BorderSide(color: Color(0xFFE5E7EB)),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: const Text(
-                              'Отмена',
-                              style: TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: SizedBox(
-                          height: 44,
-                          child: ElevatedButton(
-                            onPressed: () => Navigator.of(ctx).pop(true),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2563EB),
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: const Text(
-                              'Оплатить',
-                              style: TextStyle(fontWeight: FontWeight.w900),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-
-    return res ?? false;
   }
 
   @override
@@ -687,7 +202,9 @@ class _FooterDesktop extends StatelessWidget {
 
                                 final picked = await showQuickProductsDialog(
                                   context,
-                                  products: items,
+                                  products: items
+                                      .where((product) => !product.isUniversal)
+                                      .toList(growable: false),
                                 );
 
                                 if (!context.mounted) return;
@@ -712,7 +229,37 @@ class _FooterDesktop extends StatelessWidget {
                               if (ok) cubit.clearAfterPayment();
                             },
                             onPayCard: () async {
-                              await _payByCardWithPrint(context);
+                              final productsState =
+                                  context.read<ProductsCubit>().state;
+                              final products = productsState is ProductsLoaded
+                                  ? productsState.products
+                                  : const [];
+                              dynamic universalProduct;
+                              for (final product in products) {
+                                if (product.isUniversal) {
+                                  universalProduct = product;
+                                  break;
+                                }
+                              }
+
+                              if (universalProduct == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Универсальный продукт недоступен. Выполните синхронизацию.',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              final amount =
+                                  await _showUniversalAmountDialog(context);
+                              if (!context.mounted || amount == null) return;
+                              cubit.addUniversalProduct(
+                                universalProduct,
+                                price: amount,
+                              );
                             },
                             onPay: hasItems
                                 ? () => _showPaymentPanelCenter(context)
@@ -783,6 +330,134 @@ class _FooterDesktop extends StatelessWidget {
           child: child,
         );
       },
+    );
+  }
+}
+
+Future<double?> _showUniversalAmountDialog(BuildContext context) {
+  return showDialog<double>(
+    context: context,
+    barrierDismissible: true,
+    builder: (_) => const _UniversalAmountDialog(),
+  );
+}
+
+class _UniversalAmountDialog extends StatefulWidget {
+  const _UniversalAmountDialog();
+
+  @override
+  State<_UniversalAmountDialog> createState() => _UniversalAmountDialogState();
+}
+
+class _UniversalAmountDialogState extends State<_UniversalAmountDialog> {
+  String _text = '';
+
+  double get _amount => double.tryParse(_text.replaceAll(',', '.')) ?? 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final canConfirm = _amount > 0;
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 24,
+                  offset: const Offset(0, 14),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Введите сумму',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  height: 58,
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                  ),
+                  child: Text(
+                    _text.isEmpty ? '0' : _text,
+                    style: const TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                AmountKeypad(
+                  text: _text,
+                  showQuickRows: false,
+                  onChanged: (value) => setState(() => _text = value),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Отмена'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: canConfirm
+                            ? () => Navigator.of(context).pop(_amount)
+                            : null,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                          backgroundColor: const Color(0xFFF9B32C),
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          'Добавить ${money(_amount)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

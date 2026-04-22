@@ -164,22 +164,34 @@ class PosCustomer {
   final String id;
   final String name;
   final String? phone;
+  final num balance;
+  final num debtLimit;
+  final bool debtAllowed;
 
   const PosCustomer({
     required this.id,
     required this.name,
     this.phone,
+    this.balance = 0,
+    this.debtLimit = 0,
+    this.debtAllowed = true,
   });
 
   factory PosCustomer.fromJson(Map<String, dynamic> json) => PosCustomer(
         id: (json['id'] ?? '').toString(),
         name: (json['name'] ?? '').toString(),
         phone: json['phone']?.toString(),
+        balance: (json['balance'] as num?) ?? 0,
+        debtLimit: (json['debtLimit'] as num?) ?? 0,
+        debtAllowed: json['debtAllowed'] != false,
       );
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
         'phone': phone,
+        'balance': balance,
+        'debtLimit': debtLimit,
+        'debtAllowed': debtAllowed,
       };
 }

@@ -65,6 +65,10 @@ Future<void> showPosActionsDialog(BuildContext context) {
       Navigator.of(context, rootNavigator: true).pop();
       await _showServicesQueueDialog(context);
     }),
+    _PosAction('ДОЛГИ', () {
+      Navigator.of(context, rootNavigator: true).pop();
+      context.go('/debts');
+    }),
     _PosAction('СВЕРНУТЬ', () async {
       Navigator.of(context, rootNavigator: true).pop();
 
@@ -223,11 +227,12 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
             final key = auth.posKey?.trim() ?? '';
             final deviceId = auth.deviceId?.trim() ?? '';
             if (key.isEmpty || deviceId.isEmpty) return;
-            final targetItems = (selectedOnly || selectedOperationIds.isNotEmpty)
-                ? eligibleItems()
-                    .where((item) => selectedOperationIds.contains(item.id))
-                    .toList(growable: false)
-                : eligibleItems();
+            final targetItems =
+                (selectedOnly || selectedOperationIds.isNotEmpty)
+                    ? eligibleItems()
+                        .where((item) => selectedOperationIds.contains(item.id))
+                        .toList(growable: false)
+                    : eligibleItems();
             if (targetItems.isEmpty) return;
             setState(() => syncing = true);
             await sync.rebindQueuedOperationsToCurrentContext(
@@ -403,8 +408,7 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                       ),
                       Checkbox(
                         value: selected,
-                        onChanged: (value) =>
-                            onSelectedChanged(value ?? false),
+                        onChanged: (value) => onSelectedChanged(value ?? false),
                       ),
                       if (onTap != null) ...[
                         const Icon(
@@ -509,8 +513,7 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                                       Icons.check_circle_rounded,
                                     QueuePushStage.queued =>
                                       Icons.schedule_rounded,
-                                    QueuePushStage.error =>
-                                      Icons.error_rounded,
+                                    QueuePushStage.error => Icons.error_rounded,
                                   };
 
                                   return Container(
@@ -585,7 +588,7 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                                     height: 14,
                                     child: CircularProgressIndicator(
                                         strokeWidth: 2),
-                              )
+                                  )
                                 : const Icon(Icons.sync_rounded),
                             label: const Text('Отправить сейчас'),
                           ),
@@ -614,7 +617,8 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                                       selectedOperationIds
                                         ..clear()
                                         ..addAll(
-                                          eligibleItems().map((item) => item.id),
+                                          eligibleItems()
+                                              .map((item) => item.id),
                                         );
                                     }
                                   });
@@ -659,8 +663,7 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                               dot: item.status == OutboxOperationStatus.manual
                                   ? const Color(0xFFF59E0B)
                                   : const Color(0xFFDC2626),
-                              selected:
-                                  selectedOperationIds.contains(item.id),
+                              selected: selectedOperationIds.contains(item.id),
                               onSelectedChanged: (selected) {
                                 setState(() {
                                   if (selected) {
@@ -1076,6 +1079,8 @@ Future<void> _printLastSaleReceipt(BuildContext context) async {
             'cash' => 'Наличные',
             'card' => 'Безналичный',
             'credit' => 'В долг',
+            'debt' => 'В долг',
+            'partial_debt' => 'В долг',
             _ => sale.paymentMethod,
           },
           isCashPayment: sale.paymentMethod.toLowerCase() == 'cash',
@@ -1585,10 +1590,12 @@ Future<void> _showQueueItemDetailsDialog(
   QueueItemDetails details,
 ) {
   final storedError = details.lastErrorDetails ?? const <String, dynamic>{};
-  final requestPayload = _asMap(storedError['request_payload']) ?? details.payload;
+  final requestPayload =
+      _asMap(storedError['request_payload']) ?? details.payload;
   final errorDetails =
       _asMap(storedError['error_details']) ?? const <String, dynamic>{};
-  final requestMeta = _asMap(errorDetails['request']) ?? const <String, dynamic>{};
+  final requestMeta =
+      _asMap(errorDetails['request']) ?? const <String, dynamic>{};
   final responseMeta =
       _asMap(errorDetails['response']) ?? const <String, dynamic>{};
   final items = _asListOfMaps(requestPayload['items']);
@@ -1619,7 +1626,9 @@ Future<void> _showQueueItemDetailsDialog(
                   [
                     'Код: ${details.errorCode ?? '-'}',
                     'Ошибка: ${details.errorMessage ?? '-'}',
-                    if ((responseMeta['status_code'] ?? '').toString().isNotEmpty)
+                    if ((responseMeta['status_code'] ?? '')
+                        .toString()
+                        .isNotEmpty)
                       'HTTP: ${responseMeta['status_code']}',
                     if ((requestMeta['method'] ?? '').toString().isNotEmpty ||
                         (requestMeta['path'] ?? '').toString().isNotEmpty)
@@ -1640,7 +1649,8 @@ Future<void> _showQueueItemDetailsDialog(
                           title: 'Товары',
                           child: Column(
                             children: [
-                              for (final item in items) _queueItemRow(item: item),
+                              for (final item in items)
+                                _queueItemRow(item: item),
                             ],
                           ),
                         ),
@@ -1709,7 +1719,8 @@ Future<bool?> _showEditableQueueItemDetailsDialog(
       Map<String, dynamic>.from(details.payload);
   var errorDetails =
       _asMap(storedError['error_details']) ?? const <String, dynamic>{};
-  var requestMeta = _asMap(errorDetails['request']) ?? const <String, dynamic>{};
+  var requestMeta =
+      _asMap(errorDetails['request']) ?? const <String, dynamic>{};
   var responseMeta =
       _asMap(errorDetails['response']) ?? const <String, dynamic>{};
   var items = _asListOfMaps(requestPayload['items']);
@@ -1736,8 +1747,8 @@ Future<bool?> _showEditableQueueItemDetailsDialog(
       responseMeta =
           _asMap(errorDetails['response']) ?? const <String, dynamic>{};
       items = _asListOfMaps(requestPayload['items']);
-      localNumberController.text = (requestPayload['local_number'] ?? '')
-          .toString();
+      localNumberController.text =
+          (requestPayload['local_number'] ?? '').toString();
     });
   }
 
@@ -1747,7 +1758,8 @@ Future<bool?> _showEditableQueueItemDetailsDialog(
       return StatefulBuilder(
         builder: (context, setState) {
           Future<void> saveReceiptNumber() async {
-            if (savingNumber || currentDetails.type != OutboxOperationType.sale) {
+            if (savingNumber ||
+                currentDetails.type != OutboxOperationType.sale) {
               return;
             }
             final parsed = int.tryParse(localNumberController.text.trim());
@@ -1763,7 +1775,8 @@ Future<bool?> _showEditableQueueItemDetailsDialog(
               actionMessage = null;
             });
 
-            final nextPayload = Map<String, dynamic>.from(currentDetails.payload);
+            final nextPayload =
+                Map<String, dynamic>.from(currentDetails.payload);
             nextPayload['local_number'] = parsed;
             nextPayload['number'] = parsed.toString();
 
@@ -1788,7 +1801,8 @@ Future<bool?> _showEditableQueueItemDetailsDialog(
             final deviceId = auth.deviceId?.trim() ?? '';
             if (key.isEmpty || deviceId.isEmpty) {
               setState(() {
-                actionMessage = 'Не удалось определить данные кассы для отправки';
+                actionMessage =
+                    'Не удалось определить данные кассы для отправки';
               });
               return;
             }
@@ -1890,7 +1904,9 @@ Future<bool?> _showEditableQueueItemDetailsDialog(
                             .toString()
                             .isNotEmpty)
                           'HTTP: ${responseMeta['status_code']}',
-                        if ((requestMeta['method'] ?? '').toString().isNotEmpty ||
+                        if ((requestMeta['method'] ?? '')
+                                .toString()
+                                .isNotEmpty ||
                             (requestMeta['path'] ?? '').toString().isNotEmpty)
                           'Запрос: ${requestMeta['method'] ?? ''} ${requestMeta['path'] ?? ''}',
                       ].join('\n'),
@@ -1924,7 +1940,8 @@ Future<bool?> _showEditableQueueItemDetailsDialog(
                     Expanded(
                       child: ListView(
                         children: [
-                          if (currentDetails.type == OutboxOperationType.sale) ...[
+                          if (currentDetails.type ==
+                              OutboxOperationType.sale) ...[
                             _queueDetailsSection(
                               title: 'Номер чека',
                               child: Column(
@@ -1941,9 +1958,8 @@ Future<bool?> _showEditableQueueItemDetailsDialog(
                                   ),
                                   const SizedBox(height: 8),
                                   FilledButton.tonal(
-                                    onPressed: savingNumber
-                                        ? null
-                                        : saveReceiptNumber,
+                                    onPressed:
+                                        savingNumber ? null : saveReceiptNumber,
                                     child: Text(
                                       savingNumber
                                           ? 'Сохраняю...'
@@ -2164,8 +2180,9 @@ Widget _queueDetailsSection({
 Widget _queueItemRow({
   required Map<String, dynamic> item,
 }) {
-  final name = (item['product_name'] ?? item['name'] ?? item['product_id'] ?? '-')
-      .toString();
+  final name =
+      (item['product_name'] ?? item['name'] ?? item['product_id'] ?? '-')
+          .toString();
   final quantity = item['quantity']?.toString() ?? '-';
   final price = item['price']?.toString() ?? '-';
   final total = item['total_price']?.toString() ?? '-';

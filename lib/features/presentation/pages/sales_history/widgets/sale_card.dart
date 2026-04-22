@@ -77,6 +77,8 @@ class SaleCard extends StatelessWidget {
       case 'mixed':
         return 'Смешанная';
       case 'credit':
+      case 'debt':
+      case 'partial_debt':
         return 'В долг';
       default:
         final raw = sale.paymentMethod.trim();
@@ -93,6 +95,8 @@ class SaleCard extends StatelessWidget {
       case 'mixed':
         return const Color(0xFFF3E8FF);
       case 'credit':
+      case 'debt':
+      case 'partial_debt':
         return const Color(0xFFFFE6D6);
       default:
         return const Color(0xFFF3F5F4);
@@ -108,6 +112,8 @@ class SaleCard extends StatelessWidget {
       case 'mixed':
         return const Color(0xFF7C3AED);
       case 'credit':
+      case 'debt':
+      case 'partial_debt':
         return const Color(0xFFB54708);
       default:
         return const Color(0xFF425A4E);

@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
@@ -586,6 +586,7 @@ class _SearchBarState extends State<SearchBar> {
     final q = query.toLowerCase();
 
     final matches = all.where((p) {
+      if (p.isUniversal) return false;
       final name = p.name.toLowerCase();
       final barcodeStr = (p.barcode?.toString() ?? '').toLowerCase();
       final localCodeStr = (p.localBarcode?.toString() ?? '').toLowerCase();
@@ -840,17 +841,20 @@ class _SearchBarState extends State<SearchBar> {
                 child: CallbackShortcuts(
                   bindings: <ShortcutActivator, VoidCallback>{
                     const SingleActivator(LogicalKeyboardKey.arrowDown): () {
-                      if (_chooserEntry != null && _chooserProducts.isNotEmpty) {
+                      if (_chooserEntry != null &&
+                          _chooserProducts.isNotEmpty) {
                         _moveChooserSelection(1);
                       }
                     },
                     const SingleActivator(LogicalKeyboardKey.arrowUp): () {
-                      if (_chooserEntry != null && _chooserProducts.isNotEmpty) {
+                      if (_chooserEntry != null &&
+                          _chooserProducts.isNotEmpty) {
                         _moveChooserSelection(-1);
                       }
                     },
                     const SingleActivator(LogicalKeyboardKey.enter): () {
-                      if (_chooserEntry != null && _chooserProducts.isNotEmpty) {
+                      if (_chooserEntry != null &&
+                          _chooserProducts.isNotEmpty) {
                         final product = _chooserProducts[_chooserSelectedIndex];
                         unawaited(_selectChooserProduct(product));
                       } else {
@@ -858,7 +862,8 @@ class _SearchBarState extends State<SearchBar> {
                       }
                     },
                     const SingleActivator(LogicalKeyboardKey.numpadEnter): () {
-                      if (_chooserEntry != null && _chooserProducts.isNotEmpty) {
+                      if (_chooserEntry != null &&
+                          _chooserProducts.isNotEmpty) {
                         final product = _chooserProducts[_chooserSelectedIndex];
                         unawaited(_selectChooserProduct(product));
                       } else {
@@ -1106,8 +1111,9 @@ class _SearchBarState extends State<SearchBar> {
                     ),
                     const SizedBox(width: 6),
                     InkWell(
-                      onTap: () =>
-                          context.read<PosCubit>().clearCustomerForActiveTicket(),
+                      onTap: () => context
+                          .read<PosCubit>()
+                          .clearCustomerForActiveTicket(),
                       child: const Padding(
                         padding: EdgeInsets.all(2),
                         child: Icon(Icons.close, size: 18),

@@ -9,6 +9,7 @@ import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_state
 
 import 'package:leemon_app/features/presentation/pages/auth/cashiers_page.dart';
 import 'package:leemon_app/features/presentation/pages/auth/login_page.dart';
+import 'package:leemon_app/features/presentation/pages/debts/debts_page.dart';
 import 'package:leemon_app/features/presentation/pages/pos_page.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/sales_history_page.dart';
 import 'package:leemon_app/features/presentation/widgets/close_shift_bottom.dart';
@@ -60,6 +61,7 @@ GoRouter createRouter(BuildContext context) {
       GoRoute(path: '/cashiers', builder: (_, __) => const CashiersPage()),
       GoRoute(path: '/pos', builder: (_, __) => const PosPage()),
       GoRoute(path: '/history', builder: (_, __) => const SalesHistoryPage()),
+      GoRoute(path: '/debts', builder: (_, __) => const DebtsPage()),
       GoRoute(
         path: '/close-shift',
         builder: (_, __) => const CloseShiftPage(),

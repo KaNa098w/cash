@@ -28,7 +28,7 @@ class SaleItemRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final name = item.product?.name ?? '-';
+    final name = item.displayProductName;
     final unit = (item.product?.measurementUnit.trim().isNotEmpty ?? false)
         ? item.product!.measurementUnit
         : 'шт.';

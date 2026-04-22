@@ -253,9 +253,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
             items: sale.items
                 .map(
                   (it) => ReceiptPdfItem(
-                    name: (it.product?.name ?? '').trim().isEmpty
-                        ? 'Товар ${it.productId}'
-                        : it.product!.name,
+                    name: it.displayProductName,
                     quantity: it.quantity,
                     unitPrice: it.price,
                     lineTotal: it.totalPrice,
@@ -269,11 +267,19 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
               'cash' => 'Наличные',
               'card' => 'Безналичный',
               'credit' => 'В долг',
+              'debt' => 'В долг',
+              'partial_debt' => 'В долг',
               _ => sale.paymentMethod.trim().isEmpty
                   ? '-'
                   : sale.paymentMethod.trim(),
             },
             isCashPayment: sale.paymentMethod.trim().toLowerCase() == 'cash',
+            paidNow: sale.paymentMethod.trim().toLowerCase() == 'cash'
+                ? null
+                : sale.paidAmount > 0
+                    ? sale.paidAmount
+                    : null,
+            debtAmount: sale.debtAmount > 0 ? sale.debtAmount : null,
           ),
         ),
         format: pageFormat,
@@ -323,9 +329,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
           items: sale.items
               .map(
                 (it) => ReceiptPdfItem(
-                  name: (it.product?.name ?? '').trim().isEmpty
-                      ? 'Товар ${it.productId}'
-                      : it.product!.name,
+                  name: it.displayProductName,
                   quantity: it.quantity,
                   unitPrice: it.price,
                   lineTotal: it.totalPrice,
@@ -338,6 +342,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
             'cash' => 'Наличные',
             'card' => 'Безналичный',
             'credit' => 'В долг',
+            'debt' => 'В долг',
+            'partial_debt' => 'В долг',
             _ => sale.paymentMethod.trim().isEmpty
                 ? '-'
                 : sale.paymentMethod.trim(),
@@ -791,9 +797,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       final key = item.id.isNotEmpty ? item.id : item.productId;
       final qty = (picksByKey[key] ?? 0).toDouble();
       return ReceiptPdfItem(
-        name: (item.product?.name ?? '').trim().isEmpty
-            ? 'Товар ${item.productId}'
-            : item.product!.name,
+        name: item.displayProductName,
         quantity: qty,
         unitPrice: item.price,
         lineTotal: double.parse((item.price * qty).toStringAsFixed(2)),
@@ -823,6 +827,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
             'card' => 'Безналичный',
             'mixed' => 'Смешанная',
             'credit' => 'В долг',
+            'debt' => 'В долг',
+            'partial_debt' => 'В долг',
             _ => paymentMethod.isEmpty ? '-' : paymentMethod,
           },
           isCashPayment: paymentMethod == 'cash',

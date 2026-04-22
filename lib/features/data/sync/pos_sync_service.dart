@@ -515,6 +515,7 @@ class PosSyncService {
     required SaleModel sale,
     required List<Map<String, dynamic>> payments,
     bool sendInBackground = false,
+    bool requireOnline = false,
   }) async {
     final localPosSessionId = sale.posSessionId?.trim() ?? '';
     final localNumber = await _localStore.nextLocalSaleNumber();
@@ -532,6 +533,18 @@ class PosSyncService {
       'date': _formatDate(sale.date),
       'total_amount': exactTotal,
       'payment_method': sale.paymentMethod,
+      if ((sale.paymentType ?? '').trim().isNotEmpty)
+        'payment_type': sale.paymentType,
+      if (sale.paidAmount > 0) 'paid_amount': sale.paidAmount,
+      if (sale.debtAmount > 0) 'debt_amount': sale.debtAmount,
+      if ((sale.paidPaymentMethod ?? '').trim().isNotEmpty)
+        'paid_payment_method': sale.paidPaymentMethod,
+      if (sale.dueDate != null)
+        'due_date':
+            '${sale.dueDate!.year.toString().padLeft(4, '0')}-${sale.dueDate!.month.toString().padLeft(2, '0')}-${sale.dueDate!.day.toString().padLeft(2, '0')}',
+      if ((sale.comment ?? '').trim().isNotEmpty) 'comment': sale.comment,
+      if ((sale.idempotencyKey ?? '').trim().isNotEmpty)
+        'idempotency_key': sale.idempotencyKey,
       'pos_id': sale.posId,
       'store_id': sale.storeId,
       'user_id': sale.userId,
@@ -560,7 +573,7 @@ class PosSyncService {
     );
     _notifySalesHistoryChanged();
 
-    return _queueAndTrySend(
+    final result = await _queueAndTrySend(
       key: key,
       deviceId: deviceId,
       type: OutboxOperationType.sale,
@@ -568,6 +581,10 @@ class PosSyncService {
       payload: payload,
       tryImmediateSend: !sendInBackground,
     );
+    if (requireOnline && result.result != QueueSendResult.sent) {
+      await _localStore.deleteQueueOperation(result.operationId);
+    }
+    return result;
   }
 
   Future<void> registerOpenedSession({
@@ -743,9 +760,10 @@ class PosSyncService {
   }) async {
     await initialize();
     await _localStore.ensureSyncState(posKey: key, deviceId: deviceId);
+    final operationId = _uuid.v7();
 
     await _localStore.enqueueOperation(
-      id: _uuid.v7(),
+      id: operationId,
       type: type,
       clientId: clientId,
       relatedClientId: relatedClientId,
@@ -757,6 +775,7 @@ class PosSyncService {
         _runBackgroundPush(key: key, deviceId: deviceId);
       });
       return QueueOperationResult(
+        operationId: operationId,
         result: QueueSendResult.queued,
         type: type,
         clientId: clientId,
@@ -766,6 +785,7 @@ class PosSyncService {
 
     if (_pushFuture != null) {
       return QueueOperationResult(
+        operationId: operationId,
         result: QueueSendResult.queued,
         type: type,
         clientId: clientId,
@@ -779,6 +799,7 @@ class PosSyncService {
     );
     if (claimed == null) {
       return QueueOperationResult(
+        operationId: operationId,
         result: QueueSendResult.queued,
         type: type,
         clientId: clientId,
@@ -851,6 +872,7 @@ class PosSyncService {
       await _localStore.markOperationAcked(record.id);
       _markDedicatedTableSynced(record);
       return QueueOperationResult(
+        operationId: record.id,
         result: QueueSendResult.sent,
         type: record.type,
         clientId: record.clientId,
@@ -863,6 +885,7 @@ class PosSyncService {
           message: error.message,
         );
         return QueueOperationResult(
+          operationId: record.id,
           result: QueueSendResult.queued,
           type: record.type,
           clientId: record.clientId,
@@ -880,6 +903,7 @@ class PosSyncService {
         await _localStore.markOperationAcked(record.id);
         _markDedicatedTableSynced(record);
         return QueueOperationResult(
+          operationId: record.id,
           result: QueueSendResult.sent,
           type: record.type,
           clientId: record.clientId,
@@ -896,6 +920,7 @@ class PosSyncService {
           errorDetails: errorDetails,
         );
         return QueueOperationResult(
+          operationId: record.id,
           result: QueueSendResult.queued,
           type: record.type,
           clientId: record.clientId,
@@ -916,6 +941,7 @@ class PosSyncService {
         errorDetails: errorDetails,
       );
       return QueueOperationResult(
+        operationId: record.id,
         result: QueueSendResult.manual,
         type: record.type,
         clientId: record.clientId,
