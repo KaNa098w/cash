@@ -11,6 +11,7 @@ class SaleModel {
   final String? paymentType;
   final int paidAmount;
   final int debtAmount;
+  final int documentUnpaidAmount;
   final String? paidPaymentMethod;
   final DateTime? dueDate;
   final String? comment;
@@ -39,6 +40,7 @@ class SaleModel {
     this.paymentType,
     this.paidAmount = 0,
     this.debtAmount = 0,
+    this.documentUnpaidAmount = 0,
     this.paidPaymentMethod,
     this.dueDate,
     this.comment,
@@ -62,6 +64,7 @@ class SaleModel {
     String? paymentType,
     int? paidAmount,
     int? debtAmount,
+    int? documentUnpaidAmount,
     String? paidPaymentMethod,
     DateTime? dueDate,
     String? comment,
@@ -84,6 +87,7 @@ class SaleModel {
       paymentType: paymentType ?? this.paymentType,
       paidAmount: paidAmount ?? this.paidAmount,
       debtAmount: debtAmount ?? this.debtAmount,
+      documentUnpaidAmount: documentUnpaidAmount ?? this.documentUnpaidAmount,
       paidPaymentMethod: paidPaymentMethod ?? this.paidPaymentMethod,
       dueDate: dueDate ?? this.dueDate,
       comment: comment ?? this.comment,
@@ -157,6 +161,7 @@ class SaleModel {
       paymentType: json["payment_type"]?.toString(),
       paidAmount: _toIntMoney(json["paid_amount"]),
       debtAmount: _toIntMoney(json["debt_amount"]),
+      documentUnpaidAmount: _toIntMoney(json["document_unpaid_amount"]),
       paidPaymentMethod: json["paid_payment_method"]?.toString(),
       dueDate: _parseApiDateOrNull(json["due_date"]),
       comment: json["comment"]?.toString(),
@@ -186,6 +191,7 @@ class SaleModel {
       "paymentType": paymentType,
       "paidAmount": paidAmount,
       "debtAmount": debtAmount,
+      "documentUnpaidAmount": documentUnpaidAmount,
       "paidPaymentMethod": paidPaymentMethod,
       "dueDate": dueDate?.toIso8601String(),
       "comment": comment,
@@ -227,6 +233,7 @@ class SaleModel {
       paymentType: json["paymentType"]?.toString(),
       paidAmount: _toInt(json["paidAmount"]),
       debtAmount: _toInt(json["debtAmount"]),
+      documentUnpaidAmount: _toInt(json["documentUnpaidAmount"]),
       paidPaymentMethod: json["paidPaymentMethod"]?.toString(),
       dueDate: _parseApiDateOrNull(json["dueDate"]),
       comment: json["comment"]?.toString(),
@@ -293,8 +300,9 @@ class SaleModel {
     }
 
     return items.map((item) {
-      if (item.refund_quantity != null && item.refund_quantity! > 0)
+      if (item.refund_quantity != null && item.refund_quantity! > 0) {
         return item;
+      }
       final qty = byItemId[item.id] ?? byProductId[item.productId] ?? 0;
       return qty > 0 ? item.copyWith(refund_quantity: qty) : item;
     }).toList(growable: false);
@@ -343,6 +351,7 @@ class SaleItemModel {
   final double totalPrice;
 
   /// ✅ сколько уже возвращено (может быть null/0)
+  // ignore: non_constant_identifier_names
   final int? refund_quantity;
 
   SaleItemModel({
@@ -353,6 +362,7 @@ class SaleItemModel {
     required this.price,
     required this.totalPrice,
     this.product,
+    // ignore: non_constant_identifier_names
     this.refund_quantity,
   });
 
@@ -382,6 +392,7 @@ class SaleItemModel {
     double? quantity,
     double? price,
     double? totalPrice,
+    // ignore: non_constant_identifier_names
     int? refund_quantity,
   }) {
     return SaleItemModel(

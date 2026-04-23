@@ -42,6 +42,7 @@ class SaleRemoteDataSource {
     int page = 1,
     int perPage = 15,
     String sort = '-date',
+    String? customerId,
   }) async {
     final safeKey = key.trim();
     if (safeKey.isEmpty) throw Exception('pos key is empty');
@@ -53,6 +54,8 @@ class SaleRemoteDataSource {
         'perPage': perPage,
         'include': 'items,refund.items',
         'sort': sort,
+        if ((customerId ?? '').trim().isNotEmpty)
+          'filter[customer_id]': customerId!.trim(),
       },
     );
 
@@ -132,12 +135,18 @@ class SaleRemoteDataSource {
   Future<List<SaleModel>> getAllSales({
     required String key,
     int perPage = 15,
+    String? customerId,
   }) async {
     var page = 1;
     final all = <SaleModel>[];
 
     while (true) {
-      final res = await getSales(key: key, page: page, perPage: perPage);
+      final res = await getSales(
+        key: key,
+        page: page,
+        perPage: perPage,
+        customerId: customerId,
+      );
       all.addAll(res.items);
 
       if (res.currentPage >= res.lastPage) break;

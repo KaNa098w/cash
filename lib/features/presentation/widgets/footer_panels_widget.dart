@@ -165,7 +165,9 @@ class FooterControlsOnly extends StatelessWidget {
                     width: smallBtnW,
                     height: smallBtnH,
                     radius: radius,
-                    background: _btnYellow,
+                    background: onPayCard == null
+                        ? const Color(0xFFBDBDBD)
+                        : _btnYellow,
                     onTap: onPayCard,
                     child: Padding(
                       padding: EdgeInsets.symmetric(
@@ -181,9 +183,11 @@ class FooterControlsOnly extends StatelessWidget {
                           style: GoogleFonts.inter(
                             fontSize: s(15),
                             fontWeight: FontWeight.w500,
-                            color: Colors.black,
+                            color: onPayCard == null
+                                ? const Color(0xFF5F6368)
+                                : Colors.black,
                             height: 1.06,
-                            letterSpacing: -0.1,
+                            letterSpacing: 0,
                           ),
                         ),
                       ),
@@ -259,6 +263,7 @@ class _SmallBtn extends StatelessWidget {
           minimumSize: Size.zero,
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           backgroundColor: background,
+          disabledBackgroundColor: background,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(radius),
           ),

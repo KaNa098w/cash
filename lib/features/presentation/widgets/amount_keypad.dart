@@ -14,6 +14,12 @@ class AmountKeypad extends StatelessWidget {
     this.showQuickRows = true,
     this.allowDecimal = true,
     this.maxLength,
+    this.keyColor = const Color(0xFF999999),
+    this.keyTextColor = Colors.white,
+    this.disabledKeyColor,
+    this.keyHeight = 58,
+    this.keyRadius = 10,
+    this.keySpacing = 8,
   });
 
   final String text;
@@ -27,6 +33,12 @@ class AmountKeypad extends StatelessWidget {
 
   /// Для PIN ставь 4 (или сколько нужно)
   final int? maxLength;
+  final Color keyColor;
+  final Color keyTextColor;
+  final Color? disabledKeyColor;
+  final double keyHeight;
+  final double keyRadius;
+  final double keySpacing;
 
   String _applyToken(String current, String token) {
     var t = current;
@@ -62,16 +74,17 @@ class AmountKeypad extends StatelessWidget {
     final next = curr + inc;
 
     var s = next.toStringAsFixed(2);
-    if (s.endsWith('.00')) s = s.substring(0, s.length - 3);
-    else if (s.endsWith('0')) s = s.substring(0, s.length - 1);
+    if (s.endsWith('.00')) {
+      s = s.substring(0, s.length - 3);
+    } else if (s.endsWith('0')) {
+      s = s.substring(0, s.length - 1);
+    }
 
     return s;
   }
 
   @override
   Widget build(BuildContext context) {
-    const keyGrey = Color(0xFF999999);
-
     final keys = <List<String>>[
       ['7', '8', '9'],
       ['4', '5', '6'],
@@ -86,13 +99,13 @@ class AmountKeypad extends StatelessWidget {
           children: [
             for (final r in keys)
               Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+                padding: EdgeInsets.only(bottom: keySpacing),
                 child: Row(
                   children: [
                     for (int i = 0; i < r.length; i++) ...[
                       Expanded(
                         child: SizedBox(
-                          height: 58,
+                          height: keyHeight,
                           child: TextButton(
                             onPressed: r[i].isEmpty
                                 ? null
@@ -101,10 +114,13 @@ class AmountKeypad extends StatelessWidget {
                                     onChanged(next);
                                   },
                             style: TextButton.styleFrom(
-                              backgroundColor: r[i].isEmpty ? keyGrey.withOpacity(0.35) : keyGrey,
-                              foregroundColor: Colors.white,
+                              backgroundColor: r[i].isEmpty
+                                  ? disabledKeyColor ??
+                                      keyColor.withValues(alpha: 0.35)
+                                  : keyColor,
+                              foregroundColor: keyTextColor,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(keyRadius),
                               ),
                             ),
                             child: Text(
@@ -112,12 +128,12 @@ class AmountKeypad extends StatelessWidget {
                               style: const TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.w600,
-                              ),
+                              ).copyWith(color: keyTextColor),
                             ),
                           ),
                         ),
                       ),
-                      if (i != r.length - 1) const SizedBox(width: 8),
+                      if (i != r.length - 1) SizedBox(width: keySpacing),
                     ],
                   ],
                 ),

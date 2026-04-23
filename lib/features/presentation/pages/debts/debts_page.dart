@@ -1,6 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:uuid/uuid.dart';
+
+import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/core/models/sale_model.dart';
+import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
+import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
+import 'package:leemon_app/features/domain/entities/payment.dart';
+import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 
 class DebtsPage extends StatefulWidget {
   const DebtsPage({super.key});
@@ -10,91 +24,397 @@ class DebtsPage extends StatefulWidget {
 }
 
 class _DebtsPageState extends State<DebtsPage> {
-  late final List<_DebtCounterparty> _items = List.of(_initialItems);
-  int? _selectedIndex = 0;
+  final _customersDs = sl<CustomersRemoteDataSource>();
+  final _salesDs = sl<SaleRemoteDataSource>();
+  final _sync = sl<PosSyncService>();
 
-  static const _initialItems = <_DebtCounterparty>[
-    _DebtCounterparty(
-      name: 'ТОО Алем Trade',
-      phone: '+7 777 240 18 90',
-      amount: 20500,
-      lastOperation: 'Продажа в долг',
-      date: 'Сегодня, 14:20',
-      tag: 'Магазин',
-    ),
-    _DebtCounterparty(
-      name: 'Айгерим Сапарова',
-      phone: '+7 701 558 44 21',
-      amount: -16400,
-      lastOperation: 'Переплата клиента',
-      date: 'Вчера, 18:05',
-      tag: 'Постоянный клиент',
-    ),
-    _DebtCounterparty(
-      name: 'ИП Nur Supply',
-      phone: '+7 705 120 90 11',
-      amount: 78200,
-      lastOperation: 'Накладная в долг',
-      date: '20 апр, 11:35',
-      tag: 'Поставщик',
-    ),
-    _DebtCounterparty(
-      name: 'Руслан Н.',
-      phone: '+7 747 016 70 33',
-      amount: -5200,
-      lastOperation: 'Возврат / аванс',
-      date: '19 апр, 09:10',
-      tag: 'Клиент',
-    ),
-    _DebtCounterparty(
-      name: 'Green Market',
-      phone: '+7 778 650 12 12',
-      amount: 34700,
-      lastOperation: 'Частичная оплата',
-      date: '18 апр, 16:48',
-      tag: 'Оптовик',
-    ),
-  ];
+  List<CustomerDto> _items = const [];
+  List<SaleModel> _customerSales = const [];
+  int? _selectedIndex;
+  bool _loading = true;
+  bool _salesLoading = false;
+  bool _settling = false;
+  bool _refreshingOnline = false;
+  String? _error;
+  String? _salesError;
+  StreamSubscription<void>? _debtsChangedSub;
 
-  _DebtCounterparty? get _selectedItem {
+  CustomerDto? get _selectedItem {
     final index = _selectedIndex;
     if (index == null || index < 0 || index >= _items.length) return null;
     return _items[index];
   }
 
-  Future<void> _adjustSelectedDebt({required bool subtract}) async {
+  @override
+  void initState() {
+    super.initState();
+    _debtsChangedSub = _sync.onDebtsChanged.listen((_) {
+      if (!mounted) return;
+      unawaited(_loadDebts(refreshOnline: false));
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadDebts());
+  }
+
+  @override
+  void dispose() {
+    _debtsChangedSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadDebts({bool refreshOnline = true}) async {
+    final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
+    if (key.isEmpty) {
+      setState(() {
+        _loading = false;
+        _error = 'POS key пустой';
+      });
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    await _loadLocalDebts();
+    if (refreshOnline) {
+      unawaited(_refreshDebtsOnline());
+    }
+  }
+
+  Future<void> _loadLocalDebts() async {
+    try {
+      final localCustomers = await _sync.loadCustomers();
+      final debtCustomers = localCustomers
+          .map((customer) {
+            try {
+              return CustomerDto.fromJson(customer.rawJson);
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<CustomerDto>()
+          .where((customer) => customer.debtBalance > 0)
+          .toList(growable: false);
+      debtCustomers
+          .sort((a, b) => b.debtBalance.abs().compareTo(a.debtBalance.abs()));
+      if (!mounted) return;
+      final currentSelectedId = _selectedItem?.id;
+      final nextIndex = currentSelectedId == null
+          ? (debtCustomers.isEmpty ? null : 0)
+          : debtCustomers.indexWhere((item) => item.id == currentSelectedId);
+      setState(() {
+        _items = debtCustomers;
+        _selectedIndex = debtCustomers.isEmpty
+            ? null
+            : nextIndex == null || nextIndex < 0
+                ? 0
+                : nextIndex;
+        _loading = false;
+        _error = null;
+      });
+      final selected = _selectedItem;
+      if (selected != null) {
+        await _loadCustomerSales(selected, refreshOnline: false);
+      } else {
+        setState(() => _customerSales = const []);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Не удалось загрузить локальные долги: $e';
+      });
+    }
+  }
+
+  Future<void> _refreshDebtsOnline() async {
+    final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
+    if (key.isEmpty || _refreshingOnline) return;
+
+    setState(() {
+      _refreshingOnline = true;
+      _error = null;
+    });
+
+    try {
+      final customers = await _customersDs.listCustomers(
+        key: key,
+        size: 500,
+        hasDebt: true,
+      );
+      await _sync.upsertCustomersRaw(
+        customers.map((customer) => customer.toJson()).toList(growable: false),
+      );
+      final debtCustomers = customers
+          .where((customer) => customer.debtBalance > 0)
+          .toList(growable: false);
+      debtCustomers
+          .sort((a, b) => b.debtBalance.abs().compareTo(a.debtBalance.abs()));
+      if (!mounted) return;
+      final currentSelectedId = _selectedItem?.id;
+      final nextIndex = currentSelectedId == null
+          ? (debtCustomers.isEmpty ? null : 0)
+          : debtCustomers.indexWhere((item) => item.id == currentSelectedId);
+      setState(() {
+        _items = debtCustomers;
+        _selectedIndex = debtCustomers.isEmpty
+            ? null
+            : nextIndex == null || nextIndex < 0
+                ? 0
+                : nextIndex;
+        _loading = false;
+        _refreshingOnline = false;
+      });
+      final selected = _selectedItem;
+      if (selected != null) {
+        unawaited(_loadCustomerSales(selected));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _refreshingOnline = false;
+        _error = 'Не удалось загрузить долги: $e';
+      });
+    }
+  }
+
+  Future<void> _loadCustomerSales(
+    CustomerDto customer, {
+    bool refreshOnline = true,
+  }) async {
+    await _loadCustomerSalesLocal(customer);
+    if (refreshOnline) {
+      unawaited(_refreshCustomerSalesOnline(customer));
+    }
+  }
+
+  Future<void> _loadCustomerSalesLocal(CustomerDto customer) async {
+    setState(() {
+      _salesLoading = true;
+      _salesError = null;
+      _customerSales = const [];
+    });
+
+    try {
+      final sales = await _sync.loadAllSalesHistory();
+      final unpaidSales = sales
+          .where((sale) =>
+              sale.customerId == customer.id && sale.documentUnpaidAmount > 0)
+          .toList(growable: false);
+      if (!mounted || _selectedItem?.id != customer.id) return;
+      setState(() {
+        _customerSales = unpaidSales;
+        _salesLoading = false;
+      });
+    } catch (e) {
+      if (!mounted || _selectedItem?.id != customer.id) return;
+      setState(() {
+        _salesError = 'Не удалось загрузить локальные продажи: $e';
+        _salesLoading = false;
+      });
+    }
+  }
+
+  Future<void> _refreshCustomerSalesOnline(CustomerDto customer) async {
+    final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
+    if (key.isEmpty) return;
+
+    setState(() {
+      _salesLoading = true;
+      _salesError = null;
+      _customerSales = const [];
+    });
+
+    try {
+      final sales = await _salesDs.getAllSales(
+        key: key,
+        perPage: 100,
+        customerId: customer.id,
+      );
+      await _sync.upsertSalesHistory(sales);
+      final unpaidSales = sales
+          .where((sale) => sale.documentUnpaidAmount > 0)
+          .toList(growable: false);
+      if (!mounted || _selectedItem?.id != customer.id) return;
+      setState(() {
+        _customerSales = unpaidSales;
+        _salesLoading = false;
+      });
+    } catch (e) {
+      if (!mounted || _selectedItem?.id != customer.id) return;
+      setState(() {
+        _salesError = 'Не удалось загрузить продажи: $e';
+        _salesLoading = false;
+      });
+    }
+  }
+
+  Future<void> _settleSelectedDebt() async {
     final selected = _selectedItem;
     final index = _selectedIndex;
-    if (selected == null || index == null) return;
+    if (selected == null || index == null || _settling) return;
+
+    if (selected.debtBalance <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('У покупателя нет долга к погашению')),
+      );
+      return;
+    }
 
     final amount = await _showDebtAmountDialog(
       context,
-      title: subtract ? 'Сколько вернул?' : 'Добавить долг',
-      actionLabel: subtract ? 'Минусовать' : 'Плюсовать',
-      accentColor: subtract ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+      title: 'Погасить долг',
+      actionLabel: 'Погасить',
+      accentColor: const Color(0xFF16A34A),
+      maxAmount: selected.debtBalance,
     );
     if (amount == null || amount <= 0 || !mounted) return;
 
-    final nextAmount = selected.amount + (subtract ? -amount : amount);
-    setState(() {
-      _items[index] = selected.copyWith(
-        amount: nextAmount,
-        lastOperation: subtract ? 'Клиент вернул долг' : 'Добавили долг',
-        date: 'Только что',
+    final auth = context.read<AuthTokenProvider>();
+    final key = auth.posKey?.trim() ?? '';
+    final userId = auth.activeUserId?.trim() ?? '';
+    final deviceId = auth.deviceId?.trim() ?? 'pos';
+    if (key.isEmpty || userId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не найдены данные кассы или кассира')),
       );
-    });
+      return;
+    }
+
+    setState(() => _settling = true);
+    try {
+      final accounts = await _sync.loadAccounts();
+      final realAccounts = accounts
+          .where((account) => account.type?.toLowerCase() != 'debt')
+          .toList(growable: false);
+      if (realAccounts.isEmpty) {
+        throw Exception('Нет доступного счета для погашения');
+      }
+      final account = realAccounts.firstWhere(
+        (account) => account.isCash,
+        orElse: () => realAccounts.first,
+      );
+      final localSessionId = auth.shiftId?.trim() ?? '';
+      final resolvedSessionId = localSessionId.isEmpty
+          ? ''
+          : await _sync.resolveServerSessionId(localSessionId);
+      final posSessionId =
+          resolvedSessionId.startsWith('session_') ? null : resolvedSessionId;
+
+      final settlement = await _customersDs.settleDebt(
+        key: key,
+        customerId: selected.id,
+        accountId: account.id,
+        amount: amount,
+        date: DateTime.now(),
+        userId: userId,
+        posSessionId: posSessionId,
+        clientSettlementId: '$deviceId-settlement-${const Uuid().v4()}',
+        note: 'Погашение долга через POS',
+      );
+      await _sync.upsertCustomersRaw([settlement.agent.toJson()]);
+
+      if (!mounted) return;
+      setState(() {
+        final nextItems = List<CustomerDto>.from(_items);
+        if (settlement.agent.debtBalance == 0) {
+          nextItems.removeAt(index);
+        } else {
+          nextItems[index] = settlement.agent;
+        }
+        nextItems
+            .sort((a, b) => b.debtBalance.abs().compareTo(a.debtBalance.abs()));
+        _items = nextItems;
+        _selectedIndex = nextItems.isEmpty
+            ? null
+            : index.clamp(0, nextItems.length - 1).toInt();
+        _settling = false;
+      });
+      final nextSelected = _selectedItem;
+      if (nextSelected != null) {
+        await _loadCustomerSales(nextSelected);
+      }
+      await _loadDebts(refreshOnline: true);
+      if (!mounted) return;
+      await _showSettlementSuccessDialog(
+        context,
+        customerName: settlement.agent.name,
+        paidAmount: amount,
+        remainingDebt: settlement.agent.debtBalance,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _settling = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось погасить долг: $e')),
+      );
+    }
+  }
+
+  void _openDebtSale() {
+    final selected = _selectedItem;
+    if (selected == null) return;
+
+    final posCubit = context.read<PosCubit>();
+    posCubit.setCustomerForActiveTicket(
+      PosCustomer(
+        id: selected.id,
+        name: selected.name,
+        phone: selected.phone,
+        balance: selected.debtBalance,
+        debtLimit: selected.debtLimit,
+        debtAllowed: selected.debtAllowed,
+      ),
+    );
+    posCubit.setPaymentKind(PaymentKind.credit);
+    context.go('/pos');
+  }
+
+  void _selectCustomer(int index) {
+    if (index < 0 || index >= _items.length) return;
+    setState(() => _selectedIndex = index);
+    _loadCustomerSales(_items[index]);
+  }
+
+  Future<void> _refreshSelectedSales() async {
+    final selected = _selectedItem;
+    if (selected == null) return;
+    await _refreshCustomerSalesOnline(selected);
   }
 
   @override
   Widget build(BuildContext context) {
-    final receivable =
-        _items.where((e) => e.amount > 0).fold<int>(0, (s, e) => s + e.amount);
-    final payable =
-        _items.where((e) => e.amount < 0).fold<int>(0, (s, e) => s + e.amount);
+    final receivable = _items
+        .where((e) => e.debtBalance > 0)
+        .fold<num>(0, (s, e) => s + e.debtBalance);
+    final payable = _items
+        .where((e) => e.debtBalance < 0)
+        .fold<num>(0, (s, e) => s + e.debtBalance);
     final net = receivable + payable;
     final selectedItem = _selectedItem;
 
     Widget debtList({required bool twoColumns}) {
+      if (_loading) return const _LoadingPanel();
+      if (_error != null) {
+        return _StatePanel(
+          icon: Icons.error_outline_rounded,
+          title: 'Ошибка загрузки',
+          message: _error!,
+          actionLabel: 'Повторить',
+          onAction: _loadDebts,
+        );
+      }
+      if (_items.isEmpty) {
+        return _StatePanel(
+          icon: Icons.check_circle_outline_rounded,
+          title: 'Долгов нет',
+          message: 'Покупатели с долгом или авансом не найдены.',
+          actionLabel: 'Обновить',
+          onAction: _loadDebts,
+        );
+      }
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -117,9 +437,7 @@ class _DebtsPageState extends State<DebtsPage> {
               return _DebtCard(
                 item: _items[index],
                 selected: _selectedIndex == index,
-                onTap: () {
-                  setState(() => _selectedIndex = index);
-                },
+                onTap: () => _selectCustomer(index),
               );
             },
           ),
@@ -142,66 +460,76 @@ class _DebtsPageState extends State<DebtsPage> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final wide = constraints.maxWidth >= 980;
-                  return SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(
-                      wide ? 28 : 16,
-                      18,
-                      wide ? 28 : 16,
-                      28,
-                    ),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1180),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const _Toolbar(),
-                            const SizedBox(height: 12),
-                            _SummaryBand(
-                              receivable: receivable,
-                              payable: payable,
-                              net: net,
-                            ),
-                            const SizedBox(height: 12),
-                            if (wide)
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: debtList(twoColumns: false),
-                                  ),
-                                  const SizedBox(width: 18),
-                                  SizedBox(
-                                    width: 340,
-                                    child: selectedItem == null
-                                        ? const _NoDebtSelectionPanel()
-                                        : _DebtActionPanel(
-                                            item: selectedItem,
-                                            onSubtract: () =>
-                                                _adjustSelectedDebt(
-                                              subtract: true,
+                  return RefreshIndicator(
+                    onRefresh: _loadDebts,
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(
+                        wide ? 28 : 16,
+                        18,
+                        wide ? 28 : 16,
+                        28,
+                      ),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1180),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _Toolbar(onRefresh: _loadDebts),
+                              const SizedBox(height: 12),
+                              _SummaryBand(
+                                receivable: receivable,
+                                payable: payable,
+                                net: net,
+                              ),
+                              const SizedBox(height: 12),
+                              if (wide)
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: debtList(twoColumns: false),
+                                    ),
+                                    const SizedBox(width: 18),
+                                    SizedBox(
+                                      width: 400,
+                                      child: selectedItem == null
+                                          ? const _NoDebtSelectionPanel()
+                                          : _DebtActionPanel(
+                                              item: selectedItem,
+                                              sales: _customerSales,
+                                              salesLoading: _salesLoading,
+                                              salesError: _salesError,
+                                              settling: _settling,
+                                              onSettle: _settleSelectedDebt,
+                                              onAddDebt: _openDebtSale,
+                                              onRefreshSales:
+                                                  _refreshSelectedSales,
                                             ),
-                                            onAdd: () => _adjustSelectedDebt(
-                                              subtract: false,
-                                            ),
-                                          ),
+                                    ),
+                                  ],
+                                )
+                              else ...[
+                                if (selectedItem != null) ...[
+                                  _DebtActionPanel(
+                                    item: selectedItem,
+                                    sales: _customerSales,
+                                    salesLoading: _salesLoading,
+                                    salesError: _salesError,
+                                    settling: _settling,
+                                    onSettle: _settleSelectedDebt,
+                                    onAddDebt: _openDebtSale,
+                                    onRefreshSales: _refreshSelectedSales,
                                   ),
+                                  const SizedBox(height: 12),
                                 ],
-                              )
-                            else ...[
-                              if (selectedItem != null) ...[
-                                _DebtActionPanel(
-                                  item: selectedItem,
-                                  onSubtract: () =>
-                                      _adjustSelectedDebt(subtract: true),
-                                  onAdd: () =>
-                                      _adjustSelectedDebt(subtract: false),
+                                debtList(
+                                  twoColumns: constraints.maxWidth >= 720,
                                 ),
-                                const SizedBox(height: 12),
                               ],
-                              debtList(twoColumns: constraints.maxWidth >= 720),
                             ],
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -212,6 +540,79 @@ class _DebtsPageState extends State<DebtsPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _StatePanel extends StatelessWidget {
+  const _StatePanel({
+    required this.icon,
+    required this.title,
+    required this.message,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final String actionLabel;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 38, color: const Color(0xFF6B7280)),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            style: GoogleFonts.inter(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: const Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF6B7280),
+            ),
+          ),
+          const SizedBox(height: 14),
+          FilledButton(
+            onPressed: onAction,
+            child: Text(
+              actionLabel,
+              style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingPanel extends StatelessWidget {
+  const _LoadingPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: 180,
+      child: Center(child: CircularProgressIndicator()),
     );
   }
 }
@@ -273,42 +674,13 @@ class _NoDebtSelectionPanel extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFE5E7EB), width: 1.4),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 52,
-            height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3F4F6),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(
-              Icons.touch_app_rounded,
-              color: Color(0xFF6B7280),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Выберите контрагента',
-            style: GoogleFonts.inter(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: const Color(0xFF111827),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'После выбора здесь появятся баланс и действия для изменения долга.',
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF6B7280),
-              height: 1.35,
-            ),
-          ),
-        ],
+      child: Text(
+        'Выберите контрагента',
+        style: GoogleFonts.inter(
+          fontSize: 18,
+          fontWeight: FontWeight.w900,
+          color: const Color(0xFF111827),
+        ),
       ),
     );
   }
@@ -322,9 +694,9 @@ class _Header extends StatelessWidget {
     required this.onBack,
   });
 
-  final int receivable;
-  final int payable;
-  final int net;
+  final num receivable;
+  final num payable;
+  final num net;
   final VoidCallback onBack;
 
   @override
@@ -370,7 +742,7 @@ class _Header extends StatelessWidget {
                     ),
                     const SizedBox(height: 5),
                     Text(
-                      '${_formatMoney(receivable)} к получению  /  ${_formatMoney(payable)} переплата',
+                      '${_formatMoney(receivable)} к получению  /  ${_formatMoney(payable)} аванс',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
@@ -392,68 +764,54 @@ class _Header extends StatelessWidget {
 }
 
 class _Toolbar extends StatelessWidget {
-  const _Toolbar();
+  const _Toolbar({required this.onRefresh});
+
+  final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 720;
-        final search = Container(
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 13),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE5E7EB)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.search_rounded, color: Color(0xFF6B7280)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Поиск контрагента',
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF9CA3AF),
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 13),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.search_rounded, color: Color(0xFF6B7280)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Покупатели с долгом',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF9CA3AF),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        );
-
-        const filters = Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _FilterChip(label: 'Все', selected: true),
-            _FilterChip(label: 'Нам должны'),
-            _FilterChip(label: 'Мы должны'),
-          ],
-        );
-
-        if (narrow) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              search,
-              const SizedBox(height: 8),
-              filters,
-            ],
-          );
-        }
-
-        return Row(
-          children: [
-            Expanded(child: search),
-            const SizedBox(width: 14),
-            filters,
-          ],
-        );
-      },
+        ),
+        const SizedBox(width: 10),
+        SizedBox(
+          height: 44,
+          child: OutlinedButton.icon(
+            onPressed: onRefresh,
+            icon: const Icon(Icons.refresh_rounded),
+            label: Text(
+              'Обновить',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -465,56 +823,41 @@ class _SummaryBand extends StatelessWidget {
     required this.net,
   });
 
-  final int receivable;
-  final int payable;
-  final int net;
+  final num receivable;
+  final num payable;
+  final num net;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 760;
-        final children = [
-          _SummaryTile(
+    return Row(
+      children: [
+        Expanded(
+          child: _SummaryTile(
             label: 'Нам должны',
             value: _formatMoney(receivable),
             color: const Color(0xFF16A34A),
             icon: Icons.payments_rounded,
           ),
-          _SummaryTile(
-            label: 'Мы должны',
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _SummaryTile(
+            label: 'Аванс',
             value: _formatMoney(payable),
             color: const Color(0xFFDC2626),
             icon: Icons.request_quote_rounded,
           ),
-          _SummaryTile(
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _SummaryTile(
             label: 'Баланс',
             value: _formatMoney(net),
             color: net >= 0 ? const Color(0xFF0F766E) : const Color(0xFFB91C1C),
             icon: Icons.account_balance_wallet_rounded,
           ),
-        ];
-
-        if (narrow) {
-          return Column(
-            children: [
-              for (final child in children) ...[
-                child,
-                if (child != children.last) const SizedBox(height: 8),
-              ],
-            ],
-          );
-        }
-
-        return Row(
-          children: [
-            for (final child in children) ...[
-              Expanded(child: child),
-              if (child != children.last) const SizedBox(width: 12),
-            ],
-          ],
-        );
-      },
+        ),
+      ],
     );
   }
 }
@@ -593,19 +936,33 @@ class _SummaryTile extends StatelessWidget {
 class _DebtActionPanel extends StatelessWidget {
   const _DebtActionPanel({
     required this.item,
-    required this.onSubtract,
-    required this.onAdd,
+    required this.sales,
+    required this.salesLoading,
+    required this.salesError,
+    required this.settling,
+    required this.onSettle,
+    required this.onAddDebt,
+    required this.onRefreshSales,
   });
 
-  final _DebtCounterparty item;
-  final VoidCallback onSubtract;
-  final VoidCallback onAdd;
+  final CustomerDto item;
+  final List<SaleModel> sales;
+  final bool salesLoading;
+  final String? salesError;
+  final bool settling;
+  final VoidCallback onSettle;
+  final VoidCallback onAddDebt;
+  final VoidCallback onRefreshSales;
 
   @override
   Widget build(BuildContext context) {
-    final positive = item.amount >= 0;
+    final positive = item.debtBalance > 0;
     final color = positive ? const Color(0xFF16A34A) : const Color(0xFFDC2626);
-    final statusText = positive ? 'Нам должны' : 'Мы должны';
+    final statusText = switch (item.debtState) {
+      'advance' => 'Аванс покупателя',
+      'settled' => 'Расчет закрыт',
+      _ => 'Покупатель должен',
+    };
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
@@ -631,23 +988,16 @@ class _DebtActionPanel extends StatelessWidget {
               ),
               const SizedBox(width: 13),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF111827),
-                        height: 1.08,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    _SmallPill(text: item.tag),
-                  ],
+                child: Text(
+                  item.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF111827),
+                    height: 1.08,
+                  ),
                 ),
               ),
             ],
@@ -663,7 +1013,7 @@ class _DebtActionPanel extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           Text(
-            _formatMoney(item.amount),
+            _formatMoney(item.debtBalance),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
@@ -675,29 +1025,235 @@ class _DebtActionPanel extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           _DetailLine(icon: Icons.phone_rounded, text: item.phone),
-          const SizedBox(height: 7),
-          _DetailLine(
-              icon: Icons.receipt_long_rounded, text: item.lastOperation),
-          const SizedBox(height: 7),
-          _DetailLine(icon: Icons.schedule_rounded, text: item.date),
           const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
-                child: _DebtActionButton(
-                  label: 'Вернул',
-                  icon: Icons.remove_rounded,
-                  color: const Color(0xFFDC2626),
-                  onPressed: onSubtract,
+                child: SizedBox(
+                  height: 40,
+                  child: FilledButton.icon(
+                    onPressed: positive && !settling ? onSettle : null,
+                    icon: settling
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.payments_rounded, size: 20),
+                    label: Text(
+                      positive ? 'Погасить' : 'Недоступно',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF16A34A),
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: const Color(0xFFE5E7EB),
+                      disabledForegroundColor: const Color(0xFF6B7280),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(
-                child: _DebtActionButton(
-                  label: 'Добавить',
-                  icon: Icons.add_rounded,
+                child: SizedBox(
+                  height: 40,
+                  child: FilledButton.icon(
+                    onPressed: onAddDebt,
+                    icon: const Icon(Icons.add_rounded, size: 20),
+                    label: Text(
+                      'Добавить',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFB7791F),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _SectionHeader(
+            title: 'Продажи с остатком',
+            subtitle: '${sales.length}',
+          ),
+          const SizedBox(height: 8),
+          if (salesLoading)
+            const SizedBox(
+              height: 82,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (salesError != null)
+            _MiniState(
+              icon: Icons.error_outline_rounded,
+              text: salesError!,
+              actionLabel: 'Повторить',
+              onAction: onRefreshSales,
+            )
+          else if (sales.isEmpty)
+            const _MiniState(
+              icon: Icons.receipt_long_rounded,
+              text: 'Неоплаченных продаж не найдено',
+            )
+          else
+            Column(
+              children: [
+                for (final sale in sales) ...[
+                  _DebtSaleRow(sale: sale),
+                  if (sale != sales.last) const SizedBox(height: 8),
+                ],
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniState extends StatelessWidget {
+  const _MiniState({
+    required this.icon,
+    required this.text,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String text;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: const Color(0xFF6B7280)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF6B7280),
+              ),
+            ),
+          ),
+          if (onAction != null && actionLabel != null) ...[
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: onAction,
+              child: Text(
+                actionLabel!,
+                style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DebtSaleRow extends StatelessWidget {
+  const _DebtSaleRow({required this.sale});
+
+  final SaleModel sale;
+
+  @override
+  Widget build(BuildContext context) {
+    final number = sale.number.trim().isEmpty ? sale.localId : sale.number;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.receipt_long_rounded,
+              color: Color(0xFFB7791F),
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  number.isEmpty ? 'Чек без номера' : 'Чек $number',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF111827),
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  _formatDate(sale.date),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF6B7280),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                _formatMoney(sale.documentUnpaidAmount),
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
                   color: const Color(0xFF16A34A),
-                  onPressed: onAdd,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                _formatMoney(sale.totalAmount),
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF6B7280),
                 ),
               ),
             ],
@@ -725,7 +1281,7 @@ class _DetailLine extends StatelessWidget {
         const SizedBox(width: 9),
         Expanded(
           child: Text(
-            text,
+            text.isEmpty ? '-' : text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
@@ -740,44 +1296,6 @@ class _DetailLine extends StatelessWidget {
   }
 }
 
-class _DebtActionButton extends StatelessWidget {
-  const _DebtActionButton({
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.onPressed,
-  });
-
-  final String label;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 40,
-      child: FilledButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon, size: 21),
-        label: Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 12,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        style: FilledButton.styleFrom(
-          backgroundColor: color,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      ),
-    );
-  }
-}
-
 class _DebtCard extends StatelessWidget {
   const _DebtCard({
     required this.item,
@@ -785,16 +1303,21 @@ class _DebtCard extends StatelessWidget {
     required this.onTap,
   });
 
-  final _DebtCounterparty item;
+  final CustomerDto item;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final positive = item.amount >= 0;
+    final positive = item.debtBalance > 0;
     final color = positive ? const Color(0xFF16A34A) : const Color(0xFFDC2626);
     final softColor =
         positive ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2);
+    final stateLabel = switch (item.debtState) {
+      'advance' => 'Аванс',
+      'settled' => 'Закрыт',
+      _ => 'Долг',
+    };
 
     return Material(
       color: Colors.transparent,
@@ -810,15 +1333,6 @@ class _DebtCard extends StatelessWidget {
               color: selected ? color : const Color(0xFFE5E7EB),
               width: selected ? 2 : 1.2,
             ),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      blurRadius: 14,
-                      offset: const Offset(0, 8),
-                      color: color.withValues(alpha: 0.13),
-                    ),
-                  ]
-                : null,
           ),
           child: Row(
             children: [
@@ -871,7 +1385,7 @@ class _DebtCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 10),
                         Text(
-                          _formatMoney(item.amount),
+                          _formatMoney(item.debtBalance),
                           maxLines: 1,
                           style: GoogleFonts.inter(
                             fontSize: 16,
@@ -885,7 +1399,7 @@ class _DebtCard extends StatelessWidget {
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        _SmallPill(text: item.tag),
+                        _SmallPill(text: stateLabel),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -906,40 +1420,6 @@ class _DebtCard extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FilterChip extends StatelessWidget {
-  const _FilterChip({
-    required this.label,
-    this.selected = false,
-  });
-
-  final String label;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 36,
-      padding: const EdgeInsets.symmetric(horizontal: 13),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: selected ? const Color(0xFF2F343B) : Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: selected ? const Color(0xFF2F343B) : const Color(0xFFE5E7EB),
-        ),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.inter(
-          fontSize: 12,
-          fontWeight: FontWeight.w900,
-          color: selected ? Colors.white : const Color(0xFF4B5563),
         ),
       ),
     );
@@ -976,7 +1456,7 @@ class _SmallPill extends StatelessWidget {
 class _NetBadge extends StatelessWidget {
   const _NetBadge({required this.amount});
 
-  final int amount;
+  final num amount;
 
   @override
   Widget build(BuildContext context) {
@@ -1003,70 +1483,38 @@ class _NetBadge extends StatelessWidget {
   }
 }
 
-class _DebtCounterparty {
-  const _DebtCounterparty({
-    required this.name,
-    required this.phone,
-    required this.amount,
-    required this.lastOperation,
-    required this.date,
-    required this.tag,
-  });
-
-  final String name;
-  final String phone;
-  final int amount;
-  final String lastOperation;
-  final String date;
-  final String tag;
-
-  _DebtCounterparty copyWith({
-    int? amount,
-    String? lastOperation,
-    String? date,
-  }) {
-    return _DebtCounterparty(
-      name: name,
-      phone: phone,
-      amount: amount ?? this.amount,
-      lastOperation: lastOperation ?? this.lastOperation,
-      date: date ?? this.date,
-      tag: tag,
-    );
-  }
-}
-
-Future<int?> _showDebtAmountDialog(
+Future<num?> _showDebtAmountDialog(
   BuildContext context, {
   required String title,
   required String actionLabel,
   required Color accentColor,
+  num? maxAmount,
 }) {
   final controller = TextEditingController();
 
-  int parseAmount() {
-    final raw = controller.text.replaceAll(RegExp(r'[^0-9]'), '');
-    return int.tryParse(raw) ?? 0;
+  void setControllerText(String value) {
+    controller.text = value;
+    controller.selection = TextSelection.collapsed(offset: value.length);
   }
 
-  void setQuickAmount(int amount) {
-    controller.text = amount.toString();
-    controller.selection = TextSelection.collapsed(
-      offset: controller.text.length,
-    );
+  num parseAmount() {
+    final raw = controller.text.replaceAll(' ', '').replaceAll(',', '.');
+    return num.tryParse(raw) ?? 0;
   }
 
-  return showDialog<int>(
+  return showDialog<num>(
     context: context,
     barrierDismissible: true,
     builder: (context) {
       return StatefulBuilder(
         builder: (context, setState) {
           final amount = parseAmount();
+          final exceedsLimit = maxAmount != null && amount > maxAmount;
+          final valid = amount > 0 && !exceedsLimit;
           return Dialog(
             backgroundColor: Colors.transparent,
             insetPadding:
-                const EdgeInsets.symmetric(horizontal: 28, vertical: 28),
+                const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: DecoratedBox(
@@ -1095,14 +1543,30 @@ Future<int?> _showDebtAmountDialog(
                           color: const Color(0xFF111827),
                         ),
                       ),
+                      if (maxAmount != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Текущий долг: ${_formatMoney(maxAmount)}',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF6B7280),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 14),
                       TextField(
                         controller: controller,
                         autofocus: true,
-                        keyboardType: TextInputType.number,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
                         onChanged: (_) => setState(() {}),
                         decoration: InputDecoration(
                           hintText: 'Введите сумму',
+                          errorText: exceedsLimit
+                              ? 'Сумма больше текущего долга'
+                              : null,
                           hintStyle: GoogleFonts.inter(
                             fontWeight: FontWeight.w700,
                             color: const Color(0xFF9CA3AF),
@@ -1132,21 +1596,15 @@ Future<int?> _showDebtAmountDialog(
                         ),
                       ),
                       const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final quick in const [5000, 10000, 20000])
-                            _QuickAmountButton(
-                              amount: quick,
-                              onTap: () {
-                                setQuickAmount(quick);
-                                setState(() {});
-                              },
-                            ),
-                        ],
+                      AmountKeypad(
+                        text: controller.text,
+                        showQuickRows: false,
+                        onChanged: (value) {
+                          setControllerText(value);
+                          setState(() {});
+                        },
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
@@ -1154,15 +1612,6 @@ Future<int?> _showDebtAmountDialog(
                               height: 48,
                               child: OutlinedButton(
                                 onPressed: () => Navigator.of(context).pop(),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFF374151),
-                                  side: const BorderSide(
-                                    color: Color(0xFFD1D5DB),
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
                                 child: Text(
                                   'Закрыть',
                                   style: GoogleFonts.inter(
@@ -1177,7 +1626,7 @@ Future<int?> _showDebtAmountDialog(
                             child: SizedBox(
                               height: 48,
                               child: FilledButton(
-                                onPressed: amount > 0
+                                onPressed: valid
                                     ? () => Navigator.of(context).pop(amount)
                                     : null,
                                 style: FilledButton.styleFrom(
@@ -1185,9 +1634,6 @@ Future<int?> _showDebtAmountDialog(
                                   foregroundColor: Colors.white,
                                   disabledBackgroundColor:
                                       const Color(0xFFE5E7EB),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
                                 ),
                                 child: Text(
                                   actionLabel,
@@ -1212,57 +1658,197 @@ Future<int?> _showDebtAmountDialog(
   ).whenComplete(controller.dispose);
 }
 
-class _QuickAmountButton extends StatelessWidget {
-  const _QuickAmountButton({
-    required this.amount,
-    required this.onTap,
-  });
-
-  final int amount;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Ink(
-        height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF3F4F6),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
-        ),
-        child: Center(
-          child: Text(
-            _formatMoney(amount),
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-              color: const Color(0xFF374151),
+Future<void> _showSettlementSuccessDialog(
+  BuildContext context, {
+  required String customerName,
+  required num paidAmount,
+  required num remainingDebt,
+}) {
+  final settled = remainingDebt <= 0;
+  return showDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    builder: (context) {
+      return Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 430),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: const [
+                BoxShadow(
+                  blurRadius: 28,
+                  offset: Offset(0, 18),
+                  color: Color(0x33000000),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 54,
+                        height: 54,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0FDF4),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFF86EFAC)),
+                        ),
+                        child: const Icon(
+                          Icons.check_rounded,
+                          color: Color(0xFF16A34A),
+                          size: 34,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Долг погашен',
+                              style: GoogleFonts.inter(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                color: const Color(0xFF111827),
+                                height: 1.05,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              customerName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF6B7280),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  _SettlementResultRow(
+                    label: 'Оплачено',
+                    value: _formatMoney(paidAmount),
+                    color: const Color(0xFF16A34A),
+                  ),
+                  const SizedBox(height: 10),
+                  _SettlementResultRow(
+                    label: settled ? 'Остаток закрыт' : 'Осталось',
+                    value: settled ? '0тг' : _formatMoney(remainingDebt),
+                    color: settled
+                        ? const Color(0xFF0F766E)
+                        : const Color(0xFFB7791F),
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF111827),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: Text(
+                        'Готово',
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
+      );
+    },
+  );
+}
+
+class _SettlementResultRow extends StatelessWidget {
+  const _SettlementResultRow({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 58,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF6B7280),
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: GoogleFonts.inter(
+              fontSize: 19,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-String _formatMoney(int value) {
+String _formatMoney(num value) {
   final sign = value > 0
       ? '+'
       : value < 0
           ? '-'
           : '';
-  final digits = value.abs().toString();
+  final rounded = value.abs().round().toString();
   final buffer = StringBuffer();
-  for (var i = 0; i < digits.length; i++) {
-    final fromEnd = digits.length - i;
-    buffer.write(digits[i]);
-    if (fromEnd > 1 && fromEnd % 3 == 1) {
-      buffer.write(' ');
-    }
+  for (var i = 0; i < rounded.length; i++) {
+    final fromEnd = rounded.length - i;
+    buffer.write(rounded[i]);
+    if (fromEnd > 1 && fromEnd % 3 == 1) buffer.write(' ');
   }
   return '$sign${buffer.toString()}тг';
+}
+
+String _formatDate(DateTime value) {
+  String two(int part) => part.toString().padLeft(2, '0');
+  return '${two(value.day)}.${two(value.month)}.${value.year} '
+      '${two(value.hour)}:${two(value.minute)}';
 }

@@ -755,6 +755,18 @@ class PosSyncLocalStore {
         .toList(growable: false);
   }
 
+  Future<void> upsertCustomersRaw(List<Map<String, dynamic>> customers) async {
+    if (customers.isEmpty) return;
+    final db = await _database;
+    final now = _nowIso();
+    _inTransaction<void>(db, () {
+      for (final raw in customers) {
+        final row = _mapCustomerRow(raw, now);
+        if (row != null) _upsertRow(db, 'customers', row);
+      }
+    });
+  }
+
   Future<void> enqueueOperation({
     required String id,
     required OutboxOperationType type,
@@ -1979,7 +1991,8 @@ class PosSyncLocalStore {
       'sku': _nullableString(raw['sku']),
       'category_id': _nullableString(raw['category_id']),
       'category_name': categoryName,
-      'price': _asDouble(raw['price_after_discount'] ?? raw['selling_price'] ?? raw['price']),
+      'price': _asDouble(
+          raw['price_after_discount'] ?? raw['selling_price'] ?? raw['price']),
       'arrival_cost': _asDouble(raw['arrival_cost']),
       'wholesale_price': _asDouble(raw['wholesale_price']),
       'quantity': _asDouble(raw['quantity']),

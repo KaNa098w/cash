@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -553,6 +554,21 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     });
   }
 
+  void _logOpenedSale(SaleModel sale) {
+    final json = const JsonEncoder.withIndent('  ').convert(sale.toJson());
+    _debugPrintLong(
+      '[SalesHistory] Opened sale. Stored local SaleModel:\n$json',
+    );
+  }
+
+  void _debugPrintLong(String message) {
+    const chunkSize = 900;
+    for (var start = 0; start < message.length; start += chunkSize) {
+      final end = (start + chunkSize).clamp(0, message.length);
+      debugPrint(message.substring(start, end));
+    }
+  }
+
   void _openSaleKeyboard() {
     if (_saleKeyboardOpen) return;
     _saleKeyboardOpen = true;
@@ -973,6 +989,9 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                                         },
                                         onToggle: () {
                                           _trackUserActivity();
+                                          if (!expanded) {
+                                            _logOpenedSale(sale);
+                                          }
                                           setState(() {
                                             _expandedSaleId =
                                                 expanded ? null : sale.localId;

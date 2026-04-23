@@ -505,13 +505,15 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
               final List<Map<String, dynamic>> payments;
               if (isDebtSale) {
-                payments = [
-                  {
-                    'account_id': cashAccount.id,
-                    'amount': exactTotal,
-                    'client_payment_id': '$saleLocalId-debt',
-                  },
-                ];
+                payments = debtPaidNow > 0
+                    ? [
+                        {
+                          'account_id': cashAccount.id,
+                          'amount': debtPaidNow,
+                          'client_payment_id': '$saleLocalId-debt-paid',
+                        },
+                      ]
+                    : [];
               } else if (isMixed) {
                 final cashAmt = double.parse(
                   cashInputAmt.clamp(0, exactTotal).toStringAsFixed(2),
@@ -1798,7 +1800,7 @@ class _GreyButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = selected ? const Color.fromARGB(255, 240, 167, 57) : const Color(0xFFBBBBBB);
+    final bg = selected ? const Color(0xFFB7791F) : const Color(0xFFBBBBBB);
 
     return TextButton(
       onPressed: onTap,

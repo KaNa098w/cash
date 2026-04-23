@@ -5,6 +5,8 @@ class CustomerDto {
   final String name;
   final String phone;
   final num balance;
+  final num debtBalance;
+  final String debtState;
   final num debtLimit;
   final bool debtAllowed;
 
@@ -13,6 +15,8 @@ class CustomerDto {
     required this.name,
     required this.phone,
     this.balance = 0,
+    this.debtBalance = 0,
+    this.debtState = 'settled',
     this.debtLimit = 0,
     this.debtAllowed = true,
   });
@@ -30,6 +34,23 @@ class CustomerDto {
         json,
         const ['balance', 'debt_balance', 'current_debt', 'current_balance'],
       ),
+      debtBalance: _readNum(
+        json,
+        const ['debt_balance', 'balance', 'current_debt', 'current_balance'],
+      ),
+      debtState: (json['debt_state'] ?? '').toString().trim().isEmpty
+          ? _debtStateFromBalance(
+              _readNum(
+                json,
+                const [
+                  'debt_balance',
+                  'balance',
+                  'current_debt',
+                  'current_balance'
+                ],
+              ),
+            )
+          : json['debt_state'].toString(),
       debtLimit: _readNum(
         json,
         const ['debt_limit', 'credit_limit', 'limit', 'max_debt'],
@@ -46,6 +67,39 @@ class CustomerDto {
       ),
     );
   }
+
+  CustomerDto copyWith({
+    String? id,
+    String? name,
+    String? phone,
+    num? balance,
+    num? debtBalance,
+    String? debtState,
+    num? debtLimit,
+    bool? debtAllowed,
+  }) {
+    return CustomerDto(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      phone: phone ?? this.phone,
+      balance: balance ?? this.balance,
+      debtBalance: debtBalance ?? this.debtBalance,
+      debtState: debtState ?? this.debtState,
+      debtLimit: debtLimit ?? this.debtLimit,
+      debtAllowed: debtAllowed ?? this.debtAllowed,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'phone': phone,
+        'balance': balance,
+        'debt_balance': debtBalance,
+        'debt_state': debtState,
+        'debt_limit': debtLimit,
+        'debt_allowed': debtAllowed,
+      };
 
   static num _readNum(Map<String, dynamic> json, List<String> keys) {
     for (final key in keys) {
@@ -71,6 +125,33 @@ class CustomerDto {
     }
     return fallback;
   }
+
+  static String _debtStateFromBalance(num value) {
+    if (value > 0) return 'debt';
+    if (value < 0) return 'advance';
+    return 'settled';
+  }
+}
+
+class CustomerSettlementDto {
+  const CustomerSettlementDto({
+    required this.id,
+    required this.agent,
+  });
+
+  final String id;
+  final CustomerDto agent;
+
+  factory CustomerSettlementDto.fromJson(Map<String, dynamic> json) {
+    final agentRaw = json['agent'];
+    if (agentRaw is! Map) {
+      throw Exception('CustomerSettlementDto: missing agent');
+    }
+    return CustomerSettlementDto(
+      id: (json['id'] ?? '').toString(),
+      agent: CustomerDto.fromJson(Map<String, dynamic>.from(agentRaw)),
+    );
+  }
 }
 
 class CustomersRemoteDataSource {
@@ -86,9 +167,15 @@ class CustomersRemoteDataSource {
     final safeName = name.trim();
     final safePhone = phone.trim();
 
-    if (safeKey.isEmpty) throw ArgumentError.value(key, 'key', 'Key is required');
-    if (safeName.isEmpty) throw ArgumentError.value(name, 'name', 'Name is required');
-    if (safePhone.isEmpty) throw ArgumentError.value(phone, 'phone', 'Phone is required');
+    if (safeKey.isEmpty) {
+      throw ArgumentError.value(key, 'key', 'Key is required');
+    }
+    if (safeName.isEmpty) {
+      throw ArgumentError.value(name, 'name', 'Name is required');
+    }
+    if (safePhone.isEmpty) {
+      throw ArgumentError.value(phone, 'phone', 'Phone is required');
+    }
 
     final resp = await _dio.post(
       '/organizations/pos/$safeKey/customers',
@@ -104,15 +191,19 @@ class CustomersRemoteDataSource {
     required String key,
     int? page,
     int? size,
+    bool hasDebt = false,
   }) async {
     final safeKey = key.trim();
-    if (safeKey.isEmpty) throw ArgumentError.value(key, 'key', 'Key is required');
+    if (safeKey.isEmpty) {
+      throw ArgumentError.value(key, 'key', 'Key is required');
+    }
 
     final resp = await _dio.get(
       '/organizations/pos/$safeKey/customers',
       queryParameters: {
         if (page != null) 'page': page,
         if (size != null) 'size': size,
+        if (hasDebt) 'filter[has_debt]': 1,
       },
     );
 
@@ -140,7 +231,60 @@ class CustomersRemoteDataSource {
           .toList();
     }
 
-    throw Exception('listCustomers: invalid "data" (expected List or {items:[]})');
+    throw Exception(
+        'listCustomers: invalid "data" (expected List or {items:[]})');
+  }
+
+  Future<CustomerSettlementDto> settleDebt({
+    required String key,
+    required String customerId,
+    required String accountId,
+    required num amount,
+    required DateTime date,
+    required String userId,
+    String? posSessionId,
+    String? clientSettlementId,
+    String? note,
+  }) async {
+    final safeKey = key.trim();
+    final safeCustomerId = customerId.trim();
+    final safeAccountId = accountId.trim();
+    final safeUserId = userId.trim();
+
+    if (safeKey.isEmpty) {
+      throw ArgumentError.value(key, 'key', 'Key is required');
+    }
+    if (safeCustomerId.isEmpty) {
+      throw ArgumentError.value(
+          customerId, 'customerId', 'Customer is required');
+    }
+    if (safeAccountId.isEmpty) {
+      throw ArgumentError.value(accountId, 'accountId', 'Account is required');
+    }
+    if (safeUserId.isEmpty) {
+      throw ArgumentError.value(userId, 'userId', 'User is required');
+    }
+    if (amount <= 0) {
+      throw ArgumentError.value(amount, 'amount', 'Amount must be positive');
+    }
+
+    final resp = await _dio.post(
+      '/organizations/pos/$safeKey/customers/$safeCustomerId/settlements',
+      data: {
+        'account_id': safeAccountId,
+        'amount': amount,
+        'date': _formatDate(date),
+        'user_id': safeUserId,
+        if ((posSessionId ?? '').trim().isNotEmpty)
+          'pos_session_id': posSessionId!.trim(),
+        if ((clientSettlementId ?? '').trim().isNotEmpty)
+          'client_settlement_id': clientSettlementId!.trim(),
+        if ((note ?? '').trim().isNotEmpty) 'note': note!.trim(),
+      },
+    );
+
+    final payload = _extractDataMap(resp.data, op: 'settleDebt');
+    return CustomerSettlementDto.fromJson(payload);
   }
 
   Map<String, dynamic> _extractDataMap(dynamic body, {required String op}) {
@@ -152,5 +296,11 @@ class CustomersRemoteDataSource {
       throw Exception('$op: invalid "data" (expected Map)');
     }
     return Map<String, dynamic>.from(data);
+  }
+
+  String _formatDate(DateTime value) {
+    String two(int part) => part.toString().padLeft(2, '0');
+    return '${value.year}-${two(value.month)}-${two(value.day)} '
+        '${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
   }
 }

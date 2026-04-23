@@ -30,6 +30,7 @@ class PosSyncService {
   final _syncedController = StreamController<int>.broadcast();
   final _productsChangedController = StreamController<void>.broadcast();
   final _salesHistoryChangedController = StreamController<void>.broadcast();
+  final _debtsChangedController = StreamController<void>.broadcast();
 
   /// Emits the number of operations successfully sent in each push batch.
   Stream<int> get onOperationsSynced => _syncedController.stream;
@@ -40,6 +41,8 @@ class PosSyncService {
   /// Emits when sales/refunds change and the history UI should refresh.
   Stream<void> get onSalesHistoryChanged =>
       _salesHistoryChangedController.stream;
+
+  Stream<void> get onDebtsChanged => _debtsChangedController.stream;
 
   Future<void> initialize() => _localStore.initialize();
 
@@ -56,6 +59,7 @@ class PosSyncService {
     await _syncedController.close();
     await _productsChangedController.close();
     await _salesHistoryChangedController.close();
+    await _debtsChangedController.close();
     await _localStore.close();
   }
 
@@ -102,6 +106,11 @@ class PosSyncService {
 
   Future<List<LocalCustomer>> loadCustomers() {
     return _localStore.loadCustomers();
+  }
+
+  Future<void> upsertCustomersRaw(List<Map<String, dynamic>> customers) async {
+    await _localStore.upsertCustomersRaw(customers);
+    _notifyDebtsChanged();
   }
 
   Future<List<SaleModel>> loadPendingSales() {
@@ -296,6 +305,7 @@ class PosSyncService {
       expenseTypes: expenseTypes,
       customers: customers,
     );
+    _notifyDebtsChanged();
 
     onProgress?.call(
         const SyncProgress(progress: 0.82, stage: 'Применяем обновления...'));
@@ -387,6 +397,16 @@ class PosSyncService {
         );
         if (hasProducts && !_productsChangedController.isClosed) {
           _productsChangedController.add(null);
+        }
+        final hasDebtRelatedChanges = batch.items.any((c) {
+          final entity = c.entity.trim().toLowerCase();
+          return entity.contains('customer') ||
+              entity.contains('sale') ||
+              entity.contains('payment') ||
+              entity.contains('settlement');
+        });
+        if (hasDebtRelatedChanges) {
+          _notifyDebtsChanged();
         }
         _notifySalesHistoryChanged();
       } else if (batch.nextCursor != cursor) {
@@ -583,6 +603,11 @@ class PosSyncService {
     );
     if (requireOnline && result.result != QueueSendResult.sent) {
       await _localStore.deleteQueueOperation(result.operationId);
+    }
+    if (result.result == QueueSendResult.sent &&
+        sale.paymentMethod.trim().toLowerCase() == 'debt') {
+      _notifyDebtsChanged();
+      unawaited(_runBackgroundPull(key: key, deviceId: deviceId));
     }
     return result;
   }
@@ -1024,6 +1049,11 @@ class PosSyncService {
   void _notifySalesHistoryChanged() {
     if (_salesHistoryChangedController.isClosed) return;
     _salesHistoryChangedController.add(null);
+  }
+
+  void _notifyDebtsChanged() {
+    if (_debtsChangedController.isClosed) return;
+    _debtsChangedController.add(null);
   }
 
   String _formatDate(DateTime value) {

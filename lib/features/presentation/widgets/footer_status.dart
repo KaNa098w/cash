@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/features/presentation/widgets/quit_products_screen.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
@@ -147,6 +148,19 @@ class _FooterDesktop extends StatelessWidget {
                           final discount = cubit.discountSum;
                           final beforeDiscount = total + discount;
                           final hasItems = state.items.isNotEmpty;
+                          final productsState =
+                              context.watch<ProductsCubit>().state;
+                          final products = productsState is ProductsLoaded
+                              ? productsState.products
+                              : const [];
+                          dynamic universalProduct;
+                          for (final product in products) {
+                            if (product.isUniversal) {
+                              universalProduct = product;
+                              break;
+                            }
+                          }
+
                           return FooterControlsOnly(
                             smallAmountText: money(beforeDiscount),
                             bigAmountText: money(total),
@@ -228,39 +242,20 @@ class _FooterDesktop extends StatelessWidget {
                               final ok = await _confirmClearCart(context);
                               if (ok) cubit.clearAfterPayment();
                             },
-                            onPayCard: () async {
-                              final productsState =
-                                  context.read<ProductsCubit>().state;
-                              final products = productsState is ProductsLoaded
-                                  ? productsState.products
-                                  : const [];
-                              dynamic universalProduct;
-                              for (final product in products) {
-                                if (product.isUniversal) {
-                                  universalProduct = product;
-                                  break;
-                                }
-                              }
-
-                              if (universalProduct == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Универсальный продукт недоступен. Выполните синхронизацию.',
-                                    ),
-                                  ),
-                                );
-                                return;
-                              }
-
-                              final amount =
-                                  await _showUniversalAmountDialog(context);
-                              if (!context.mounted || amount == null) return;
-                              cubit.addUniversalProduct(
-                                universalProduct,
-                                price: amount,
-                              );
-                            },
+                            onPayCard: universalProduct == null
+                                ? null
+                                : () async {
+                                    final amount =
+                                        await _showUniversalAmountDialog(
+                                            context);
+                                    if (!context.mounted || amount == null) {
+                                      return;
+                                    }
+                                    cubit.addUniversalProduct(
+                                      universalProduct,
+                                      price: amount,
+                                    );
+                                  },
                             onPay: hasItems
                                 ? () => _showPaymentPanelCenter(context)
                                 : null,
@@ -381,12 +376,12 @@ class _UniversalAmountDialogState extends State<_UniversalAmountDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
+                Text(
                   'Введите сумму',
-                  style: TextStyle(
+                  style: GoogleFonts.inter(
                     fontSize: 24,
                     fontWeight: FontWeight.w900,
-                    color: Color(0xFF111827),
+                    color: const Color(0xFF111827),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -401,10 +396,10 @@ class _UniversalAmountDialogState extends State<_UniversalAmountDialog> {
                   ),
                   child: Text(
                     _text.isEmpty ? '0' : _text,
-                    style: const TextStyle(
+                    style: GoogleFonts.inter(
                       fontSize: 30,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF111827),
+                      color: const Color(0xFF111827),
                     ),
                   ),
                 ),
@@ -426,7 +421,12 @@ class _UniversalAmountDialogState extends State<_UniversalAmountDialog> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: const Text('Отмена'),
+                        child: Text(
+                          'Отмена',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -444,10 +444,12 @@ class _UniversalAmountDialogState extends State<_UniversalAmountDialog> {
                           ),
                         ),
                         child: Text(
-                          'Добавить ${money(_amount)}',
+                          'Добавить',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
                     ),
