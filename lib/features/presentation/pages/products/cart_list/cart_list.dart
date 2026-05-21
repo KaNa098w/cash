@@ -39,8 +39,48 @@ String _shortProductNameKeepEnd(String name, {int maxChars = 46}) {
   return '$prefix...$tail';
 }
 
-class CartList extends StatelessWidget {
+class CartList extends StatefulWidget {
   const CartList({super.key});
+
+  @override
+  State<CartList> createState() => _CartListState();
+}
+
+class _CartListState extends State<CartList> {
+  final ScrollController _scrollController = ScrollController();
+  final Map<int, GlobalKey> _rowKeys = <int, GlobalKey>{};
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  GlobalKey _rowKeyFor(int index) {
+    return _rowKeys.putIfAbsent(index, GlobalKey.new);
+  }
+
+  void _scrollSelectedItemIntoView(PosState state) {
+    final selectedIndex = state.selectedItemIndex;
+    if (selectedIndex == null ||
+        selectedIndex < 0 ||
+        selectedIndex >= state.items.length) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final rowContext = _rowKeys[selectedIndex]?.currentContext;
+      if (rowContext == null) return;
+
+      Scrollable.ensureVisible(
+        rowContext,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        alignment: 0.95,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -78,11 +118,19 @@ class CartList extends StatelessWidget {
                   color: const Color(0xFFF3F4F6),
                   borderRadius: BorderRadius.circular(18),
                 ),
-                child: BlocBuilder<PosCubit, PosState>(
+                child: BlocConsumer<PosCubit, PosState>(
+                  listenWhen: (previous, current) {
+                    return previous.selectedItemIndex !=
+                            current.selectedItemIndex ||
+                        previous.items.length != current.items.length;
+                  },
+                  listener: (context, state) =>
+                      _scrollSelectedItemIntoView(state),
                   builder: (context, state) {
                     final visibleRows =
                         state.items.length < 6 ? 6 : state.items.length;
                     return ListView.separated(
+                      controller: _scrollController,
                       padding: const EdgeInsets.all(8),
                       itemCount: visibleRows,
                       separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -93,6 +141,7 @@ class CartList extends StatelessWidget {
                         final it = state.items[i];
                         final isSelected = state.selectedItemIndex == i;
                         return InkWell(
+                          key: _rowKeyFor(i),
                           onTap: () => context.read<PosCubit>().selectItem(i),
 
                           // ✅ убираем визуальные эффекты нажатия/ховера

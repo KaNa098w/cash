@@ -51,7 +51,9 @@ class _SearchBarState extends State<SearchBar> {
   Timer? _routeFocusRestoreTimer;
   List<ProductModel> _chooserProducts = const [];
   int _chooserSelectedIndex = 0;
+  final _chooserScrollController = ScrollController();
   bool _loadingLastSale = true;
+  static const double _chooserItemExtent = 57.0;
 
   @override
   void didChangeDependencies() {
@@ -161,6 +163,7 @@ class _SearchBarState extends State<SearchBar> {
     _controller.dispose();
     _focusNode.dispose();
     _removeChooser();
+    _chooserScrollController.dispose();
     super.dispose();
     _scanDebounce?.cancel();
     _typingDebounce?.cancel();
@@ -535,6 +538,9 @@ class _SearchBarState extends State<SearchBar> {
     _chooserEntry = null;
     _chooserProducts = const [];
     _chooserSelectedIndex = 0;
+    if (_chooserScrollController.hasClients) {
+      _chooserScrollController.jumpTo(0);
+    }
   }
 
   void _moveChooserSelection(int delta) {
@@ -548,6 +554,42 @@ class _SearchBarState extends State<SearchBar> {
 
     _chooserSelectedIndex = nextIndex;
     _chooserEntry?.markNeedsBuild();
+    _scrollChooserSelectionIntoView();
+  }
+
+  void _scrollChooserSelectionIntoView() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          _chooserEntry == null ||
+          !_chooserScrollController.hasClients) {
+        return;
+      }
+
+      final position = _chooserScrollController.position;
+      final itemTop = _chooserSelectedIndex * _chooserItemExtent;
+      final itemBottom = itemTop + _chooserItemExtent;
+      final visibleTop = position.pixels;
+      final visibleBottom = visibleTop + position.viewportDimension;
+
+      double? target;
+      if (itemBottom > visibleBottom) {
+        target = itemBottom - position.viewportDimension;
+      } else if (itemTop < visibleTop) {
+        target = itemTop;
+      }
+
+      if (target == null) return;
+
+      final clampedTarget = target.clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      _chooserScrollController.animateTo(
+        clampedTarget,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   Future<void> _selectChooserProduct(ProductModel product) async {
@@ -691,6 +733,7 @@ class _SearchBarState extends State<SearchBar> {
                     children: [
                       Flexible(
                         child: ListView.separated(
+                          controller: _chooserScrollController,
                           shrinkWrap: true,
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           itemCount: products.length,
