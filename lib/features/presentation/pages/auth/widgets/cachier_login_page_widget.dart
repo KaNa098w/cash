@@ -275,6 +275,8 @@ class _CashierLoginStepState extends State<CashierLoginStep> {
                         width: leftPaneWidth,
                         height: double.infinity,
                         child: _BrandPane(
+                          storeName: widget.provision.storeName,
+                          posName: widget.provision.name,
                           brandLogo: widget.brandLogo,
                           partnerLogo: widget.partnerLogo,
                           siteText: widget.siteText,
@@ -513,12 +515,16 @@ class _ExitAppButton extends StatelessWidget {
 
 class _BrandPane extends StatelessWidget {
   const _BrandPane({
+    required this.storeName,
+    required this.posName,
     required this.brandLogo,
     required this.partnerLogo,
     required this.siteText,
     required this.contactsText,
   });
 
+  final String storeName;
+  final String posName;
   final Widget? brandLogo;
   final Widget? partnerLogo;
   final String siteText;
@@ -528,18 +534,19 @@ class _BrandPane extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final logoWidth = (constraints.maxWidth * 0.72).clamp(320.0, 520.0);
+        final titleWidth = (constraints.maxWidth * 0.72).clamp(320.0, 560.0);
         return Stack(
           children: [
-            // Центр: munara логотип
+            // Центр: название магазина вместо большого SVG.
             Align(
               alignment: Alignment.center,
               child: SizedBox(
-                width: logoWidth,
-                child: FittedBox(
-                  fit: BoxFit.contain,
-                  child: brandLogo ?? const _FallbackMunaraLogo(),
-                ),
+                width: titleWidth,
+                child: brandLogo ??
+                    _StoreNameWordmark(
+                      storeName: storeName,
+                      fallbackName: posName,
+                    ),
               ),
             ),
 
@@ -592,6 +599,50 @@ class _BrandPane extends StatelessWidget {
   }
 }
 
+class _StoreNameWordmark extends StatelessWidget {
+  const _StoreNameWordmark({
+    required this.storeName,
+    required this.fallbackName,
+  });
+
+  final String storeName;
+  final String fallbackName;
+
+  double _fontSize(String value) {
+    final length = value.runes.length;
+    if (length > 48) return 38;
+    if (length > 36) return 44;
+    if (length > 26) return 52;
+    if (length > 18) return 60;
+    return 72;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanStoreName = storeName.trim();
+    final cleanFallbackName = fallbackName.trim();
+    final title = cleanStoreName.isNotEmpty
+        ? cleanStoreName
+        : (cleanFallbackName.isNotEmpty ? cleanFallbackName : 'Магазин');
+    final fontSize = _fontSize(title);
+
+    return Text(
+      title,
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+      softWrap: true,
+      textAlign: TextAlign.center,
+      style: GoogleFonts.inter(
+        color: Colors.white,
+        fontSize: fontSize,
+        fontWeight: FontWeight.w800,
+        height: 1.04,
+        letterSpacing: 0,
+      ),
+    );
+  }
+}
+
 class _LoginCard extends StatelessWidget {
   const _LoginCard({
     required this.users,
@@ -639,8 +690,8 @@ class _LoginCard extends StatelessWidget {
     final pinCtrl = TextEditingController(text: pin)
       ..selection = TextSelection.collapsed(offset: pin.length);
 
-    const _btnRadius = 9.0; // 8.71px
-    const _btnH = 71.0;
+    const btnRadius = 9.0; // 8.71px
+    const btnHeight = 71.0;
 
     return Container(
       width: 317,
@@ -738,13 +789,13 @@ class _LoginCard extends StatelessWidget {
               children: [
                 SizedBox(
                   width: 122, // 121.66px
-                  height: _btnH,
+                  height: btnHeight,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFD15850), // #D15850
                       elevation: 0,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(_btnRadius),
+                        borderRadius: BorderRadius.circular(btnRadius),
                       ),
                     ),
                     onPressed: onCancel,
@@ -759,14 +810,14 @@ class _LoginCard extends StatelessWidget {
                 ),
                 SizedBox(
                   width: 124, // 124px
-                  height: _btnH,
+                  height: btnHeight,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF33CC99), // #33CC99
                       disabledBackgroundColor: const Color(0xFF33CC99),
                       elevation: 0,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(_btnRadius),
+                        borderRadius: BorderRadius.circular(btnRadius),
                       ),
                     ),
                     onPressed: canOk ? onOk : null,
@@ -828,7 +879,7 @@ class _PinKeypad extends StatelessWidget {
   }
 
   Widget _key(Widget child, {VoidCallback? onTap}) {
-    return _KeyButton(child: child, onTap: onTap);
+    return _KeyButton(onTap: onTap, child: child);
   }
 
   Widget _digitKey(BuildContext context, String value) {
@@ -918,7 +969,7 @@ class _KeyButton extends StatelessWidget {
           boxShadow: enabled
               ? [
                   BoxShadow(
-                    color: const Color(0xFF000000).withOpacity(0.25),
+                    color: const Color(0xFF000000).withValues(alpha: 0.25),
                     offset: const Offset(4, 4),
                     blurRadius: 2,
                     spreadRadius: 0,
@@ -938,42 +989,6 @@ class _KeyButton extends StatelessWidget {
       ),
     );
   }
-}
-
-class _FallbackMunaraLogo extends StatelessWidget {
-  const _FallbackMunaraLogo();
-
-  @override
-  Widget build(BuildContext context) {
-    return SvgPicture.asset(
-      'assets/svg/munara_logo.svg',
-      width: 501, // подгони под твой svg
-      fit: BoxFit.contain,
-    );
-  }
-}
-
-class _RoofPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()
-      ..color = const Color(0xFF35C89A)
-      ..style = PaintingStyle.fill;
-
-    final path = Path()
-      ..moveTo(size.width * 0.5, 0)
-      ..lineTo(size.width, size.height * 0.55)
-      ..lineTo(size.width * 0.82, size.height * 0.55)
-      ..lineTo(size.width * 0.5, size.height * 0.2)
-      ..lineTo(size.width * 0.18, size.height * 0.55)
-      ..lineTo(0, size.height * 0.55)
-      ..close();
-
-    canvas.drawPath(path, p);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _FallbackLeemonLogo extends StatelessWidget {
