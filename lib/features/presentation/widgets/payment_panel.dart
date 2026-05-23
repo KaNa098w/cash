@@ -532,7 +532,10 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     'amount': cardAmt,
                     'client_payment_id': '$saleLocalId-card',
                   },
-                ];
+                ].where((payment) {
+                  final amount = payment['amount'];
+                  return amount is num && amount > 0;
+                }).toList(growable: false);
               } else if (paymentMethod == 'card') {
                 payments = [
                   {

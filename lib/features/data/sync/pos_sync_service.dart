@@ -544,6 +544,7 @@ class PosSyncService {
           .fold(0.0, (sum, item) => sum + item.totalPrice)
           .toStringAsFixed(2),
     );
+    final nonZeroPayments = _withoutZeroAmountPayments(payments);
     final payload = <String, dynamic>{
       'device_id': deviceId,
       'app_version': AppBuildInfo.appVersion,
@@ -583,7 +584,7 @@ class PosSyncService {
             },
           )
           .toList(growable: false),
-      'payments': payments,
+      'payments': nonZeroPayments,
     };
 
     await _localStore.insertSaleLocal(
@@ -744,6 +745,7 @@ class PosSyncService {
     final localPosSessionId = posSessionId.trim();
     final clientId = 'refund_${_uuid.v7()}';
     final isOffline = saleId.isEmpty;
+    final nonZeroPayments = _withoutZeroAmountPayments(payments);
     final payload = <String, dynamic>{
       'device_id': deviceId,
       'app_version': AppBuildInfo.appVersion,
@@ -756,7 +758,7 @@ class PosSyncService {
         'client_sale_id': clientSaleId!,
       'total_amount': totalAmount,
       'payment_method': paymentMethod,
-      'payments': payments,
+      'payments': nonZeroPayments,
       'items': items,
       if ((returnAccessKey ?? '').trim().isNotEmpty)
         'return_access_key': returnAccessKey!.trim(),
@@ -772,6 +774,17 @@ class PosSyncService {
       clientId: clientId,
       payload: payload,
     );
+  }
+
+  List<Map<String, dynamic>> _withoutZeroAmountPayments(
+    List<Map<String, dynamic>> payments,
+  ) {
+    return payments.where((payment) {
+      final amount = payment['amount'];
+      if (amount is num) return amount > 0;
+      final parsed = num.tryParse((amount ?? '').toString().trim());
+      return parsed != null && parsed > 0;
+    }).toList(growable: false);
   }
 
   Future<QueueOperationResult> _queueAndTrySend({

@@ -1,6 +1,14 @@
 // lib/main.dart
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:io'
+    show
+        Directory,
+        File,
+        FileLock,
+        FileMode,
+        FileSystemException,
+        Platform,
+        RandomAccessFile;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -27,12 +35,19 @@ import 'features/domain/repositories/pos_repository.dart';
 import 'features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+RandomAccessFile? _singleInstanceLock;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Hive.initFlutter();
-  await initializeDateFormatting('ru');
   final isDesktop =
       !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+
+  if (isDesktop && !await _acquireSingleInstanceLock()) {
+    return;
+  }
+
+  await Hive.initFlutter();
+  await initializeDateFormatting('ru');
   _KioskWindowListener? kioskListener;
 
   final prefs = await SharedPreferences.getInstance();
@@ -105,6 +120,20 @@ Future<void> main() async {
 
   if (isDesktop && kioskListener != null) {
     unawaited(_stabilizeDesktopWindow(kioskListener));
+  }
+}
+
+Future<bool> _acquireSingleInstanceLock() async {
+  final lockFile = File('${Directory.systemTemp.path}/leemon_pos_app.lock');
+
+  try {
+    _singleInstanceLock = await lockFile.open(mode: FileMode.write);
+    await _singleInstanceLock!.lock(FileLock.exclusive);
+    return true;
+  } on FileSystemException {
+    await _singleInstanceLock?.close();
+    _singleInstanceLock = null;
+    return false;
   }
 }
 
@@ -207,7 +236,8 @@ class _PosAppState extends State<PosApp> {
       routerConfig: _router,
       theme: baseTheme.copyWith(
         textTheme: GoogleFonts.interTextTheme(baseTheme.textTheme),
-        primaryTextTheme: GoogleFonts.interTextTheme(baseTheme.primaryTextTheme),
+        primaryTextTheme:
+            GoogleFonts.interTextTheme(baseTheme.primaryTextTheme),
       ),
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       supportedLocales: const [Locale('ru'), Locale('en')],

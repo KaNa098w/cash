@@ -28,6 +28,7 @@ import 'state/sales_cubit.dart';
 import 'state/sales_state.dart';
 
 import 'utils/app_scroll_behavior.dart';
+import 'utils/formatters.dart';
 import 'utils/sales_filter.dart';
 import 'widgets/sale_card.dart';
 
@@ -223,9 +224,76 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     setState(() {});
   }
 
+  ReceiptPdfData _buildSaleReceiptData({
+    required SaleModel sale,
+    required AuthTokenProvider auth,
+  }) {
+    final pageFormat =
+        auth.receiptPaperMm == 57 ? PdfPageFormat.roll57 : PdfPageFormat.roll80;
+    final cashierName = (auth.activeUserName ?? '').trim().isEmpty
+        ? (sale.userId.trim().isEmpty ? '-' : sale.userId.trim())
+        : auth.activeUserName!.trim();
+
+    return ReceiptPdfData(
+      pageFormat: pageFormat,
+      money: money,
+      receiptDate: sale.date,
+      receiptNumber: formatPosReceiptNumber(
+        posNumber: auth.posNumber ?? '',
+        saleNumber: sale.number,
+        fallback: sale.localId,
+      ),
+      cashierName: cashierName,
+      storeName: _storeName(auth),
+      items: sale.items
+          .map(
+            (it) => ReceiptPdfItem(
+              name: it.displayProductName,
+              quantity: it.quantity,
+              unitPrice: it.price,
+              lineTotal: it.totalPrice,
+            ),
+          )
+          .toList(),
+      total: sale.totalAmount,
+      discountSum: 0,
+      paymentMethodLabel: switch (sale.paymentMethod.trim().toLowerCase()) {
+        'cash' => 'Наличные',
+        'card' => 'Безналичный',
+        'mixed' => 'Смешанная',
+        'credit' => 'В долг',
+        'debt' => 'В долг',
+        'partial_debt' => 'В долг',
+        _ =>
+          sale.paymentMethod.trim().isEmpty ? '-' : sale.paymentMethod.trim(),
+      },
+      isCashPayment: sale.paymentMethod.trim().toLowerCase() == 'cash',
+      paidNow: sale.paymentMethod.trim().toLowerCase() == 'cash'
+          ? null
+          : sale.paidAmount > 0
+              ? sale.paidAmount
+              : null,
+      debtAmount: sale.debtAmount > 0 ? sale.debtAmount : null,
+    );
+  }
+
+  Future<bool> _showReceiptPreview(ReceiptPdfData receipt) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => _ReceiptPreviewDialog(receipt: receipt),
+    );
+    return result == true;
+  }
+
   Future<void> _printSaleReceipt(SaleModel sale) async {
     final saleKey = _salePrintKey(sale);
     if (_controller.isReceiptPrintDisabled(saleKey)) return;
+
+    final previewAuth = context.read<AuthTokenProvider>();
+    final previewReceipt = _buildSaleReceiptData(sale: sale, auth: previewAuth);
+    final shouldPrint = await _showReceiptPreview(previewReceipt);
+    if (!mounted || !shouldPrint) return;
 
     _controller.setReceiptPrintLoading(saleKey, true, _notifyPrintStateChanged);
 
@@ -1037,6 +1105,270 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ReceiptPreviewDialog extends StatelessWidget {
+  const _ReceiptPreviewDialog({required this.receipt});
+
+  final ReceiptPdfData receipt;
+
+  String _qty(num value) {
+    final text = value.toStringAsFixed(3);
+    return text.replaceFirst(RegExp(r'\.?0+$'), '').replaceAll('.', ',');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+      backgroundColor: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 760),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 12, 10),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Предпросмотр чека',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF111827),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Закрыть',
+                      onPressed: () => Navigator.of(context).pop(false),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+                  child: Center(
+                    child: Container(
+                      width: 340,
+                      padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x1F111827),
+                            blurRadius: 18,
+                            offset: Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: DefaultTextStyle(
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                          height: 1.25,
+                          color: Colors.black,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              receipt.storeName,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              receipt.documentTitle ?? 'КАССОВЫЙ ЧЕК',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _ReceiptPreviewRow(
+                              label: 'Номер',
+                              value: receipt.receiptNumber,
+                            ),
+                            _ReceiptPreviewRow(
+                              label: 'Дата',
+                              value: fmtSaleDate(receipt.receiptDate),
+                            ),
+                            _ReceiptPreviewRow(
+                              label: 'Кассир',
+                              value: receipt.cashierName,
+                            ),
+                            _ReceiptPreviewRow(
+                              label: 'Оплата',
+                              value: receipt.paymentMethodLabel,
+                            ),
+                            const _ReceiptPreviewDivider(),
+                            for (final item in receipt.items) ...[
+                              Text(
+                                item.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              _ReceiptPreviewRow(
+                                label:
+                                    '${_qty(item.quantity)} x ${receipt.money(item.unitPrice)}',
+                                value: receipt.money(item.lineTotal),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                            const _ReceiptPreviewDivider(),
+                            _ReceiptPreviewRow(
+                              label: 'Итого',
+                              value: receipt.money(receipt.total),
+                              emphasized: true,
+                            ),
+                            if (receipt.paidNow != null)
+                              _ReceiptPreviewRow(
+                                label: 'Оплачено',
+                                value: receipt.money(receipt.paidNow!),
+                              ),
+                            if (receipt.debtAmount != null)
+                              _ReceiptPreviewRow(
+                                label: 'Долг',
+                                value: receipt.money(receipt.debtAmount!),
+                              ),
+                            const SizedBox(height: 14),
+                            Text(
+                              receipt.footerText,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(
+                    bottom: Radius.circular(18),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                          foregroundColor: const Color(0xFF374151),
+                          side: const BorderSide(color: Color(0xFFD1D5DB)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text(
+                          'Закрыть',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        icon: const Icon(Icons.print_rounded),
+                        label: const Text(
+                          'Распечатать',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                          backgroundColor: const Color(0xFF33CC99),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReceiptPreviewRow extends StatelessWidget {
+  const _ReceiptPreviewRow({
+    required this.label,
+    required this.value,
+    this.emphasized = false,
+  });
+
+  final String label;
+  final String value;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: emphasized ? FontWeight.w800 : FontWeight.w500,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontWeight: emphasized ? FontWeight.w900 : FontWeight.w700,
+              fontSize: emphasized ? 14 : 12,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReceiptPreviewDivider extends StatelessWidget {
+  const _ReceiptPreviewDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 10),
+      child: Divider(height: 1, color: Color(0xFF9CA3AF)),
     );
   }
 }

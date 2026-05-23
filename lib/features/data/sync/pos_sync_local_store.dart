@@ -14,6 +14,36 @@ import 'package:leemon_app/core/models/sale_model.dart' as sale_models
 
 import 'pos_sync_models.dart';
 
+class _SalePaymentAmounts {
+  const _SalePaymentAmounts({
+    this.cash = 0,
+    this.card = 0,
+    this.transfer = 0,
+    this.credit = 0,
+  });
+
+  final num cash;
+  final num card;
+  final num transfer;
+  final num credit;
+
+  num get total => cash + card + transfer + credit;
+
+  _SalePaymentAmounts copyWith({
+    num? cash,
+    num? card,
+    num? transfer,
+    num? credit,
+  }) {
+    return _SalePaymentAmounts(
+      cash: cash ?? this.cash,
+      card: card ?? this.card,
+      transfer: transfer ?? this.transfer,
+      credit: credit ?? this.credit,
+    );
+  }
+}
+
 class PosSyncLocalStore {
   sqlite.Database? _db;
 
@@ -221,6 +251,10 @@ class PosSyncLocalStore {
         date            TEXT NOT NULL,
         total_amount    REAL NOT NULL,
         payment_method  TEXT NOT NULL,
+        cash_amount     REAL NOT NULL DEFAULT 0,
+        card_amount     REAL NOT NULL DEFAULT 0,
+        transfer_amount REAL NOT NULL DEFAULT 0,
+        credit_amount   REAL NOT NULL DEFAULT 0,
         pos_id          TEXT,
         store_id        TEXT,
         account_id      TEXT,
@@ -306,6 +340,10 @@ class PosSyncLocalStore {
       'ALTER TABLE sales ADD COLUMN pos_session_id TEXT NULL',
       'ALTER TABLE sales ADD COLUMN store_id TEXT NULL',
       'ALTER TABLE sales ADD COLUMN completed INTEGER NOT NULL DEFAULT 1',
+      'ALTER TABLE sales ADD COLUMN cash_amount REAL NOT NULL DEFAULT 0',
+      'ALTER TABLE sales ADD COLUMN card_amount REAL NOT NULL DEFAULT 0',
+      'ALTER TABLE sales ADD COLUMN transfer_amount REAL NOT NULL DEFAULT 0',
+      'ALTER TABLE sales ADD COLUMN credit_amount REAL NOT NULL DEFAULT 0',
       'ALTER TABLE sale_items ADD COLUMN product_name TEXT NULL',
       'ALTER TABLE payments ADD COLUMN pos_session_id TEXT NULL',
       'ALTER TABLE refunds ADD COLUMN pos_session_id TEXT NULL',
@@ -1465,13 +1503,16 @@ class PosSyncLocalStore {
       db.execute('DELETE FROM sales_history WHERE id = ?', [previousId]);
     }
 
+    final paymentBreakdown = _salePaymentBreakdown(db, payload);
+
     db.execute(
       '''
       INSERT INTO sales (
         id, client_sale_id, local_number, number, date, total_amount,
-        pos_session_id, payment_method, pos_id, store_id, account_id, customer_id,
+        pos_session_id, payment_method, cash_amount, card_amount,
+        transfer_amount, credit_amount, pos_id, store_id, account_id, customer_id,
         created_by_id, completed, synced
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
       ON CONFLICT(id) DO UPDATE SET
         client_sale_id = excluded.client_sale_id,
         local_number = excluded.local_number,
@@ -1480,6 +1521,10 @@ class PosSyncLocalStore {
         total_amount = excluded.total_amount,
         pos_session_id = excluded.pos_session_id,
         payment_method = excluded.payment_method,
+        cash_amount = excluded.cash_amount,
+        card_amount = excluded.card_amount,
+        transfer_amount = excluded.transfer_amount,
+        credit_amount = excluded.credit_amount,
         pos_id = excluded.pos_id,
         store_id = excluded.store_id,
         account_id = excluded.account_id,
@@ -1497,6 +1542,10 @@ class PosSyncLocalStore {
         _asDouble(payload['total_amount']),
         _nullableString(payload['pos_session_id']),
         _string(payload['payment_method'], fallback: 'cash'),
+        paymentBreakdown.cash,
+        paymentBreakdown.card,
+        paymentBreakdown.transfer,
+        paymentBreakdown.credit,
         _nullableString(payload['pos_id']),
         _nullableString(payload['store_id']),
         _nullableString(payload['account_id']),
@@ -2528,13 +2577,15 @@ class PosSyncLocalStore {
   }) async {
     final db = await _database;
     _inTransaction<void>(db, () {
+      final paymentBreakdown = _salePaymentBreakdown(db, payload);
       db.execute(
         '''
         INSERT OR IGNORE INTO sales (
           id, client_sale_id, local_number, number, date, total_amount,
-          pos_session_id, payment_method, pos_id, store_id, account_id, customer_id,
+          pos_session_id, payment_method, cash_amount, card_amount,
+          transfer_amount, credit_amount, pos_id, store_id, account_id, customer_id,
           created_by_id, completed, synced
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
         ''',
         [
           clientSaleId,
@@ -2545,6 +2596,10 @@ class PosSyncLocalStore {
           _asDouble(payload['total_amount']),
           _nullableString(payload['pos_session_id']),
           _string(payload['payment_method'], fallback: 'cash'),
+          paymentBreakdown.cash,
+          paymentBreakdown.card,
+          paymentBreakdown.transfer,
+          paymentBreakdown.credit,
           _nullableString(payload['pos_id']),
           _nullableString(payload['store_id']),
           _nullableString(payload['account_id']),
@@ -2702,7 +2757,12 @@ class PosSyncLocalStore {
     final sessionWhere = _sessionIdWhereClause(sessionIds.length);
 
     final salesRows = db.select(
-      'SELECT id, payment_method, total_amount FROM sales WHERE completed = 1 AND pos_session_id $sessionWhere',
+      '''
+      SELECT id, client_sale_id, payment_method, total_amount, cash_amount,
+             card_amount, transfer_amount, credit_amount
+      FROM sales
+      WHERE completed = 1 AND pos_session_id $sessionWhere
+      ''',
       sessionIds,
     );
 
@@ -2713,23 +2773,11 @@ class PosSyncLocalStore {
 
     for (final row in salesRows) {
       final map = _rowMap(row);
-      final amount = _asDouble(map['total_amount']);
-      switch (_string(map['payment_method']).toLowerCase()) {
-        case 'cash':
-          cashTotal += amount;
-          break;
-        case 'card':
-          cardTotal += amount;
-          break;
-        case 'transfer':
-          transferTotal += amount;
-          break;
-        case 'credit':
-        case 'debt':
-        case 'partial_debt':
-          creditTotal += amount;
-          break;
-      }
+      final amounts = _saleAmountsFromRow(db, map);
+      cashTotal += amounts.cash;
+      cardTotal += amounts.card;
+      transferTotal += amounts.transfer;
+      creditTotal += amounts.credit;
     }
 
     final itemRows = db.select(
@@ -2838,28 +2886,21 @@ class PosSyncLocalStore {
     num creditSalesTotal = 0;
 
     final salesRows = db.select(
-      'SELECT payment_method, total_amount FROM sales WHERE completed = 1 AND pos_session_id $sessionWhere',
+      '''
+      SELECT client_sale_id, payment_method, total_amount, cash_amount,
+             card_amount, transfer_amount, credit_amount
+      FROM sales
+      WHERE completed = 1 AND pos_session_id $sessionWhere
+      ''',
       sessionIds,
     );
     for (final row in salesRows) {
       final map = _rowMap(row);
-      final amount = _asDouble(map['total_amount']);
-      switch (_string(map['payment_method']).toLowerCase()) {
-        case 'cash':
-          cashSalesTotal += amount;
-          break;
-        case 'card':
-          cardSalesTotal += amount;
-          break;
-        case 'transfer':
-          transferSalesTotal += amount;
-          break;
-        case 'credit':
-        case 'debt':
-        case 'partial_debt':
-          creditSalesTotal += amount;
-          break;
-      }
+      final amounts = _saleAmountsFromRow(db, map);
+      cashSalesTotal += amounts.cash;
+      cardSalesTotal += amounts.card;
+      transferSalesTotal += amounts.transfer;
+      creditSalesTotal += amounts.credit;
     }
 
     final refundsRow = _firstRow(
@@ -2909,6 +2950,108 @@ class PosSyncLocalStore {
       expectedCashAmount: expectedCashAmount,
       totalSalesAmount: totalSalesAmount,
     );
+  }
+
+  _SalePaymentAmounts _salePaymentBreakdown(
+    sqlite.Database db,
+    Map<String, dynamic> payload,
+  ) {
+    final totalAmount = _asDouble(payload['total_amount']);
+    final paymentMethod =
+        _string(payload['payment_method'], fallback: 'cash').toLowerCase();
+    final payments = payload['payments'];
+
+    if (payments is List && payments.isNotEmpty) {
+      var result = const _SalePaymentAmounts();
+      for (final rawPayment in payments.whereType<Map>()) {
+        final payment = Map<String, dynamic>.from(rawPayment);
+        final amount = _asDouble(payment['amount']);
+        if (amount <= 0) continue;
+
+        final accountId = _string(payment['account_id']);
+        final accountType = accountId.isEmpty
+            ? ''
+            : _string(
+                _firstRow(
+                  db.select(
+                    'SELECT type FROM accounts WHERE id = ? LIMIT 1',
+                    [accountId],
+                  ),
+                )?['type'],
+              ).toLowerCase();
+        final clientPaymentId =
+            _string(payment['client_payment_id']).toLowerCase();
+
+        if (accountType == 'cash' || clientPaymentId.endsWith('-cash')) {
+          result = result.copyWith(cash: result.cash + amount);
+        } else if (accountType.contains('transfer') ||
+            clientPaymentId.endsWith('-transfer')) {
+          result = result.copyWith(transfer: result.transfer + amount);
+        } else {
+          result = result.copyWith(card: result.card + amount);
+        }
+      }
+      if (result.total > 0) return result;
+    }
+
+    return switch (paymentMethod) {
+      'cash' => _SalePaymentAmounts(cash: totalAmount),
+      'card' => _SalePaymentAmounts(card: totalAmount),
+      'transfer' => _SalePaymentAmounts(transfer: totalAmount),
+      'credit' ||
+      'debt' ||
+      'partial_debt' =>
+        _SalePaymentAmounts(credit: totalAmount),
+      _ => const _SalePaymentAmounts(),
+    };
+  }
+
+  _SalePaymentAmounts _saleAmountsFromRow(
+    sqlite.Database db,
+    Map<String, dynamic> row,
+  ) {
+    final amounts = _SalePaymentAmounts(
+      cash: _asDouble(row['cash_amount']),
+      card: _asDouble(row['card_amount']),
+      transfer: _asDouble(row['transfer_amount']),
+      credit: _asDouble(row['credit_amount']),
+    );
+    if (amounts.total > 0) return amounts;
+
+    if (_string(row['payment_method']).toLowerCase() == 'mixed') {
+      final clientSaleId = _string(row['client_sale_id']);
+      if (clientSaleId.isNotEmpty) {
+        final outboxRow = _firstRow(
+          db.select(
+            '''
+            SELECT payload_json
+            FROM outbox_operations
+            WHERE type = ? AND client_id = ?
+            ORDER BY datetime(created_at) DESC
+            LIMIT 1
+            ''',
+            [OutboxOperationType.sale.value, clientSaleId],
+          ),
+        );
+        if (outboxRow != null) {
+          final payload = decodeJsonMap(_string(outboxRow['payload_json']));
+          final fromPayload = _salePaymentBreakdown(db, payload);
+          if (fromPayload.total > 0) return fromPayload;
+        }
+      }
+    }
+
+    final amount = _asDouble(row['total_amount']);
+    return switch (_string(row['payment_method']).toLowerCase()) {
+      'cash' => _SalePaymentAmounts(cash: amount),
+      'card' => _SalePaymentAmounts(card: amount),
+      'transfer' => _SalePaymentAmounts(transfer: amount),
+      'credit' ||
+      'debt' ||
+      'partial_debt' =>
+        _SalePaymentAmounts(credit: amount),
+      _ => const _SalePaymentAmounts(),
+    };
   }
 
   List<Object?> _sessionQueryIds(
