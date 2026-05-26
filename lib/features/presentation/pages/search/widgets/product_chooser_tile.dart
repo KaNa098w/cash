@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:leemon_app/core/models/product_response.dart';
+import 'package:leemon_app/features/data/utils/money.dart';
 
 class ProductChooserTile extends StatefulWidget {
   const ProductChooserTile({
@@ -149,8 +150,7 @@ class ProductChooserTileState extends State<ProductChooserTile> {
   }
 
   String _formatPrice(num value) {
-    // Если у тебя есть свой formatter (money.dart) — лучше подставить его.
-    return '${value.toStringAsFixed(2)} ₸';
+    return money(value);
   }
 }
 

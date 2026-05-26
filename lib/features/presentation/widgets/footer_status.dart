@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:leemon_app/features/presentation/widgets/quit_products_screen.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
@@ -12,7 +13,6 @@ import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 import 'package:leemon_app/features/presentation/widgets/conversion_product_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/footer_panels_widget.dart';
-import 'package:leemon_app/features/presentation/widgets/live_data_text.dart';
 import 'package:leemon_app/features/presentation/widgets/payment_panel.dart';
 
 class FooterStatus extends StatelessWidget {
@@ -51,16 +51,13 @@ class _FooterDesktop extends StatelessWidget {
       builder: (context, c) {
         final auth = context.watch<AuthTokenProvider>();
         final compact = c.maxWidth < 1200;
-        final infoWidth = compact ? 152.0 : 190.0;
         final infoPad = compact ? 12.0 : 16.0;
-        final clockSize = compact ? 22.0 : 22.0;
         final bottomInset = MediaQuery.of(context).viewPadding.bottom;
         final baseFooterHeight = compact ? 172.0 : 182.0;
         final footerHeight = baseFooterHeight + bottomInset;
+        final infoHeight = footerHeight - (infoPad * 2);
         final posName = (auth.posName ?? '').trim();
         final storeName = (auth.storeName ?? '').trim();
-        final footerTitle = '${posName.isEmpty ? 'Касса-1' : posName}\n'
-            '${storeName.isEmpty ? 'Наименование магазина' : storeName}';
 
         return SizedBox(
           height: footerHeight,
@@ -72,62 +69,122 @@ class _FooterDesktop extends StatelessWidget {
               children: [
                 Padding(
                   padding: EdgeInsets.all(infoPad),
-                  child: Container(
-                    width: infoWidth,
-                    height: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1F2937),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: const Color.fromARGB(255, 255, 255, 255),
-                          width: 1),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            SvgPicture.asset(
-                              'assets/svg/time.svg',
-                              width: clockSize,
-                              height: clockSize,
-                              colorFilter: const ColorFilter.mode(
-                                Colors.white54,
-                                BlendMode.srcIn,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            StreamBuilder(
-                              stream:
-                                  Stream.periodic(const Duration(seconds: 1)),
-                              builder: (_, __) {
-                                return Text(
-                                  TimeOfDay.now().format(context),
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: clockSize,
-                                    fontWeight: FontWeight.w700,
+                  child: SizedBox(
+                    height: infoHeight,
+                    width: infoHeight * (176 / 146),
+                    child: FittedBox(
+                      fit: BoxFit.fill,
+                      child: SizedBox(
+                        width: 176,
+                        height: 146,
+                        child: Container(
+                          padding: EdgeInsets.zero,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF373D46),
+                            borderRadius: BorderRadius.circular(16.6256),
+                            border: Border.all(color: Colors.white, width: 1),
+                          ),
+                          child: Stack(
+                            children: [
+                              Positioned(
+                                left: 21,
+                                top: 23,
+                                child: SvgPicture.asset(
+                                  'assets/svg/time.svg',
+                                  width: 21.5,
+                                  height: 21.5,
+                                  colorFilter: const ColorFilter.mode(
+                                    Colors.white,
+                                    BlendMode.srcIn,
                                   ),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        const LiveDateText(),
-                        SizedBox(height: compact ? 8 : 14),
-                        Text(
-                          footerTitle,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 11,
-                            height: 1.1,
+                                ),
+                              ),
+                              Positioned(
+                                left: 60,
+                                top: 15,
+                                width: 95,
+                                height: 38,
+                                child: StreamBuilder<int>(
+                                  stream: Stream.periodic(
+                                    const Duration(seconds: 1),
+                                    (tick) => tick,
+                                  ),
+                                  builder: (_, __) {
+                                    return FittedBox(
+                                      alignment: Alignment.centerLeft,
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
+                                        DateFormat('HH:mm')
+                                            .format(DateTime.now()),
+                                        style: GoogleFonts.inter(
+                                          color: Colors.white,
+                                          fontSize: 36,
+                                          fontWeight: FontWeight.w400,
+                                          height: 1,
+                                          letterSpacing: 0,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const Positioned(
+                                left: 21,
+                                top: 61,
+                                width: 134,
+                                height: 16,
+                                child: _FooterDateText(),
+                              ),
+                              Positioned(
+                                left: 21,
+                                right: 21,
+                                top: 96,
+                                height: 17,
+                                child: FittedBox(
+                                  alignment: Alignment.centerLeft,
+                                  fit: BoxFit.scaleDown,
+                                  child: 
+                                      Text(
+                                        posName.isEmpty ? 'Касса-1' : posName,
+                                        maxLines: 1,
+                                        style: GoogleFonts.inter(
+                                          color: Colors.white,
+                                          fontSize: 13.4,
+                                          fontWeight: FontWeight.w400,
+                                          height: 1,
+                                          letterSpacing: 0,
+                                        ),
+                                      ),
+                                    
+                                ),
+                              ),
+                              Positioned(
+                                left: 21,
+                                right: 21,
+                                top: 113,
+                                height: 17,
+                                child: FittedBox(
+                                  alignment: Alignment.centerLeft,
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    storeName.isEmpty
+                                        ? 'Наименование Магаз'
+                                        : storeName,
+                                    maxLines: 1,
+                                    style: GoogleFonts.inter(
+                                      color: Colors.white,
+                                      fontSize: 13.4,
+                                      fontWeight: FontWeight.w400,
+                                      height: 1,
+                                      letterSpacing: 0,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -326,6 +383,42 @@ class _FooterDesktop extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+class _FooterDateText extends StatelessWidget {
+  const _FooterDateText();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<int>(
+      stream: Stream.periodic(const Duration(minutes: 1), (tick) => tick),
+      builder: (_, __) {
+        return FittedBox(
+          alignment: Alignment.centerLeft,
+          fit: BoxFit.scaleDown,
+          child: Text(
+            _capitalizeDate(
+                DateFormat('d MMMM | EEEE', 'ru_RU').format(DateTime.now())),
+            maxLines: 1,
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w400,
+              height: 1,
+              letterSpacing: 0,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _capitalizeDate(String value) {
+    return value.split(' ').map((part) {
+      if (part.isEmpty || part == '|') return part;
+      return part[0].toUpperCase() + part.substring(1);
+    }).join(' ');
   }
 }
 

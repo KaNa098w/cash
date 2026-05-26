@@ -92,7 +92,7 @@ class FooterControlsOnly extends StatelessWidget {
                     child: Text(
                       '-',
                       style: GoogleFonts.inter(
-                        fontSize: s(22),
+                        fontSize: s(26),
                         fontWeight: FontWeight.w600,
                         color: Colors.black,
                       ),
@@ -108,7 +108,7 @@ class FooterControlsOnly extends StatelessWidget {
                     child: Text(
                       '+',
                       style: GoogleFonts.inter(
-                        fontSize: s(22),
+                        fontSize: s(26),
                         fontWeight: FontWeight.w600,
                         color: Colors.black,
                       ),
@@ -136,38 +136,8 @@ class FooterControlsOnly extends StatelessWidget {
                     width: smallBtnW,
                     height: smallBtnH,
                     radius: radius,
-                    background: _btnGrey,
-                    onTap: onQuick,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: s(6),
-                        vertical: s(4),
-                      ),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          '\u0411\u044b\u0441\u0442\u0440\u044b\u0435\n\u0442\u043e\u0432\u0430\u0440\u044b',
-                          maxLines: 2,
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(
-                            fontSize: s(15),
-                            fontWeight: FontWeight.w500,
-                            color: Colors.black,
-                            height: 1.06,
-                            letterSpacing: -0.1,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: rowGap),
-                  _SmallBtn(
-                    width: smallBtnW,
-                    height: smallBtnH,
-                    radius: radius,
-                    background: onPayCard == null
-                        ? const Color(0xFFBDBDBD)
-                        : _btnYellow,
+                                     background: _btnGrey,
+
                     onTap: onPayCard,
                     child: Padding(
                       padding: EdgeInsets.symmetric(
@@ -177,16 +147,48 @@ class FooterControlsOnly extends StatelessWidget {
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
-                          'Универсальный\nпродукт',
+                          'Быстрая\nпродажа',
                           maxLines: 2,
                           textAlign: TextAlign.center,
                           style: GoogleFonts.inter(
-                            fontSize: s(15),
+                            fontSize: s(18),
                             fontWeight: FontWeight.w500,
                             color: onPayCard == null
                                 ? const Color(0xFF5F6368)
                                 : Colors.black,
                             height: 1.06,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  
+                  SizedBox(width: rowGap),
+                  _SmallBtn(
+                    width: smallBtnW,
+                    height: smallBtnH,
+                    radius: radius,
+                     background: onPayCard == null
+                        ? const Color(0xFFBDBDBD)
+                        : _btnYellow,
+                    onTap: onQuick,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: s(6),
+                        vertical: s(4),
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'Товары',
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontSize: s(18),
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black,
+                            height: 1,
                             letterSpacing: 0,
                           ),
                         ),
@@ -208,9 +210,11 @@ class FooterControlsOnly extends StatelessWidget {
                         softWrap: false,
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
-                          fontSize: s(15),
+                          fontSize: s(18),
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
+                          height: 1,
+                          letterSpacing: 0,
                         ),
                       ),
                     ),
@@ -221,7 +225,7 @@ class FooterControlsOnly extends StatelessWidget {
                     width: payW,
                     height: payH,
                     radius: radius,
-                    fontSize: s(18),
+                    fontSize: s(22),
                   ),
                 ],
               ),
@@ -371,9 +375,10 @@ class _PayBtn extends StatelessWidget {
           '\u041e\u041f\u041b\u0410\u0422\u0410',
           style: GoogleFonts.inter(
             fontSize: fontSize,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
             color: onTap == null ? Colors.white70 : Colors.white,
-            letterSpacing: 0.3,
+            height: 1,
+            letterSpacing: 0,
           ),
         ),
       ),

@@ -5,12 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get_it/get_it.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'hold_delete_confirm_dialog.dart';
 import 'show_pos_action_dialog.dart';
+
+double _topBarTabWidth(bool compact) => compact ? 122.0 : 126.0;
 
 class TopBar extends StatelessWidget {
   const TopBar({super.key});
@@ -30,7 +33,7 @@ class TopBar extends StatelessWidget {
           color: const Color(0xFF262B35),
           height: barHeight,
           child: Padding(
-            padding: EdgeInsets.fromLTRB(sidePad, topPad, 8, 0),
+            padding: EdgeInsets.fromLTRB(sidePad, 0, 8, 0),
             child: BlocBuilder<PosCubit, PosState>(
               buildWhen: (p, n) =>
                   p.tickets != n.tickets ||
@@ -43,63 +46,66 @@ class TopBar extends StatelessWidget {
                 return Row(
                   children: [
                     Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            _Chip(
-                              text: 'История',
-                              icon: 'assets/svg/history.svg',
-                              active: state.isHistoryMode,
-                              compact: compact,
-                              onTap: cubit.showHistory,
-                            ),
-                            SizedBox(width: tabGap),
-                            for (final t in state.tickets) ...[
-                              _TicketTab(
-                                text: '${t.items.length} товар',
-                                active: !state.isHistoryMode &&
-                                    t.id == state.activeTicketId,
+                      child: Padding(
+                        padding: EdgeInsets.only(top: topPad),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              _Chip(
+                                text: 'История',
+                                icon: 'assets/svg/history.svg',
+                                active: state.isHistoryMode,
                                 compact: compact,
-                                onTap: () => cubit.switchTicket(t.id),
-                                showClose: canCloseTickets,
-                                onClose: canCloseTickets
-                                    ? () async {
-                                        if (t.items.isEmpty) {
-                                          cubit.closeTicket(t.id);
-                                          return;
-                                        }
-
-                                        final shouldDelete =
-                                            await showHoldDeleteConfirmDialog(
-                                          context,
-                                          ticketId: t.id,
-                                          itemsCount: t.items.length,
-                                        );
-                                        if (!context.mounted ||
-                                            shouldDelete != true) {
-                                          return;
-                                        }
-
-                                        cubit.closeTicket(t.id);
-                                      }
-                                    : null,
+                                onTap: cubit.showHistory,
                               ),
                               SizedBox(width: tabGap),
-                            ],
-                            TextButton(
-                              onPressed: cubit.createHoldTicket,
-                              child: Text(
-                                '+ ОТЛОЖКА',
-                                style: TextStyle(
-                                  color: const Color(0xFFFFFFFF),
-                                  fontSize: holdFont,
-                                  fontWeight: FontWeight.w500,
-                                  letterSpacing: 0.2,
+                              for (final t in state.tickets) ...[
+                                _TicketTab(
+                                  text: '${t.items.length} товар',
+                                  active: !state.isHistoryMode &&
+                                      t.id == state.activeTicketId,
+                                  compact: compact,
+                                  onTap: () => cubit.switchTicket(t.id),
+                                  showClose: canCloseTickets,
+                                  onClose: canCloseTickets
+                                      ? () async {
+                                          if (t.items.isEmpty) {
+                                            cubit.closeTicket(t.id);
+                                            return;
+                                          }
+
+                                          final shouldDelete =
+                                              await showHoldDeleteConfirmDialog(
+                                            context,
+                                            ticketId: t.id,
+                                            itemsCount: t.items.length,
+                                          );
+                                          if (!context.mounted ||
+                                              shouldDelete != true) {
+                                            return;
+                                          }
+
+                                          cubit.closeTicket(t.id);
+                                        }
+                                      : null,
+                                ),
+                                SizedBox(width: tabGap),
+                              ],
+                              TextButton(
+                                onPressed: cubit.createHoldTicket,
+                                child: Text(
+                                  '+ ОТЛОЖКА',
+                                  style: TextStyle(
+                                    color: const Color(0xFFFFFFFF),
+                                    fontSize: holdFont,
+                                    fontWeight: FontWeight.w500,
+                                    letterSpacing: 0.2,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -108,6 +114,7 @@ class TopBar extends StatelessWidget {
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          _divider(),
                           IconButton(
                             // onPressed: () => showIncomingOrdersDialog(context),
                             onPressed: () {},
@@ -115,7 +122,7 @@ class TopBar extends StatelessWidget {
                               'assets/svg/bag.svg',
                               width: 24,
                               height: 24,
-                              color: Colors.white70,
+                              color: Colors.white,
                             ),
                             tooltip: '',
                           ),
@@ -128,7 +135,7 @@ class TopBar extends StatelessWidget {
                               'assets/svg/elements.svg',
                               width: 24,
                               height: 24,
-                              color: Colors.white70,
+                              color: Colors.white,
                             ),
                             tooltip: '',
                           ),
@@ -150,7 +157,7 @@ class TopBar extends StatelessWidget {
 
   Widget _divider() => Container(
         width: 1,
-        height: 62,
+        height: 68,
         color: Colors.black45,
         margin: const EdgeInsets.symmetric(horizontal: 8),
       );
@@ -176,13 +183,12 @@ class _TicketTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = active ? const Color(0xFFF3F4F6) : const Color(0xFF536074);
+    final bg = active ? const Color(0xFFF2F2F2) : const Color(0xFF536074);
     final textColor = active ? Colors.black : Colors.white70;
-    final minWidth = compact ? 128.0 : 118.0;
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        constraints: BoxConstraints(minWidth: minWidth),
+        constraints: BoxConstraints.tightFor(width: _topBarTabWidth(compact)),
         padding: EdgeInsets.symmetric(
           horizontal: compact ? 18 : 16,
           vertical: compact ? 12 : 16,
@@ -255,15 +261,18 @@ class _Chip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = active ? const Color(0xFFF3F4F6) : const Color(0xFF536074);
-    final iconColor = active ? Colors.black : Colors.white70;
+    final bg = active
+        ? const Color.fromARGB(255, 255, 255, 255)
+        : const Color(0xFF536074);
+    final iconColor = active ? Colors.black : Colors.white;
     final textColor = iconColor;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
+        constraints: BoxConstraints.tightFor(width: _topBarTabWidth(compact)),
         padding: EdgeInsets.symmetric(
-          horizontal: compact ? 18 : 12,
+          horizontal: compact ? 10 : 8,
           vertical: compact ? 12 : 16,
         ),
         decoration: BoxDecoration(
@@ -274,13 +283,17 @@ class _Chip extends StatelessWidget {
           ),
         ),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              text,
-              style: TextStyle(
-                color: textColor,
-                fontSize: compact ? 15 : 16,
-                fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
+            Flexible(
+              child: Text(
+                text,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: compact ? 15 : 16,
+                  fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
+                ),
               ),
             ),
             const SizedBox(width: 6),
@@ -353,17 +366,32 @@ class _StatusDotState extends State<_StatusDot> {
   @override
   Widget build(BuildContext context) {
     final tokenProvider = context.read<AuthTokenProvider>();
-    final cachierName = tokenProvider.activeUserName ?? 'Гость';
+    final cashierName = _shortCashierName(tokenProvider.activeUserName);
 
     return Row(
       children: [
-        Column(
-          children: [
-            Text(cachierName,
-                style: TextStyle(color: Colors.white70, fontSize: 16)),
-            Text('Кассир',
-                style: TextStyle(color: Colors.white70, fontSize: 12)),
-          ],
+        Padding(
+          padding: const EdgeInsets.only(left: 10, top: 18, right: 15),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                cashierName,
+                textAlign: TextAlign.left,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  height: 1,
+                  letterSpacing: 0,
+                ),
+              ),
+              const Text(
+                'Кассир',
+                style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ],
+          ),
         ),
         const SizedBox(width: 14),
         GestureDetector(
@@ -372,13 +400,13 @@ class _StatusDotState extends State<_StatusDot> {
             'assets/svg/lock.svg',
             width: 24,
             height: 24,
-            color: Colors.white70,
+            color: Colors.white,
           ),
         ),
         const SizedBox(width: 14),
         Container(
           width: 1,
-          height: 62,
+          height: 68,
           color: Colors.black45,
           margin: const EdgeInsets.symmetric(horizontal: 8),
         ),
@@ -393,5 +421,14 @@ class _StatusDotState extends State<_StatusDot> {
         ),
       ],
     );
+  }
+
+  String _shortCashierName(String? rawName) {
+    final clean = (rawName ?? '').trim();
+    if (clean.isEmpty) return 'Гость';
+    final parts = clean.split(RegExp(r'\s+'));
+    if (parts.length == 1) return parts.first;
+    final surnameInitial = parts[1].characters.first.toUpperCase();
+    return '${parts.first} $surnameInitial';
   }
 }

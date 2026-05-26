@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/core/models/product_response.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
@@ -110,7 +111,6 @@ class _CartListState extends State<CartList> {
         child: Column(
           children: [
             const _Header(), // просто подписи сверху
-            const SizedBox(height: 8),
             Expanded(
               child: Container(
                 width: double.infinity,
@@ -183,7 +183,7 @@ class _CartListState extends State<CartList> {
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                     ),
-                                    const SizedBox(width: 20),
+                                    const SizedBox(width: 15),
 
                                     // Наименование + метки
                                     Expanded(
@@ -203,7 +203,7 @@ class _CartListState extends State<CartList> {
 
                                     // Цена
                                     SizedBox(
-                                      width: 100,
+                                      width: 130,
                                       child: InkWell(
                                         onTap: it.product.isUniversal
                                             ? () async {
@@ -261,33 +261,43 @@ class _CartListState extends State<CartList> {
                                         hoverColor: Colors.transparent,
 
                                         borderRadius: BorderRadius.circular(10),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 8, vertical: 6),
-                                          decoration: BoxDecoration(
-                                            color: isSelected
-                                                ? Colors.white
-                                                // тот же фон что и у выбранной карточки
-                                                : Colors.transparent,
-                                            borderRadius:
-                                                BorderRadius.circular(10),
-                                          ),
-                                          alignment: Alignment.center,
-                                          child: Text(
-                                            '${formatQtyByUnit(it.qty, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit}',
-                                            textAlign: TextAlign.center,
-                                            style: const TextStyle(
-                                                fontSize: kCartFs),
+                                        child: Align(
+                                          alignment: Alignment.centerRight,
+                                          child: Container(
+                                            width: 78,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: isSelected
+                                                  ? Colors.white
+                                                  // тот же фон что и у выбранной карточки
+                                                  : Colors.transparent,
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            alignment: Alignment.center,
+                                            child: Text(
+                                              '${formatQtyByUnit(it.qty, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit}',
+                                              textAlign: TextAlign.center,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.w700,
+                                                height: 1.4,
+                                                letterSpacing: 0.27,
+                                              ),
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
 
-                                    const SizedBox(width: 40),
+                                    const SizedBox(width: 55),
 
                                     // Скидка
                                     SizedBox(
-                                      width: 110,
+                                      width: 60,
                                       child: _DiscountCell(
                                         item: it,
                                         onApply: () async {
@@ -339,9 +349,11 @@ class _CartListState extends State<CartList> {
                                       child: Text(
                                         money(it.sum),
                                         textAlign: TextAlign.right,
-                                        style: const TextStyle(
-                                          fontSize: kCartFs,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 18,
                                           fontWeight: FontWeight.w600,
+                                          height: 1.4,
+                                          letterSpacing: 0.27,
                                         ),
                                       ),
                                     ),
@@ -541,7 +553,7 @@ class _Header extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
       child: Row(
         children: [
-          const SizedBox(width: 40), // место под превью
+          const SizedBox(width: 65), // место под превью
           const Expanded(
             child: Text(
               'Наименование',
@@ -552,10 +564,10 @@ class _Header extends StatelessWidget {
             ),
           ),
           cell('Цена', w: 100),
-          const SizedBox(width: 25),
+          const SizedBox(width: 30),
           cell('Количество', w: 120),
           const SizedBox(width: 25),
-          cell('Скидка', w: 110),
+          cell('Скидка', w: 80),
           const SizedBox(width: 25),
           cell('Сумма', w: 140),
           const SizedBox(width: 60),
@@ -583,7 +595,12 @@ class _PriceCell extends StatelessWidget {
           Text(
             money(item.product.priceAfterDiscount),
             textAlign: TextAlign.right,
-            style: const TextStyle(fontSize: kCartFs),
+            style: GoogleFonts.inter(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              height: 1.4,
+              letterSpacing: 0.27,
+            ),
           ),
         ],
       );
@@ -592,7 +609,12 @@ class _PriceCell extends StatelessWidget {
     return Text(
       money(item.product.price),
       textAlign: TextAlign.right,
-      style: const TextStyle(fontSize: kCartFs),
+      style: GoogleFonts.inter(
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        letterSpacing: 0.27,
+      ),
     );
   }
 }
@@ -675,8 +697,8 @@ class _DiscountCell extends StatelessWidget {
             : const Color(0xFF9CA3AF);
 
     return Container(
-      constraints: const BoxConstraints(minWidth: 64.242, minHeight: 29.397),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      constraints: const BoxConstraints(minWidth: 50, minHeight: 29.397),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: bg,
@@ -685,7 +707,13 @@ class _DiscountCell extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: TextStyle(fontSize: 16, color: fg, fontWeight: FontWeight.w900),
+        style: GoogleFonts.inter(
+          fontSize: 16,
+          color: fg,
+          fontWeight: FontWeight.w600,
+          height: 1.4,
+          letterSpacing: 0.34,
+        ),
         textAlign: TextAlign.center,
       ),
     );

@@ -192,7 +192,8 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
                     onPressed: _showKeyboard, // ✅ overlay, не блокирует фон
                     style: OutlinedButton.styleFrom(
                       padding: EdgeInsets.zero,
-                      side: const BorderSide(color: Color.fromARGB(255, 189, 190, 191)),
+                      side: const BorderSide(
+                          color: Color.fromARGB(255, 189, 190, 191)),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
@@ -416,5 +417,5 @@ String _fmtMoneyKzt(num v) {
     if (pos > 1 && pos % 3 == 1) buf.write(' ');
   }
 
-  return '${buf.toString()}.$frac ₸';
+  return '${buf.toString()},$frac ₸';
 }

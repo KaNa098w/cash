@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/product_response.dart';
@@ -719,7 +720,7 @@ class _SearchBarState extends State<SearchBar> {
                   ),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10.61),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.15),
@@ -800,7 +801,7 @@ class _SearchBarState extends State<SearchBar> {
                                 style: const TextStyle(fontSize: 11),
                               ), */
                                   trailing: Text(
-                                    '${p.sellingPrice.toStringAsFixed(2)} т',
+                                    money(p.sellingPrice),
                                     style: TextStyle(
                                       fontWeight: selected
                                           ? FontWeight.w800
@@ -861,103 +862,117 @@ class _SearchBarState extends State<SearchBar> {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final compactDesktop = screenWidth <= 1100;
     final customerGapWidth = compactDesktop ? 8.0 : 12.0;
-    final buyerBtnFontSize = compactDesktop ? 16.0 : 18.0;
+    const topControlHeight = 36.0;
 
     return Row(
       children: [
         Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            padding: const EdgeInsets.all(2),
-            child: CompositedTransformTarget(
-              link: _layerLink,
-              child: Container(
-                key: _fieldKey,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: CallbackShortcuts(
-                  bindings: <ShortcutActivator, VoidCallback>{
-                    const SingleActivator(LogicalKeyboardKey.arrowDown): () {
-                      if (_chooserEntry != null &&
-                          _chooserProducts.isNotEmpty) {
-                        _moveChooserSelection(1);
-                      }
+          flex: compactDesktop ? 9 : 8,
+          child: SizedBox(
+            height: topControlHeight,
+            child: Container(
+              decoration: const BoxDecoration(),
+              padding: EdgeInsets.zero,
+              child: CompositedTransformTarget(
+                link: _layerLink,
+                child: Container(
+                  key: _fieldKey,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0x33000000),
+                      width: 1,
+                    ),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: CallbackShortcuts(
+                    bindings: <ShortcutActivator, VoidCallback>{
+                      const SingleActivator(LogicalKeyboardKey.arrowDown): () {
+                        if (_chooserEntry != null &&
+                            _chooserProducts.isNotEmpty) {
+                          _moveChooserSelection(1);
+                        }
+                      },
+                      const SingleActivator(LogicalKeyboardKey.arrowUp): () {
+                        if (_chooserEntry != null &&
+                            _chooserProducts.isNotEmpty) {
+                          _moveChooserSelection(-1);
+                        }
+                      },
+                      const SingleActivator(LogicalKeyboardKey.enter): () {
+                        if (_chooserEntry != null &&
+                            _chooserProducts.isNotEmpty) {
+                          final product =
+                              _chooserProducts[_chooserSelectedIndex];
+                          unawaited(_selectChooserProduct(product));
+                        } else {
+                          _doSearch();
+                        }
+                      },
+                      const SingleActivator(LogicalKeyboardKey.numpadEnter):
+                          () {
+                        if (_chooserEntry != null &&
+                            _chooserProducts.isNotEmpty) {
+                          final product =
+                              _chooserProducts[_chooserSelectedIndex];
+                          unawaited(_selectChooserProduct(product));
+                        } else {
+                          _doSearch();
+                        }
+                      },
                     },
-                    const SingleActivator(LogicalKeyboardKey.arrowUp): () {
-                      if (_chooserEntry != null &&
-                          _chooserProducts.isNotEmpty) {
-                        _moveChooserSelection(-1);
-                      }
-                    },
-                    const SingleActivator(LogicalKeyboardKey.enter): () {
-                      if (_chooserEntry != null &&
-                          _chooserProducts.isNotEmpty) {
-                        final product = _chooserProducts[_chooserSelectedIndex];
-                        unawaited(_selectChooserProduct(product));
-                      } else {
-                        _doSearch();
-                      }
-                    },
-                    const SingleActivator(LogicalKeyboardKey.numpadEnter): () {
-                      if (_chooserEntry != null &&
-                          _chooserProducts.isNotEmpty) {
-                        final product = _chooserProducts[_chooserSelectedIndex];
-                        unawaited(_selectChooserProduct(product));
-                      } else {
-                        _doSearch();
-                      }
-                    },
-                  },
-                  child: Focus(
-                    onKeyEvent: _handleSearchKeyEvent,
-                    child: TextField(
-                      controller: _controller,
-                      focusNode: _focusNode,
-                      autofocus: searchCanRequestFocus,
-                      canRequestFocus: searchCanRequestFocus,
-                      readOnly: _disableSearchFieldForIpad || isHistoryMode,
-                      showCursor: searchCanRequestFocus,
-                      enableInteractiveSelection:
-                          !_disableSearchFieldForIpad && !isHistoryMode,
-                      onTap: _restoreSearchFocus,
-                      onTapOutside: (_) => _restoreSearchFocus(),
-                      onSubmitted: (_) => _doSearch(),
-                      textInputAction: TextInputAction.search,
-                      style: const TextStyle(fontSize: 18),
-                      decoration: InputDecoration(
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 12,
-                          horizontal: 0,
-                        ),
-                        hintText: 'Введите наименование товара или код товара',
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        suffixIconConstraints: const BoxConstraints(
-                          minHeight: 42,
-                          minWidth: 42,
-                        ),
-                        suffixIcon: SizedBox(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                tooltip: 'Найти',
-                                icon: SvgPicture.asset(
-                                  'assets/svg/search.svg',
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                onPressed: _doSearch,
-                              ),
-                            ],
+                    child: Focus(
+                      onKeyEvent: _handleSearchKeyEvent,
+                      child: TextField(
+                        controller: _controller,
+                        focusNode: _focusNode,
+                        autofocus: searchCanRequestFocus,
+                        canRequestFocus: searchCanRequestFocus,
+                        readOnly: _disableSearchFieldForIpad || isHistoryMode,
+                        showCursor: searchCanRequestFocus,
+                        enableInteractiveSelection:
+                            !_disableSearchFieldForIpad && !isHistoryMode,
+                        onTap: _restoreSearchFocus,
+                        onTapOutside: (_) => _restoreSearchFocus(),
+                        onSubmitted: (_) => _doSearch(),
+                        textInputAction: TextInputAction.search,
+                        style: const TextStyle(fontSize: 18),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 7,
+                            horizontal: 0,
+                          ),
+                          hintText:
+                              'Введите наименование товара или код товара',
+                          hintStyle: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            height: 1.4,
+                            letterSpacing: 0.26,
+                            color: const Color(0xFF999999),
+                          ),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          suffixIconConstraints: const BoxConstraints(
+                            minHeight: topControlHeight,
+                            minWidth: 30,
+                          ),
+                          suffixIcon: IconButton(
+                            tooltip: 'Найти',
+                            padding: const EdgeInsets.only(right: 4),
+                            constraints: const BoxConstraints.tightFor(
+                              width: 30,
+                              height: topControlHeight,
+                            ),
+                            icon: SvgPicture.asset(
+                              'assets/svg/search.svg',
+                              width: 20,
+                              height: 20,
+                            ),
+                            onPressed: _doSearch,
                           ),
                         ),
                       ),
@@ -969,20 +984,28 @@ class _SearchBarState extends State<SearchBar> {
           ),
         ),
         const SizedBox(width: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: Colors.grey, width: 1.2),
-            borderRadius: BorderRadius.circular(7),
-          ),
-          child: IconButton(
-            tooltip: 'Клавитура',
-            icon: SvgPicture.asset(
-              'assets/svg/keyboard.svg',
-              width: 20,
-              height: 20,
+        SizedBox(
+          height: topControlHeight,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: const Color(0x33000000), width: 1),
+              borderRadius: BorderRadius.circular(7),
             ),
-            onPressed: _openKeyboard,
+            child: IconButton(
+              tooltip: 'Клавитура',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(
+                height: topControlHeight,
+                width: 46,
+              ),
+              icon: SvgPicture.asset(
+                'assets/svg/keyboard.svg',
+                width: 20,
+                height: 20,
+              ),
+              onPressed: _openKeyboard,
+            ),
           ),
         ),
         if (isMobileCameraCapable) ...[
@@ -1001,80 +1024,89 @@ class _SearchBarState extends State<SearchBar> {
           ),
         ],
         const SizedBox(width: 16),
-        OutlinedButton(
-          onPressed: () async {
-            if (_openingCustomerPicker) return;
-            _openingCustomerPicker = true;
-            final auth = context.read<AuthTokenProvider>();
-            final posKey = auth.posKey?.trim() ?? '';
-            if (posKey.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('posKey пустой')),
-              );
-              _openingCustomerPicker = false;
-              return;
-            }
-
-            try {
-              final ds = sl<CustomersRemoteDataSource>();
-
-              // ✅ загрузили клиентов
-              final dtos = await ds.listCustomers(key: posKey);
-
-              final customers = dtos
-                  .map((e) => CustomerLite(
-                        id: e.id,
-                        name: e.name,
-                        phone: e.phone,
-                        balance: 0,
-                      ))
-                  .toList();
-
-              final selected = await _runWithDialogFocus(() {
-                return showCustomerPickerDialog(
-                  context,
-                  customers: customers,
+        SizedBox(
+          height: topControlHeight,
+          child: OutlinedButton(
+            onPressed: () async {
+              if (_openingCustomerPicker) return;
+              _openingCustomerPicker = true;
+              final auth = context.read<AuthTokenProvider>();
+              final posKey = auth.posKey?.trim() ?? '';
+              if (posKey.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('posKey пустой')),
                 );
-              });
+                _openingCustomerPicker = false;
+                return;
+              }
 
-              if (!mounted) return;
-              if (selected == null) return;
-              this.context.read<PosCubit>().setCustomerForActiveTicket(
-                    PosCustomer(
-                      id: selected.id,
-                      name: selected.name,
-                      phone: selected.phone,
-                    ),
+              try {
+                final ds = sl<CustomersRemoteDataSource>();
+
+                // ✅ загрузили клиентов
+                final dtos = await ds.listCustomers(key: posKey);
+
+                final customers = dtos
+                    .map((e) => CustomerLite(
+                          id: e.id,
+                          name: e.name,
+                          phone: e.phone,
+                          balance: 0,
+                        ))
+                    .toList();
+
+                final selected = await _runWithDialogFocus(() {
+                  return showCustomerPickerDialog(
+                    context,
+                    customers: customers,
                   );
-            } catch (e) {
-              if (!mounted) return;
-              ScaffoldMessenger.of(this.context).showSnackBar(
-                SnackBar(
-                  content: Text('Не удалось загрузить клиентов: $e'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            } finally {
-              _openingCustomerPicker = false;
-            }
-          },
-          style: OutlinedButton.styleFrom(
-            backgroundColor: Colors.white,
-            foregroundColor: Colors.black,
-            side: const BorderSide(color: Colors.black, width: 1.2),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(7),
+                });
+
+                if (!mounted) return;
+                if (selected == null) return;
+                this.context.read<PosCubit>().setCustomerForActiveTicket(
+                      PosCustomer(
+                        id: selected.id,
+                        name: selected.name,
+                        phone: selected.phone,
+                      ),
+                    );
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(
+                    content: Text('Не удалось загрузить клиентов: $e'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              } finally {
+                _openingCustomerPicker = false;
+              }
+            },
+            style: OutlinedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              side: const BorderSide(color: Colors.black, width: 1.32),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(7),
+              ),
             ),
-          ),
-          child: Text(
-            'Покупатель',
-            style: TextStyle(fontSize: buyerBtnFontSize),
+            child: Text(
+              'Покупатель',
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                height: 1.4,
+                letterSpacing: 0.26,
+              ),
+            ),
           ),
         ),
         SizedBox(width: customerGapWidth),
+        const Spacer(),
         ValueListenableBuilder<int?>(
           valueListenable: lastSaleAmountNotifier,
           builder: (context, lastSaleAmount, _) {

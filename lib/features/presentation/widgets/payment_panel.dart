@@ -205,9 +205,12 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
   String _fmt(double v) {
     final s = v.toStringAsFixed(2);
-    if (s.endsWith('.00')) return s.substring(0, s.length - 3);
-    if (s.endsWith('0')) return s.substring(0, s.length - 1);
-    return s;
+    final trimmed = s.endsWith('.00')
+        ? s.substring(0, s.length - 3)
+        : s.endsWith('0')
+            ? s.substring(0, s.length - 1)
+            : s;
+    return trimmed.replaceAll('.', ',');
   }
 
   void _showError(String message) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
+import 'package:leemon_app/features/data/utils/money.dart';
 
 class QuickProduct {
   final String title;
@@ -199,7 +200,7 @@ class _QuickProductCardState extends State<_QuickProductCard> {
                   ],
                 ),
                 child: Text(
-                  '${widget.price.toStringAsFixed(2)} ₸',
+                  money(widget.price),
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,

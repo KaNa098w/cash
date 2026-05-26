@@ -71,8 +71,8 @@ Future<void> main() async {
           TitleBarStyle.hidden,
           windowButtonVisibility: false,
         );
-        await windowManager.setSize(const Size(1024, 768));
-        await windowManager.setMinimumSize(const Size(1024, 768));
+        await windowManager.setSize(const Size(1200, 800));
+        await windowManager.setMinimumSize(const Size(1200, 800));
         await windowManager.center();
       }
 

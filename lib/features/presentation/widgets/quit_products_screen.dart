@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:leemon_app/core/models/product_response.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
+import 'package:leemon_app/features/data/utils/money.dart';
 
 Future<ProductModel?> showQuickProductsDialog(
   BuildContext context, {
@@ -44,15 +45,18 @@ Future<ProductModel?> showQuickProductsDialog(
                         itemBuilder: (context, i) {
                           final p = products[i];
                           return _QuickProductTile(
-                            title:
-                                '${p.name} (${(() {
-                                  final shown = (p.conversionValue != null && p.conversionValue! > 0)
-                                      ? p.quantity * p.conversionValue!
-                                      : p.quantity;
-                                  return ProductModel.isPiecesMeasurementUnit(p.measurementUnit)
-                                      ? shown.round().toString()
-                                      : shown.toStringAsFixed(2).replaceFirst(RegExp(r'\\.?0+\$'), '');
-                                })()} ${p.measurementUnit})',
+                            title: '${p.name} (${(() {
+                              final shown = (p.conversionValue != null &&
+                                      p.conversionValue! > 0)
+                                  ? p.quantity * p.conversionValue!
+                                  : p.quantity;
+                              return ProductModel.isPiecesMeasurementUnit(
+                                      p.measurementUnit)
+                                  ? shown.round().toString()
+                                  : shown
+                                      .toStringAsFixed(2)
+                                      .replaceFirst(RegExp(r'\\.?0+\$'), '');
+                            })()} ${p.measurementUnit})',
                             price: p.sellingPrice,
                             onTap: () => Navigator.of(ctx).pop(p),
                           );
@@ -184,7 +188,7 @@ class _ProductCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
-              '${price.toStringAsFixed(2)} ₸',
+              money(price),
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,

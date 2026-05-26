@@ -262,7 +262,7 @@ class _CashierLoginStepState extends State<CashierLoginStep> {
 
                 // ✅ как на фото: широкая левая зона и карточка справа с отступом
                 const loginCardWidth = 317.0;
-                const rightCardOffset = 56.0;
+                const rightCardOffset = 96.0;
                 final leftPaneWidth =
                     (c.maxWidth - rightCardOffset - loginCardWidth)
                         .clamp(420.0, c.maxWidth);
@@ -490,7 +490,7 @@ class _ExitAppButton extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Выход из приложения',
+                'Выход из программы',
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
@@ -502,8 +502,8 @@ class _ExitAppButton extends StatelessWidget {
               const SizedBox(width: 8),
               SvgPicture.asset(
                 'assets/svg/log_out.svg',
-                width: 18,
-                height: 18,
+                width: 19.68,
+                height: 19.68,
               ),
             ],
           ),
@@ -544,7 +544,7 @@ class _BrandPane extends StatelessWidget {
                 width: titleWidth,
                 child: brandLogo ??
                     _StoreNameWordmark(
-                      storeName: storeName,
+                      storeName: 'Дәулеткерей құрылыс материалдары',
                       fallbackName: posName,
                     ),
               ),
@@ -690,40 +690,39 @@ class _LoginCard extends StatelessWidget {
     final pinCtrl = TextEditingController(text: pin)
       ..selection = TextSelection.collapsed(offset: pin.length);
 
-    const btnRadius = 9.0; // 8.71px
-    const btnHeight = 71.0;
-
     return Container(
       width: 317,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      height: 597,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0x22000000), width: 1),
-        boxShadow: const [
-          BoxShadow(
-            blurRadius: 18,
-            offset: Offset(0, 10),
-            color: Color(0x22000000),
-          ),
-        ],
+        color: const Color(0xFFF2F2F2),
+        borderRadius: BorderRadius.circular(19),
+        border: Border.all(color: Colors.black, width: 2),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Stack(
         children: [
-          const SizedBox(height: 2),
-          const Text(
-            'ВХОД В КАССУ',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.8,
-              color: Color(0xFF536074),
+          Positioned(
+            left: 0,
+            top: 29,
+            width: 317,
+            child: Center(
+              child: Text(
+                'ВХОД В КАССУ',
+                maxLines: 1,
+                style: GoogleFonts.inter(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                  letterSpacing: 0,
+                  color: const Color(0xFF536074),
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10.0),
+          Positioned(
+            left: 29,
+            top: 76,
+            width: 259,
+            height: 42,
             child: _BlueFieldShell(
               child: DropdownButtonFormField<PosUser>(
                 value: safeSelected,
@@ -748,15 +747,35 @@ class _LoginCard extends StatelessWidget {
                   isDense: true,
                   border: InputBorder.none,
                   contentPadding:
-                      EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      EdgeInsets.only(left: 12, top: 9, bottom: 9, right: 2),
+                  hintStyle: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w400,
+                    color: Color(0xFF999999),
+                  ),
                 ),
-                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                icon: const Padding(
+                  padding: EdgeInsets.only(right: 0),
+                  child: Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: Color(0xFF4F4F4F),
+                    size: 28,
+                  ),
+                ),
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                  color: const Color.fromARGB(255, 75, 75, 75),
+                ),
+                dropdownColor: Colors.white,
               ),
             ),
           ),
-          const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10.0),
+          Positioned(
+            left: 29,
+            top: 139,
+            width: 259,
+            height: 42,
             child: _BlueFieldShell(
               child: TextField(
                 controller: pinCtrl,
@@ -768,71 +787,91 @@ class _LoginCard extends StatelessWidget {
                   isDense: true,
                   border: InputBorder.none,
                   contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                   errorText: errorText,
                   errorMaxLines: 2,
+                  hintStyle: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w400,
+                    color: const Color(0xFF999999),
+                  ),
+                  errorStyle: GoogleFonts.inter(
+                    fontSize: 10,
+                    height: 0.8,
+                  ),
+                ),
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                  color: const Color(0xFF4F4F4F),
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          _PinKeypad(
-            onDigit: onDigit,
-            onBackspace: onBackspace,
-            onDot: () {},
-          ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.all(10.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                SizedBox(
-                  width: 122, // 121.66px
-                  height: btnHeight,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFD15850), // #D15850
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(btnRadius),
-                      ),
-                    ),
-                    onPressed: onCancel,
-                    child: const Text(
-                      'ОТМЕНА',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.3,
-                          color: Colors.white),
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  width: 124, // 124px
-                  height: btnHeight,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF33CC99), // #33CC99
-                      disabledBackgroundColor: const Color(0xFF33CC99),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(btnRadius),
-                      ),
-                    ),
-                    onPressed: canOk ? onOk : null,
-                    child: const Text(
-                      'OK',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.3,
-                          color: Colors.white),
-                    ),
-                  ),
-                ),
-              ],
+          Positioned(
+            left: 29,
+            top: 202,
+            child: _PinKeypad(
+              onDigit: onDigit,
+              onBackspace: onBackspace,
+              onDot: () {},
             ),
-          )
+          ),
+          Positioned(
+            left: 28,
+            top: 497,
+            width: 121.657,
+            height: 71.098,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD15850),
+                elevation: 0,
+                padding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8.70588),
+                ),
+              ),
+              onPressed: onCancel,
+              child: Text(
+                'ОТМЕНА',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                  height: 1,
+                  letterSpacing: 0,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 165,
+            top: 497,
+            width: 124,
+            height: 71,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF33CC99),
+                disabledBackgroundColor: const Color(0xFF33CC99),
+                elevation: 0,
+                padding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8.70588),
+                ),
+              ),
+              onPressed: canOk ? onOk : null,
+              child: Text(
+                'OK',
+                style: GoogleFonts.inter(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                  height: 1,
+                  letterSpacing: 0,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -847,8 +886,9 @@ class _BlueFieldShell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF93C5FD), width: 1),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(5.5),
+        border: Border.all(color: const Color(0xFF00A1FF), width: 1),
       ),
       child: child,
     );
@@ -866,15 +906,14 @@ class _PinKeypad extends StatelessWidget {
   final VoidCallback onBackspace;
   final VoidCallback? onDot;
 
-  static const double gap = 10;
+  static const double gapX = 10;
+  static const double gapY = 8.621;
 
   TextStyle _keyTextStyle(BuildContext context) {
-    // Один общий стиль для всех текстовых клавиш
     return GoogleFonts.inter(
       fontSize: 18,
       fontWeight: FontWeight.w500,
-      // если нужен единый цвет — раскомментируй:
-      // color: Theme.of(context).colorScheme.onSurface,
+      color: Colors.black,
     );
   }
 
@@ -896,47 +935,49 @@ class _PinKeypad extends StatelessWidget {
     return Column(
       children: [
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _digitKey(context, '7'),
-            const SizedBox(width: gap),
+            const SizedBox(width: gapX),
             _digitKey(context, '8'),
-            const SizedBox(width: gap),
+            const SizedBox(width: gapX),
             _digitKey(context, '9'),
           ],
         ),
-        const SizedBox(height: gap),
+        const SizedBox(height: gapY),
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _digitKey(context, '4'),
-            const SizedBox(width: gap),
+            const SizedBox(width: gapX),
             _digitKey(context, '5'),
-            const SizedBox(width: gap),
+            const SizedBox(width: gapX),
             _digitKey(context, '6'),
           ],
         ),
-        const SizedBox(height: gap),
+        const SizedBox(height: gapY),
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _digitKey(context, '1'),
-            const SizedBox(width: gap),
+            const SizedBox(width: gapX),
             _digitKey(context, '2'),
-            const SizedBox(width: gap),
+            const SizedBox(width: gapX),
             _digitKey(context, '3'),
           ],
         ),
-        const SizedBox(height: gap),
+        const SizedBox(height: gapY),
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _key(Text('.', style: ts), onTap: onDot),
-            const SizedBox(width: gap),
+            const SizedBox(width: gapX),
             _digitKey(context, '0'),
-            const SizedBox(width: gap),
-            _key(const Icon(Icons.backspace_outlined, size: 22),
-                onTap: onBackspace),
+            const SizedBox(width: gapX),
+            _key(
+              const Icon(
+                Icons.backspace,
+                size: 22,
+                color: Colors.black,
+              ),
+              onTap: onBackspace,
+            ),
           ],
         ),
       ],
@@ -951,7 +992,7 @@ class _KeyButton extends StatelessWidget {
   final VoidCallback? onTap;
 
   static const double w = 80;
-  static const double h = 62; // было 61.78px
+  static const double h = 61.7842;
   static const double r = 6;
 
   @override
@@ -965,13 +1006,12 @@ class _KeyButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(r),
-          border: Border.all(color: const Color(0x11000000), width: 1),
           boxShadow: enabled
               ? [
-                  BoxShadow(
-                    color: const Color(0xFF000000).withValues(alpha: 0.25),
-                    offset: const Offset(4, 4),
-                    blurRadius: 2,
+                  const BoxShadow(
+                    color: Color(0x40000000),
+                    offset: Offset(4, 4),
+                    blurRadius: 10,
                     spreadRadius: 0,
                   ),
                 ]

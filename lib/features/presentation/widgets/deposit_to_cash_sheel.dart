@@ -457,7 +457,8 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
   @override
   Widget build(BuildContext context) {
     final title = widget.type ? 'Взнос' : 'Расходы';
-    final amountText = _text.isEmpty ? '0.00 ₸' : '$_text ₸';
+    final amountText =
+        _text.isEmpty ? '0,00 ₸' : '${_text.replaceAll('.', ',')} ₸';
     final typeText = _isExpense
         ? (_expenseTypeTitle ??
             (_loadingTypes ? 'Загрузка типов...' : 'Тип расхода'))
