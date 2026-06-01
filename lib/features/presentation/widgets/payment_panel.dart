@@ -403,7 +403,6 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
               // Capture amounts before async gap
               final isMixed = _isMixedPayment;
-              final cashInputAmt = _parseAmount(_cashCtrl.text).round();
               final totalAmountInt = posCubit.total.round();
 
               final saleItems = <SaleItemModel>[];
@@ -431,6 +430,16 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     .fold(0.0, (s, e) => s + e.totalPrice)
                     .toStringAsFixed(2),
               );
+              final mixedCashAmount = double.parse(
+                _parseAmount(_cashCtrl.text)
+                    .clamp(0, exactTotal)
+                    .toStringAsFixed(2),
+              );
+              final mixedCardAmount = double.parse(
+                (exactTotal - mixedCashAmount)
+                    .clamp(0, exactTotal)
+                    .toStringAsFixed(2),
+              );
 
               final debtPaidNow = isDebtSale
                   ? _parseAmount(_cashCtrl.text).clamp(0, exactTotal).round()
@@ -440,7 +449,11 @@ class _PaymentPanelState extends State<PaymentPanel> {
               final paymentMethod = isDebtSale
                   ? 'debt'
                   : isMixed
-                      ? 'mixed'
+                      ? mixedCashAmount <= 0
+                          ? 'card'
+                          : mixedCardAmount <= 0
+                              ? 'cash'
+                              : 'mixed'
                       : switch (posCubit.state.paymentKind) {
                           PaymentKind.cash => 'cash',
                           PaymentKind.card => 'card',
@@ -518,21 +531,15 @@ class _PaymentPanelState extends State<PaymentPanel> {
                       ]
                     : [];
               } else if (isMixed) {
-                final cashAmt = double.parse(
-                  cashInputAmt.clamp(0, exactTotal).toStringAsFixed(2),
-                );
-                final cardAmt = double.parse(
-                  (exactTotal - cashAmt).toStringAsFixed(2),
-                );
                 payments = [
                   {
                     'account_id': cashAccount.id,
-                    'amount': cashAmt,
+                    'amount': mixedCashAmount,
                     'client_payment_id': '$saleLocalId-cash',
                   },
                   {
                     'account_id': cardAccount.id,
-                    'amount': cardAmt,
+                    'amount': mixedCardAmount,
                     'client_payment_id': '$saleLocalId-card',
                   },
                 ].where((payment) {
@@ -568,7 +575,6 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 final pageFormat = auth.receiptPaperMm == 57
                     ? PdfPageFormat.roll57
                     : PdfPageFormat.roll80;
-                final paymentKind = posCubit.state.paymentKind;
                 final outcome = await repo.createSale(
                   key: key,
                   deviceId: deviceId,
@@ -593,6 +599,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   return;
                 }
 
+                final printedPaymentMethod =
+                    printedSale.paymentMethod.trim().toLowerCase();
                 await _printService.print80mmSilently(
                   () => buildReceiptPdf(
                     ReceiptPdfData(
@@ -629,7 +637,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                       discountSum: posCubit.discountSum,
                       paymentMethodLabel: _normalizePaymentMethodLabel(
                           printedSale.paymentMethod),
-                      isCashPayment: paymentKind == PaymentKind.cash,
+                      isCashPayment: printedPaymentMethod == 'cash',
                       received: isDebtSale
                           ? printedSale.paidAmount
                           : posCubit.state.received,
@@ -685,21 +693,36 @@ class _PaymentPanelState extends State<PaymentPanel> {
               );
             }
 
+            String limitedAmountText(String text) {
+              final normalized = text.replaceAll(',', '.').trim();
+              if (normalized.isEmpty ||
+                  normalized == '0.' ||
+                  normalized == '.') {
+                return text;
+              }
+
+              final amount = _parseAmount(text);
+              if (amount <= total) return text;
+              return _fmt(total);
+            }
+
             void setMixedCashText(String text) {
-              _setText(context, text, applyToState: false);
+              final limitedText = limitedAmountText(text);
+              _setText(context, limitedText, applyToState: false);
               _setCardText(
                 context,
-                complementText(text),
+                complementText(limitedText),
                 applyToState: false,
               );
               cubit.setReceived(total);
             }
 
             void setMixedCardText(String text) {
-              _setCardText(context, text, applyToState: false);
+              final limitedText = limitedAmountText(text);
+              _setCardText(context, limitedText, applyToState: false);
               _setText(
                 context,
-                complementText(text),
+                complementText(limitedText),
                 applyToState: false,
               );
               cubit.setReceived(total);
@@ -762,7 +785,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
             void addQuick(int inc) {
               final curr =
                   double.tryParse(activeText().replaceAll(',', '.')) ?? 0;
-              final next = curr + inc;
+              final next = _isMixedPayment
+                  ? (curr + inc).clamp(0, total).toDouble()
+                  : curr + inc;
               setActiveText(_fmt(next));
             }
 
@@ -1514,6 +1539,13 @@ class _PaymentTabs extends StatelessWidget {
               height: _dividerHeight,
               child: ColoredBox(color: Color(0xFFB6B6B6)),
             ),
+            const Positioned(
+              left: 351.795,
+              top: _dividerTop,
+              width: 0.7818,
+              height: _dividerHeight,
+              child: ColoredBox(color: Color(0xFFB6B6B6)),
+            ),
             SizedBox(
               height: _tabHeight,
               child: Row(
@@ -1635,6 +1667,12 @@ class _BlueInput extends StatelessWidget {
             autofocus: true,
             readOnly: readOnly,
             enableInteractiveSelection: !readOnly,
+            onTap: () {
+              final text = controller.text;
+              controller.selection = TextSelection.collapsed(
+                offset: text.length,
+              );
+            },
             onChanged: onChanged,
             onSubmitted: onSubmitted,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),

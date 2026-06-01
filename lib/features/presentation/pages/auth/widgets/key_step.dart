@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:leemon_app/core/di/api/app_config.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/features/presentation/pages/auth/widgets/prod_dev_widget.dart';
+import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class KeyStep extends StatefulWidget {
@@ -34,6 +35,62 @@ class _KeyStepState extends State<KeyStep> {
 
   int _secretTapCount = 0;
   DateTime? _lastSecretTapAt;
+  OverlayEntry? _keyboardEntry;
+
+  @override
+  void didUpdateWidget(covariant KeyStep oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.loading && widget.loading) {
+      _hideKeyboard();
+    }
+  }
+
+  @override
+  void dispose() {
+    _hideKeyboard();
+    super.dispose();
+  }
+
+  void _ensureKeySelection() {
+    final ctrl = widget.controller;
+    final selection = ctrl.selection;
+    if (selection.isValid) return;
+
+    ctrl.selection = TextSelection.collapsed(offset: ctrl.text.length);
+  }
+
+  void _showKeyboard() {
+    if (widget.loading) return;
+    widget.focusNode.requestFocus();
+    _ensureKeySelection();
+    if (_keyboardEntry != null) return;
+
+    _keyboardEntry = OverlayEntry(
+      builder: (_) => Positioned(
+        left: 0,
+        right: 0,
+        bottom: 0,
+        child: Material(
+          color: Colors.transparent,
+          child: OnScreenKeyboardSheet(
+            controllerGetter: () => widget.controller,
+            onEnter: () {
+              if (widget.loading) return;
+              widget.onSubmit?.call();
+            },
+            onClose: _hideKeyboard,
+          ),
+        ),
+      ),
+    );
+
+    Overlay.of(context, rootOverlay: true).insert(_keyboardEntry!);
+  }
+
+  void _hideKeyboard() {
+    _keyboardEntry?.remove();
+    _keyboardEntry = null;
+  }
 
   Future<void> _onLeemonTap() async {
     final now = DateTime.now();
@@ -87,7 +144,7 @@ class _KeyStepState extends State<KeyStep> {
                                 width: 42,
                                 height: 42,
                                 decoration: BoxDecoration(
-                                  color: cs.primary.withOpacity(0.12),
+                                  color: cs.primary.withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(14),
                                 ),
                                 child: Icon(
@@ -113,7 +170,7 @@ class _KeyStepState extends State<KeyStep> {
                                       style:
                                           theme.textTheme.bodySmall?.copyWith(
                                         color: theme.textTheme.bodySmall?.color
-                                            ?.withOpacity(0.7),
+                                            ?.withValues(alpha: 0.7),
                                       ),
                                     ),
                                   ],
@@ -135,11 +192,11 @@ class _KeyStepState extends State<KeyStep> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 14, vertical: 12),
                             decoration: BoxDecoration(
-                              color:
-                                  cs.surfaceContainerHighest.withOpacity(0.45),
+                              color: cs.surfaceContainerHighest
+                                  .withValues(alpha: 0.45),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: cs.outline.withOpacity(0.12),
+                                color: cs.outline.withValues(alpha: 0.12),
                               ),
                             ),
                             child: Row(
@@ -163,13 +220,13 @@ class _KeyStepState extends State<KeyStep> {
                                     color: (AppConfig.I.isProd
                                             ? Colors.red
                                             : Colors.green)
-                                        .withOpacity(0.12),
+                                        .withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(999),
                                     border: Border.all(
                                       color: (AppConfig.I.isProd
                                               ? Colors.red
                                               : Colors.green)
-                                          .withOpacity(0.25),
+                                          .withValues(alpha: 0.25),
                                     ),
                                   ),
                                   child: Text(
@@ -221,13 +278,13 @@ class _KeyStepState extends State<KeyStep> {
                             decoration: BoxDecoration(
                               color:
                                   (isProdSelected ? Colors.orange : cs.primary)
-                                      .withOpacity(0.08),
+                                      .withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
                                 color: (isProdSelected
                                         ? Colors.orange
                                         : cs.primary)
-                                    .withOpacity(0.18),
+                                    .withValues(alpha: 0.18),
                               ),
                             ),
                             child: Row(
@@ -251,7 +308,7 @@ class _KeyStepState extends State<KeyStep> {
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       height: 1.35,
                                       color: theme.textTheme.bodySmall?.color
-                                          ?.withOpacity(0.9),
+                                          ?.withValues(alpha: 0.9),
                                     ),
                                   ),
                                 ),
@@ -360,12 +417,18 @@ class _KeyStepState extends State<KeyStep> {
           controller: widget.controller,
           focusNode: widget.focusNode,
           enabled: !widget.loading,
+          onTap: _ensureKeySelection,
           textInputAction: TextInputAction.done,
           onSubmitted: (_) => widget.loading ? null : widget.onSubmit?.call(),
           decoration: InputDecoration(
             labelText: 'Ключ кассы',
             hintText: 'Введите ключ вашей кассы',
             errorText: showError ? 'Ключ обязателен' : null,
+            suffixIcon: IconButton(
+              tooltip: 'Клавиатура',
+              onPressed: widget.loading ? null : _showKeyboard,
+              icon: const Icon(Icons.keyboard_alt_outlined),
+            ),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 14),

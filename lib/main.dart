@@ -18,6 +18,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:leemon_app/core/di/api/device_id_store.dart';
+import 'package:leemon_app/core/service/customer_display_service.dart';
 import 'package:leemon_app/features/domain/repositories/auth_repository.dart';
 import 'package:leemon_app/features/domain/repositories/product_repository.dart';
 import 'package:leemon_app/features/domain/repositories/session_repository.dart';
@@ -42,7 +43,7 @@ Future<void> main() async {
   final isDesktop =
       !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
-  if (isDesktop && !await _acquireSingleInstanceLock()) {
+  if (isDesktop && !Platform.isWindows && !await _acquireSingleInstanceLock()) {
     return;
   }
 
@@ -60,29 +61,8 @@ Future<void> main() async {
   };
 
   if (isDesktop) {
-    await windowManager.ensureInitialized();
+    await windowManager.ensureInitialized().timeout(const Duration(seconds: 3));
     AppConfig.init(env: initialEnv);
-
-    const options = WindowOptions(backgroundColor: Colors.transparent);
-
-    await windowManager.waitUntilReadyToShow(options, () async {
-      if (Platform.isMacOS) {
-        await windowManager.setTitleBarStyle(
-          TitleBarStyle.hidden,
-          windowButtonVisibility: false,
-        );
-        await windowManager.setSize(const Size(1200, 800));
-        await windowManager.setMinimumSize(const Size(1200, 800));
-        await windowManager.center();
-      }
-
-      await windowManager.show();
-      await windowManager.focus();
-      await windowManager.setResizable(false);
-      await windowManager.setMaximizable(false);
-      await windowManager.setMinimizable(true);
-    });
-
     await initDependencies();
     kioskListener = _KioskWindowListener();
     windowManager.addListener(kioskListener);
@@ -94,7 +74,6 @@ Future<void> main() async {
   final authProvider = AuthTokenProvider();
   await authProvider.init();
   sl<DeviceIdStore>().deviceId = authProvider.deviceId;
-  await sl<PosSyncService>().initialize();
 
   runApp(
     MultiProvider(
@@ -119,8 +98,10 @@ Future<void> main() async {
   );
 
   if (isDesktop && kioskListener != null) {
-    unawaited(_stabilizeDesktopWindow(kioskListener));
+    unawaited(_showDesktopWindow(kioskListener));
   }
+
+  unawaited(_initializeLocalSync());
 }
 
 Future<bool> _acquireSingleInstanceLock() async {
@@ -137,12 +118,57 @@ Future<bool> _acquireSingleInstanceLock() async {
   }
 }
 
-Future<void> _stabilizeDesktopWindow(_KioskWindowListener kioskListener) async {
+Future<void> _showDesktopWindow(_KioskWindowListener kioskListener) async {
+  const options = WindowOptions(backgroundColor: Colors.transparent);
+
+  Future<void> showAndFocus() async {
+    if (Platform.isMacOS) {
+      await windowManager.setTitleBarStyle(
+        TitleBarStyle.hidden,
+        windowButtonVisibility: false,
+      );
+      await windowManager.setSize(const Size(1200, 800));
+      await windowManager.setMinimumSize(const Size(1200, 800));
+      await windowManager.center();
+    }
+
+    if (!Platform.isMacOS) {
+      await windowManager
+          .setFullScreen(true)
+          .timeout(const Duration(seconds: 2));
+    }
+
+    await windowManager.show();
+    await windowManager.focus();
+    await windowManager.setResizable(false);
+    await windowManager.setMaximizable(false);
+    await windowManager.setMinimizable(true);
+  }
+
+  try {
+    await windowManager
+        .waitUntilReadyToShow(options, showAndFocus)
+        .timeout(const Duration(seconds: 3));
+  } catch (_) {
+    // If the plugin never reports readiness, still show the already-created
+    // native window so startup cannot leave only a background process.
+    await showAndFocus();
+  }
+
   // Let the native window and first Flutter frame settle before toggling
   // fullscreen. This avoids a first-launch race on Windows where the taskbar
   // icon can disappear and the window may appear to close.
-  await Future.delayed(const Duration(milliseconds: 700));
+  await Future.delayed(const Duration(milliseconds: 250));
   await kioskListener.ensureKioskMode();
+}
+
+Future<void> _initializeLocalSync() async {
+  try {
+    await sl<PosSyncService>().initialize().timeout(const Duration(seconds: 8));
+  } catch (_) {
+    // The UI must still open if the local sync database is temporarily locked
+    // or slow. Sync will be initialized lazily on the next sync operation.
+  }
 }
 
 class _KioskWindowListener with WindowListener {
@@ -208,7 +234,10 @@ class PosApp extends StatefulWidget {
 
 class _PosAppState extends State<PosApp> {
   late final GoRouter _router;
+  final _customerDisplay = CustomerDisplayService();
   StreamSubscription<void>? _productsSyncSub;
+  StreamSubscription<PosState>? _posStateSub;
+  num? _lastCustomerDisplayTotal;
 
   @override
   void initState() {
@@ -218,12 +247,23 @@ class _PosAppState extends State<PosApp> {
       if (!mounted) return;
       context.read<ProductsCubit>().loadFirstPage(key: '');
     });
+    final posCubit = context.read<PosCubit>();
+    _sendTotalToCustomerDisplay(posCubit.state);
+    _posStateSub = posCubit.stream.listen(_sendTotalToCustomerDisplay);
   }
 
   @override
   void dispose() {
     _productsSyncSub?.cancel();
+    _posStateSub?.cancel();
     super.dispose();
+  }
+
+  void _sendTotalToCustomerDisplay(PosState state) {
+    final total = state.items.fold<num>(0, (sum, item) => sum + item.sum);
+    if (_lastCustomerDisplayTotal == total) return;
+    _lastCustomerDisplayTotal = total;
+    _customerDisplay.showTotal(total);
   }
 
   @override

@@ -138,13 +138,13 @@ class SaleCard extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 900;
-        final desktopNarrow = !compact && constraints.maxWidth < 1180;
+        final desktopNarrow = !compact && constraints.maxWidth < 1400;
         final actionWidth = (constraints.maxWidth - 36).clamp(180.0, 520.0);
         final saleNumberWidth = desktopNarrow ? 220.0 : 280.0;
         final dateWidth = desktopNarrow ? 220.0 : 400.0;
         final statusWidth = desktopNarrow ? 190.0 : 250.0;
         final cashierWidth = desktopNarrow ? 170.0 : 250.0;
-        final amountWidth = desktopNarrow ? 110.0 : 140.0;
+        final amountWidth = desktopNarrow ? 132.0 : 150.0;
         final refundBtnWidth = desktopNarrow ? 180.0 : 220.0;
         final invoiceBtnWidth = desktopNarrow ? 130.0 : 170.0;
         final printBtnWidth = desktopNarrow ? 180.0 : 220.0;
@@ -219,11 +219,12 @@ class SaleCard extends StatelessWidget {
                                     ),
                                   ),
                                   const SizedBox(width: 10),
-                                  Text(
-                                    money0(sale.totalAmount),
-                                    textAlign: TextAlign.right,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w700),
+                                  SizedBox(
+                                    width: 132,
+                                    child: _AmountText(
+                                      value: money0(sale.totalAmount),
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
                                   const SizedBox(width: 8),
                                   Icon(Icons.more_horiz,
@@ -271,8 +272,7 @@ class SaleCard extends StatelessWidget {
                                           label: paymentLabel,
                                           bg: paymentBg,
                                           fg: paymentFg),
-                                      if (hasRefund)
-                                        const _RefundStatusBadge(),
+                                      if (hasRefund) const _RefundStatusBadge(),
                                     ],
                                   ),
                                 ),
@@ -284,18 +284,14 @@ class SaleCard extends StatelessWidget {
                               const Spacer(),
                               SizedBox(
                                 width: amountWidth,
-                                child: Text(
-                                  money0(sale.totalAmount),
-                                  textAlign: TextAlign.right,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w700),
+                                child: _AmountText(
+                                  value: money0(sale.totalAmount),
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                               const SizedBox(width: 10),
                               Icon(
-                                expanded
-                                    ? Icons.expand_less
-                                    : Icons.more_horiz,
+                                expanded ? Icons.expand_less : Icons.more_horiz,
                                 size: 22,
                                 color: const Color(0xFF7A837E),
                               ),
@@ -422,6 +418,30 @@ class _RefundStatusBadge extends StatelessWidget {
         Icons.assignment_return_rounded,
         size: 18,
         color: Color(0xFF16A34A),
+      ),
+    );
+  }
+}
+
+class _AmountText extends StatelessWidget {
+  const _AmountText({
+    required this.value,
+    required this.fontWeight,
+  });
+
+  final String value;
+  final FontWeight fontWeight;
+
+  @override
+  Widget build(BuildContext context) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerRight,
+      child: Text(
+        value,
+        maxLines: 1,
+        textAlign: TextAlign.right,
+        style: TextStyle(fontWeight: fontWeight),
       ),
     );
   }

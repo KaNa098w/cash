@@ -544,7 +544,7 @@ class _BrandPane extends StatelessWidget {
                 width: titleWidth,
                 child: brandLogo ??
                     _StoreNameWordmark(
-                      storeName: 'Дәулеткерей құрылыс материалдары',
+                      storeName: storeName,
                       fallbackName: posName,
                     ),
               ),

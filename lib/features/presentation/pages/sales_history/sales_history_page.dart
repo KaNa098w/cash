@@ -1459,12 +1459,20 @@ class _TotalsTile extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: emphasized ? 24 : 22,
-              color: const Color(0xFF17211C),
-              fontWeight: FontWeight.w800,
+          SizedBox(
+            width: double.infinity,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: emphasized ? 24 : 22,
+                  color: const Color(0xFF17211C),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
           ),
         ],
