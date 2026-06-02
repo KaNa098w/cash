@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:leemon_app/features/presentation/pages/auth/widgets/pos_diagnostics_dialog.dart';
 
 Future<void> showAuthErrorAlertDialog(
   BuildContext context, {
@@ -80,6 +81,24 @@ Future<void> showAuthErrorAlertDialog(
                 const SizedBox(height: 18),
                 Row(
                   children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => showPosDiagnosticsDialog(ctx),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF374151),
+                          side: const BorderSide(color: Color(0xFFD1D5DB)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: const Text(
+                          'Подробнее',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: FilledButton(
                         onPressed: () => Navigator.of(ctx).pop(),

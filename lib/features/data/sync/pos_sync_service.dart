@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:leemon_app/core/service/app_build_info.dart';
+import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:leemon_app/core/models/product_response.dart';
@@ -10,13 +11,13 @@ import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_remote_datasource.dart';
 
 class PosSyncService {
-  PosSyncService(
-    this._localStore,
-    this._remote,
-  );
+  PosSyncService(this._localStore, this._remote,
+      {PosDiagnosticsService? diagnostics})
+      : _diagnostics = diagnostics;
 
   final PosSyncLocalStore _localStore;
   final PosSyncRemoteDataSource _remote;
+  final PosDiagnosticsService? _diagnostics;
   final _uuid = const Uuid();
 
   static const int _maxRetryCount = 50;
@@ -90,6 +91,28 @@ class PosSyncService {
 
   Future<List<ProductModel>> loadProducts() {
     return _localStore.loadProducts();
+  }
+
+  Future<List<Map<String, dynamic>>> loadProductsRaw() {
+    return _localStore.loadProductsRaw();
+  }
+
+  Future<Map<String, dynamic>> loadDiagnosticsState(String key) async {
+    await initialize();
+    final state = await _localStore.loadSyncState(key);
+    return {
+      'sync_state': state == null
+          ? null
+          : {
+              'pos_key': state.posKey,
+              'device_id': state.deviceId,
+              'cursor': state.cursor,
+              'last_bootstrap_at': state.lastBootstrapAt?.toIso8601String(),
+              'last_pull_at': state.lastPullAt?.toIso8601String(),
+              'last_push_at': state.lastPushAt?.toIso8601String(),
+              'last_error': state.lastError,
+            },
+    };
   }
 
   Future<List<ProductModel>> loadFavoriteProducts() {
@@ -190,9 +213,42 @@ class PosSyncService {
     return _localStore.loadShiftReport(clientSessionId);
   }
 
+  Future<ShiftReportData?> loadShiftReportFromBackend({
+    required String key,
+    required String sessionId,
+    bool includeProducts = true,
+  }) async {
+    await initialize();
+    final serverSessionId = await _resolveReportSessionId(sessionId);
+    final data = includeProducts
+        ? await _remote.fetchXReport(key: key, sessionId: serverSessionId)
+        : await _remote.fetchZReport(key: key, sessionId: serverSessionId);
+    return _mapRemoteShiftReport(
+      data,
+      fallbackSessionId: serverSessionId,
+      includeProducts: includeProducts,
+    );
+  }
+
   Future<ShiftClosureSummaryData?> loadShiftClosureSummary(
       String clientSessionId) {
     return _localStore.loadShiftClosureSummary(clientSessionId);
+  }
+
+  Future<ShiftClosureSummaryData?> loadShiftClosureSummaryFromBackend({
+    required String key,
+    required String sessionId,
+  }) async {
+    await initialize();
+    final serverSessionId = await _resolveReportSessionId(sessionId);
+    final data = await _remote.fetchZReport(
+      key: key,
+      sessionId: serverSessionId,
+    );
+    return _mapRemoteShiftClosureSummary(
+      data,
+      fallbackSessionId: serverSessionId,
+    );
   }
 
   Future<void> bootstrap({
@@ -250,6 +306,7 @@ class PosSyncService {
     onProgress?.call(
         const SyncProgress(progress: 0.15, stage: 'Скачиваем снапшот...'));
     final snapshotFile = await _remote.downloadSnapshotFile(snapshotUrl);
+    _diagnostics?.recordSnapshotFile(snapshotFile);
     final snapshotCursor = snapshot.cursor > 0
         ? snapshot.cursor
         : _readIntFromMap(snapshotFile, 'cursor');
@@ -305,6 +362,25 @@ class PosSyncService {
       expenseTypes: expenseTypes,
       customers: customers,
     );
+    _diagnostics?.recordBootstrapSummary({
+      'pos_key': key,
+      'device_id': deviceId,
+      'snapshot_status': {
+        'status': snapshot.status,
+        'cursor': snapshot.cursor,
+        'url': snapshot.url,
+        'expires_at': snapshot.expiresAt?.toIso8601String(),
+      },
+      'snapshot_cursor': snapshotCursor,
+      'saved_counts': {
+        'products': rawProducts.length,
+        'sales': rawSales.length,
+        'accounts': accounts.length,
+        'expense_types': expenseTypes.length,
+        'customers': customers.length,
+      },
+      'saved_snapshot_products': rawProducts,
+    });
     _notifyDebtsChanged();
 
     onProgress?.call(
@@ -888,6 +964,116 @@ class PosSyncService {
 
   Future<String> resolveServerSessionId(String sessionId) {
     return _localStore.resolveServerSessionId(sessionId);
+  }
+
+  Future<String> _resolveReportSessionId(String sessionId) async {
+    final value = sessionId.trim();
+    if (value.isEmpty) return value;
+    try {
+      return await _localStore.resolveServerSessionId(value);
+    } catch (_) {
+      return value;
+    }
+  }
+
+  ShiftReportData _mapRemoteShiftReport(
+    Map<String, dynamic> data, {
+    required String fallbackSessionId,
+    required bool includeProducts,
+  }) {
+    final summary = _asMap(data['summary']);
+    final products =
+        includeProducts ? _asListOfMaps(data['products']) : const [];
+    final items = products.map((product) {
+      return ShiftReportItem(
+        name: _stringFromMap(product, 'name', fallback: 'Товар'),
+        quantity: _numFromMap(product, 'quantity'),
+        totalSum: _numFromMap(product, 'amount'),
+      );
+    }).toList(growable: false);
+    final cashTotal = _numFromMap(summary, 'sales_cash_total');
+    final cardTotal = _numFromMap(summary, 'sales_card_total');
+    final grandTotal = _numFromMap(summary, 'sales_total');
+
+    return ShiftReportData(
+      sessionId:
+          _stringFromMap(data, 'session_id', fallback: fallbackSessionId),
+      openedAt: _parseRemoteDate(data['opened_at']),
+      closedAt: _parseRemoteDate(data['closed_at']),
+      openingCashAmount: _numFromMap(summary, 'opening_cash_amount'),
+      closingCashAmount: 0,
+      salesCount: 0,
+      cashTotal: cashTotal,
+      cardTotal: cardTotal,
+      transferTotal: 0,
+      creditTotal: grandTotal - cashTotal - cardTotal,
+      grandTotal: grandTotal,
+      refundsTotal: _numFromMap(summary, 'refunds_total'),
+      incomeTotal: _numFromMap(summary, 'income_total'),
+      expenseTotal: _numFromMap(summary, 'expense_total'),
+      expectedCashAmount: _numFromMap(summary, 'expected_cash_amount'),
+      items: items,
+    );
+  }
+
+  ShiftClosureSummaryData _mapRemoteShiftClosureSummary(
+    Map<String, dynamic> data, {
+    required String fallbackSessionId,
+  }) {
+    final summary = _asMap(data['summary']);
+    final cashTotal = _numFromMap(summary, 'sales_cash_total');
+    final cardTotal = _numFromMap(summary, 'sales_card_total');
+    final salesTotal = _numFromMap(summary, 'sales_total');
+
+    return ShiftClosureSummaryData(
+      sessionId:
+          _stringFromMap(data, 'session_id', fallback: fallbackSessionId),
+      openingCashAmount: _numFromMap(summary, 'opening_cash_amount'),
+      cashSalesTotal: cashTotal,
+      cardSalesTotal: cardTotal,
+      transferSalesTotal: 0,
+      creditSalesTotal: salesTotal - cashTotal - cardTotal,
+      refundsTotal: _numFromMap(summary, 'refunds_total'),
+      incomeTotal: _numFromMap(summary, 'income_total'),
+      expenseTotal: _numFromMap(summary, 'expense_total'),
+      expectedCashAmount: _numFromMap(summary, 'expected_cash_amount'),
+      totalSalesAmount: salesTotal,
+    );
+  }
+
+  Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return const <String, dynamic>{};
+  }
+
+  List<Map<String, dynamic>> _asListOfMaps(dynamic value) {
+    if (value is! List) return const <Map<String, dynamic>>[];
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+  }
+
+  num _numFromMap(Map<String, dynamic> map, String key) {
+    final value = map[key];
+    if (value is num) return value;
+    return num.tryParse((value ?? '').toString().trim()) ?? 0;
+  }
+
+  String _stringFromMap(
+    Map<String, dynamic> map,
+    String key, {
+    String fallback = '',
+  }) {
+    final value = (map[key] ?? '').toString().trim();
+    return value.isEmpty ? fallback : value;
+  }
+
+  DateTime? _parseRemoteDate(dynamic value) {
+    final raw = (value ?? '').toString().trim();
+    if (raw.isEmpty || raw.toLowerCase() == 'null') return null;
+    return DateTime.tryParse(raw.replaceFirst(' ', 'T'));
   }
 
   Future<QueueOperationResult> _sendClaimedRecord({

@@ -286,8 +286,19 @@ class AuthCubit extends Cubit<AuthState> {
             message: 'Собираем продажи смены и считаем итоговые суммы.',
           ),
         );
-        final report = await sl<PosSyncService>().loadShiftReport(sessionId);
-        if (report != null) {
+        final sync = sl<PosSyncService>();
+        ShiftReportData? report;
+        try {
+          report = await sync.loadShiftReportFromBackend(
+            key: key,
+            sessionId: sessionId,
+            includeProducts: false,
+          );
+        } catch (_) {
+          report = await sync.loadShiftReport(sessionId);
+        }
+        final printableReport = report;
+        if (printableReport != null) {
           emit(
             AuthClosingSession(
               closingCashAmount: closingCashAmount,
@@ -307,22 +318,22 @@ class AuthCubit extends Cubit<AuthState> {
                 storeName: storeName,
                 posName: posName,
                 cashierName: cashierName,
-                sessionId: report.sessionId,
-                openedAt: report.openedAt,
-                closedAt: report.closedAt,
-                openingCashAmount: report.openingCashAmount,
-                closingCashAmount: report.closingCashAmount,
-                salesCount: report.salesCount,
-                cashTotal: report.cashTotal,
-                cardTotal: report.cardTotal,
-                transferTotal: report.transferTotal,
-                creditTotal: report.creditTotal,
-                grandTotal: report.grandTotal,
-                refundsTotal: report.refundsTotal,
-                incomeTotal: report.incomeTotal,
-                expenseTotal: report.expenseTotal,
-                expectedCashAmount: report.expectedCashAmount,
-                items: report.items
+                sessionId: printableReport.sessionId,
+                openedAt: printableReport.openedAt,
+                closedAt: printableReport.closedAt,
+                openingCashAmount: printableReport.openingCashAmount,
+                closingCashAmount: closingCashAmount,
+                salesCount: printableReport.salesCount,
+                cashTotal: printableReport.cashTotal,
+                cardTotal: printableReport.cardTotal,
+                transferTotal: printableReport.transferTotal,
+                creditTotal: printableReport.creditTotal,
+                grandTotal: printableReport.grandTotal,
+                refundsTotal: printableReport.refundsTotal,
+                incomeTotal: printableReport.incomeTotal,
+                expenseTotal: printableReport.expenseTotal,
+                expectedCashAmount: printableReport.expectedCashAmount,
+                items: printableReport.items
                     .map(
                       (item) => ReceiptPdfItem(
                         name: item.name,

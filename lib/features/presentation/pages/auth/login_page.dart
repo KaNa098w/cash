@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
@@ -62,6 +63,21 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _retryProductsLoad() async {
     await _syncProducts(forceRefresh: true);
+  }
+
+  Future<void> _backToCashierLogin() async {
+    final authCubit = context.read<AuthCubit>();
+    final productsCubit = context.read<ProductsCubit>();
+
+    setState(() {
+      _syncingProducts = false;
+      _syncProgress = 0;
+      _syncErrorMessage = null;
+      _syncStage = 'Подготовка синхронизации...';
+    });
+
+    await productsCubit.reset();
+    await authCubit.lockToCashiers();
   }
 
   Future<void> _wipeAllLocalData() async {
@@ -161,6 +177,7 @@ class _LoginPageState extends State<LoginPage> {
         _goToCartList();
       }
     } catch (e) {
+      sl<PosDiagnosticsService>().recordError('$e');
       if (!mounted) return;
       setState(() => _syncErrorMessage = '$e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -206,6 +223,7 @@ class _LoginPageState extends State<LoginPage> {
           BlocListener<AuthCubit, AuthState>(
             listener: (context, state) {
               if (state is AuthFailure) {
+                sl<PosDiagnosticsService>().recordError(state.message);
                 showAuthErrorAlertDialog(
                   context,
                   message: state.message,
@@ -298,6 +316,7 @@ class _LoginPageState extends State<LoginPage> {
                                       theme: theme,
                                       message: _syncErrorMessage!,
                                       onRetry: _retryProductsLoad,
+                                      onBack: _backToCashierLogin,
                                     );
                                   }
 
@@ -321,6 +340,7 @@ class _LoginPageState extends State<LoginPage> {
                                       theme: theme,
                                       message: productsState.message,
                                       onRetry: _retryProductsLoad,
+                                      onBack: _backToCashierLogin,
                                     );
                                   }
 

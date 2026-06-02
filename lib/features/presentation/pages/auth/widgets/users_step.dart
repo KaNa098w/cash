@@ -28,7 +28,8 @@ class UsersStep extends StatelessWidget {
             Expanded(
               child: Text(
                 'Касса: ${provision.name}',
-                style: theme.textTheme.titleLarge!.copyWith(fontWeight: FontWeight.w800),
+                style: theme.textTheme.titleLarge!
+                    .copyWith(fontWeight: FontWeight.w800),
               ),
             ),
             // TextButton(onPressed: onChangeKey, child: const Text('Сменить ключ')),
@@ -43,7 +44,8 @@ class UsersStep extends StatelessWidget {
         if (users.isEmpty)
           Text(
             'Пользователи не найдены',
-            style: theme.textTheme.bodyMedium!.copyWith(color: Colors.redAccent),
+            style:
+                theme.textTheme.bodyMedium!.copyWith(color: Colors.redAccent),
           )
         else
           Expanded(
@@ -75,7 +77,8 @@ class UserTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final letter = user.name.isNotEmpty ? user.name.trim().characters.first : 'U';
+    final letter =
+        user.name.isNotEmpty ? user.name.trim().characters.first : 'U';
 
     return InkWell(
       borderRadius: BorderRadius.circular(14),
@@ -107,12 +110,14 @@ class UserTile extends StatelessWidget {
                 children: [
                   Text(
                     user.name,
-                    style: theme.textTheme.titleMedium!.copyWith(fontWeight: FontWeight.w800),
+                    style: theme.textTheme.titleMedium!
+                        .copyWith(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     user.emailAddress.isEmpty ? '—' : user.emailAddress,
-                    style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54),
+                    style: theme.textTheme.bodySmall!
+                        .copyWith(color: Colors.black54),
                   ),
                 ],
               ),

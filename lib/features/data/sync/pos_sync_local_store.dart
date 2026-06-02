@@ -746,6 +746,15 @@ class PosSyncLocalStore {
         .toList(growable: false);
   }
 
+  Future<List<Map<String, dynamic>>> loadProductsRaw() async {
+    final db = await _database;
+    final rows = db
+        .select('SELECT raw_json FROM products ORDER BY name COLLATE NOCASE;');
+    return rows
+        .map((row) => decodeJsonMap((row['raw_json'] ?? '{}').toString()))
+        .toList(growable: false);
+  }
+
   Future<List<ProductModel>> loadFavoriteProducts() async {
     final db = await _database;
     final rows = db.select(

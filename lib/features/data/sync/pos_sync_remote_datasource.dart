@@ -1,13 +1,16 @@
 import 'package:dio/dio.dart';
 
 import 'package:leemon_app/core/di/utils/dio_error_utils.dart';
+import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
 
 import 'pos_sync_models.dart';
 
 class PosSyncRemoteDataSource {
-  PosSyncRemoteDataSource(this._dio);
+  PosSyncRemoteDataSource(this._dio, {PosDiagnosticsService? diagnostics})
+      : _diagnostics = diagnostics;
 
   final Dio _dio;
+  final PosDiagnosticsService? _diagnostics;
 
   // Sync requests can transfer large batches — use a longer timeout.
   static const _syncReceiveTimeout = Duration(seconds: 90);
@@ -36,6 +39,30 @@ class PosSyncRemoteDataSource {
     required String key,
   }) async {
     final response = await _dio.get('/organizations/pos/$key');
+    final body = _asMap(response.data);
+    return _nestedMap(body['data']) ?? body;
+  }
+
+  Future<Map<String, dynamic>> fetchXReport({
+    required String key,
+    required String sessionId,
+  }) async {
+    final response = await _dio.get(
+      '/organizations/pos/$key/sessions/$sessionId/x-report',
+      options: _silentOptions,
+    );
+    final body = _asMap(response.data);
+    return _nestedMap(body['data']) ?? body;
+  }
+
+  Future<Map<String, dynamic>> fetchZReport({
+    required String key,
+    required String sessionId,
+  }) async {
+    final response = await _dio.get(
+      '/organizations/pos/$key/sessions/$sessionId/z-report',
+      options: _silentOptions,
+    );
     final body = _asMap(response.data);
     return _nestedMap(body['data']) ?? body;
   }
@@ -81,8 +108,24 @@ class PosSyncRemoteDataSource {
     final client = Dio()
       ..options.connectTimeout = const Duration(seconds: 30)
       ..options.receiveTimeout = const Duration(minutes: 5);
-    final response = await client.get<dynamic>(url);
-    return _asMap(response.data);
+    try {
+      final response = await client.get<dynamic>(url);
+      _diagnostics?.recordManualHttp(
+        method: 'GET',
+        url: url,
+        responseData: response.data,
+        statusCode: response.statusCode,
+        statusMessage: response.statusMessage,
+      );
+      return _asMap(response.data);
+    } catch (error) {
+      _diagnostics?.recordManualHttp(
+        method: 'GET',
+        url: url,
+        error: error,
+      );
+      rethrow;
+    }
   }
 
   Future<SyncPullBatch> pullChanges({

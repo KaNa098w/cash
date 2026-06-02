@@ -37,12 +37,43 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
     final sessionId = context.read<AuthTokenProvider>().shiftId?.trim() ?? '';
     _summaryFuture = sessionId.isEmpty
         ? Future<ShiftClosureSummaryData?>.value(null)
-        : GetIt.I<PosSyncService>().loadShiftClosureSummary(sessionId);
+        : _loadClosureSummary(sessionId);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _focusAmountInput();
     });
+  }
+
+  Future<ShiftClosureSummaryData?> _loadClosureSummary(String sessionId) async {
+    final auth = context.read<AuthTokenProvider>();
+    final key = auth.posKey?.trim() ?? '';
+    final sync = GetIt.I<PosSyncService>();
+    if (key.isNotEmpty) {
+      try {
+        return await sync.loadShiftClosureSummaryFromBackend(
+          key: key,
+          sessionId: sessionId,
+        );
+      } catch (_) {}
+    }
+    return sync.loadShiftClosureSummary(sessionId);
+  }
+
+  Future<ShiftReportData?> _loadShiftReport(String sessionId) async {
+    final auth = context.read<AuthTokenProvider>();
+    final key = auth.posKey?.trim() ?? '';
+    final sync = GetIt.I<PosSyncService>();
+    if (key.isNotEmpty) {
+      try {
+        return await sync.loadShiftReportFromBackend(
+          key: key,
+          sessionId: sessionId,
+          includeProducts: true,
+        );
+      } catch (_) {}
+    }
+    return sync.loadShiftReport(sessionId);
   }
 
   @override
@@ -159,7 +190,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
 
     setState(() => _printingReport = true);
     try {
-      final report = await GetIt.I<PosSyncService>().loadShiftReport(sessionId);
+      final report = await _loadShiftReport(sessionId);
       if (report == null || !mounted) return;
 
       final storeName = (tokenProvider.storeName ?? '').trim().isEmpty

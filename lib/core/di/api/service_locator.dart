@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
+import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
 import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
 import 'package:leemon_app/features/data/datasources/payment_remote_datasource.dart';
 import 'package:leemon_app/features/data/datasources/app_update_remote_datasource.dart';
@@ -47,6 +48,12 @@ Future<void> initDependencies() async {
   }
 
   // ---------- Dio / HTTP ----------
+  if (!sl.isRegistered<PosDiagnosticsService>()) {
+    sl.registerLazySingleton<PosDiagnosticsService>(
+      () => PosDiagnosticsService(),
+    );
+  }
+
   if (!sl.isRegistered<Dio>()) {
     sl.registerLazySingleton<Dio>(() {
       final dio = Dio(
@@ -63,6 +70,9 @@ Future<void> initDependencies() async {
 
       // ✅ авто-добавление device_id
       dio.interceptors.add(DeviceIdInterceptor(sl<DeviceIdStore>()));
+      dio.interceptors.add(
+        PosDiagnosticsInterceptor(sl<PosDiagnosticsService>()),
+      );
 
       dio.interceptors.add(
         PrettyDioLogger(
@@ -123,7 +133,10 @@ Future<void> initDependencies() async {
 
   if (!sl.isRegistered<PosSyncRemoteDataSource>()) {
     sl.registerLazySingleton<PosSyncRemoteDataSource>(
-      () => PosSyncRemoteDataSource(sl<Dio>()),
+      () => PosSyncRemoteDataSource(
+        sl<Dio>(),
+        diagnostics: sl<PosDiagnosticsService>(),
+      ),
     );
   }
 
@@ -132,6 +145,7 @@ Future<void> initDependencies() async {
       () => PosSyncService(
         sl<PosSyncLocalStore>(),
         sl<PosSyncRemoteDataSource>(),
+        diagnostics: sl<PosDiagnosticsService>(),
       ),
     );
   }

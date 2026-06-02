@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_state.dart';
@@ -61,6 +62,7 @@ class _CashiersPageState extends State<CashiersPage> {
             curr is AuthInitial,
         listener: (context, state) {
           if (state is AuthFailure) {
+            sl<PosDiagnosticsService>().recordError(state.message);
             showAuthErrorAlertDialog(
               context,
               message: state.message,
