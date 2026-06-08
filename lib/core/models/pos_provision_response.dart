@@ -6,6 +6,9 @@ class PosProvisionResponse {
   final String accountId;
   final String storeId;
   final String storeName;
+  final bool allowCustomSalePrices;
+  final bool allowBelowCostSalePrices;
+  final bool allowRefundsWithoutSale;
   final String organizationId;
 
   final DateTime? createdAt;
@@ -21,6 +24,9 @@ class PosProvisionResponse {
     required this.accountId,
     required this.storeId,
     required this.storeName,
+    this.allowCustomSalePrices = false,
+    this.allowBelowCostSalePrices = false,
+    this.allowRefundsWithoutSale = false,
     required this.organizationId,
     required this.users,
     this.createdAt,
@@ -46,6 +52,21 @@ class PosProvisionResponse {
       final fromStore = (store['name'] ?? store['title'] ?? '').toString();
       if (fromStore.isNotEmpty) storeName = fromStore;
     }
+    final allowCustomSalePrices = _asBool(
+      store is Map<String, dynamic>
+          ? store['allow_custom_sale_prices']
+          : data['allow_custom_sale_prices'],
+    );
+    final allowBelowCostSalePrices = _asBool(
+      store is Map<String, dynamic>
+          ? store['allow_below_cost_sale_prices']
+          : data['allow_below_cost_sale_prices'],
+    );
+    final allowRefundsWithoutSale = _asBool(
+      store is Map<String, dynamic>
+          ? store['allow_refunds_without_sale']
+          : data['allow_refunds_without_sale'],
+    );
     final organizationId = (data['organization_id'] ?? '').toString();
 
     if (name.isEmpty ||
@@ -80,11 +101,21 @@ class PosProvisionResponse {
       accountId: accountId,
       storeId: storeId,
       storeName: storeName,
+      allowCustomSalePrices: allowCustomSalePrices,
+      allowBelowCostSalePrices: allowBelowCostSalePrices,
+      allowRefundsWithoutSale: allowRefundsWithoutSale,
       organizationId: organizationId,
       createdAt: parseDt(data['created']),
       updatedAt: parseDt(data['updated']),
       users: users,
     );
+  }
+
+  static bool _asBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final normalized = (value ?? '').toString().trim().toLowerCase();
+    return normalized == 'true' || normalized == '1';
   }
 
   static List<PosUser> _uniqueUsersById(Iterable<PosUser> users) {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 
 import '../models/refund_pick.dart';
@@ -21,78 +22,59 @@ class SaleItemRow extends StatelessWidget {
 
   final void Function(bool v) onToggle;
   final void Function(int q) onQtyChanged;
-
   final int Function(SaleItemModel item) refundedQtyOf;
   final int Function(SaleItemModel item) availableQtyOf;
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     final name = item.displayProductName;
     final unit = (item.product?.measurementUnit.trim().isNotEmpty ?? false)
         ? item.product!.measurementUnit
         : 'шт.';
 
-    final totalQty = toIntQty(item.quantity);
     final refundedQty = refundedQtyOf(item);
     final maxQty = availableQtyOf(item);
-    final hasRefund = refundedQty > 0;
 
-    final checked = pick?.checked ?? false;
     final qty = (pick?.quantity ?? 0).clamp(0, maxQty);
-    final leftAfterPick = (maxQty - qty).clamp(0, maxQty);
+    final unitText = unit.trim().replaceAll('.', '');
+    final qtyText =
+        unitText == 'шт' ? '$qty шт' : '${qty.toStringAsFixed(2)} $unitText';
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
       margin: const EdgeInsets.symmetric(vertical: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: checked
-            ? const Color(0xFFE9F6EF)
-            : hasRefund
-                ? const Color(0xFFFFF8DB)
-                : Colors.white.withValues(alpha: 0.55),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: checked
-            ? Border.all(color: const Color(0xFF34A853).withValues(alpha: 0.35))
-            : hasRefund
-                ? Border.all(
-                    color: const Color(0xFFF2DF8A).withValues(alpha: 0.7))
-                : null,
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 34,
-            height: 34,
-            child: Checkbox(
-              value: checked,
-              onChanged: maxQty == 0 ? null : (v) => onToggle(v ?? false),
-              side: BorderSide(
-                color: checked
-                    ? const Color(0xFF34A853)
-                    : cs.outline.withValues(alpha: 0.55),
-                width: 1.4,
-              ),
-              activeColor: const Color(0xFF34A853),
-              checkColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+          Padding(
+            padding: EdgeInsets.zero,
+            child: Container(
+              width: 18,
+              height: 18,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD9D9D9),
+                borderRadius: BorderRadius.circular(4),
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  name,
-                  softWrap: true,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
+                Text(name,
+                    softWrap: true,
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      height: 1.4,
+                      fontWeight: FontWeight.w500,
+                    )),
                 if (refundedQty > 0)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
@@ -109,10 +91,19 @@ class SaleItemRow extends StatelessWidget {
           ),
           SizedBox(
             width: 130,
-            child: Text(
-              money0(item.price),
-              textAlign: TextAlign.right,
-              style: TextStyle(color: Colors.black.withValues(alpha: 0.75)),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Text(
+                money2(item.price),
+                textAlign: TextAlign.right,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  height: 1.4,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black,
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -123,23 +114,27 @@ class SaleItemRow extends StatelessWidget {
               children: [
                 QtyBtn(
                   icon: Icons.remove,
-                  onTap: qty <= 0 ? null : () => onQtyChanged(qty - 1),
+                  onTap: (maxQty == 0 || qty >= maxQty)
+                      ? null
+                      : () => onQtyChanged(qty + 1),
                 ),
                 const SizedBox(width: 8),
                 SizedBox(
                   width: 64,
                   child: Text(
-                    '$leftAfterPick/$totalQty',
+                    qtyText,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      height: 1.4,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 QtyBtn(
                   icon: Icons.add,
-                  onTap: (maxQty == 0 || qty >= maxQty)
-                      ? null
-                      : () => onQtyChanged(qty + 1),
+                  onTap: qty <= 0 ? null : () => onQtyChanged(qty - 1),
                 ),
               ],
             ),
@@ -148,20 +143,17 @@ class SaleItemRow extends StatelessWidget {
           SizedBox(
             width: 140,
             child: Text(
-              money0(toNum(item.price) * qty),
+              money2(item.totalPrice),
               textAlign: TextAlign.right,
-              style: const TextStyle(fontWeight: FontWeight.w700),
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 90,
-            child: Text(
-              unit,
-              textAlign: TextAlign.right,
-              style: TextStyle(color: Colors.black.withValues(alpha: 0.6)),
-            ),
-          ),
+          const SizedBox(width: 24),
         ],
       ),
     );

@@ -386,7 +386,10 @@ class LocalAccount {
   final String? type;
   final bool visibleToPos;
 
-  bool get isCash => type?.toLowerCase() == 'cash';
+  String get normalizedType => (type ?? '').trim().toLowerCase();
+
+  bool get isCash => normalizedType == 'cash';
+  bool get isBankOrPos => normalizedType == 'bank' || normalizedType == 'pos';
 }
 
 Map<String, dynamic> decodeJsonMap(String raw) {

@@ -10,6 +10,12 @@ String money0(dynamic value) {
   return '${fmt.format(v)} ₸';
 }
 
+String money2(dynamic value) {
+  final num v = toNum(value);
+  final fmt = NumberFormat('#,##0.00', 'ru');
+  return '${fmt.format(v)} ₸';
+}
+
 num toNum(dynamic v) {
   if (v is num) return v;
   return num.tryParse('$v') ?? 0;

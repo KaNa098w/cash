@@ -102,6 +102,7 @@ class PosCubit extends Cubit<PosState> {
       id: id,
       name: m.name,
       price: m.sellingPrice,
+      arrivalCost: m.arrivalCost,
       vat: 0,
       quantity: m.quantity,
       measurementUnit: m.measurementUnit,
@@ -247,19 +248,42 @@ class PosCubit extends Cubit<PosState> {
   void setPrice(int index, double price) {
     if (index < 0 || index >= state.items.length) return;
     if (price <= 0 || price.isNaN || price.isInfinite) return;
-    final item = state.items[index];
-    if (!item.product.isUniversal) return;
 
     final normalizedPrice = double.parse(price.toStringAsFixed(2));
     final tickets = _updateActiveTicketItems((items) {
       final list = List<CartItem>.from(items);
       if (index >= 0 && index < list.length) {
         final current = list[index];
-        list[index] = current.copyWith(
-          product: current.product.copyWith(price: normalizedPrice),
-          discount: 0,
-          discountApplied: false,
-        );
+        if (current.product.isUniversal) {
+          list[index] = current.copyWith(
+            product: current.product.copyWith(price: normalizedPrice),
+            discount: 0,
+            clearCustomUnitPrice: true,
+            discountApplied: false,
+          );
+        } else {
+          list[index] = current.copyWith(
+            customUnitPrice: normalizedPrice,
+            discount: 0,
+            discountApplied: false,
+          );
+        }
+      }
+      return list;
+    });
+
+    _emitAndPersist(state.copyWith(tickets: tickets));
+  }
+
+  void clearCustomPrice(int index) {
+    if (index < 0 || index >= state.items.length) return;
+    final tickets = _updateActiveTicketItems((items) {
+      final list = List<CartItem>.from(items);
+      if (index >= 0 && index < list.length) {
+        final current = list[index];
+        if (!current.product.isUniversal) {
+          list[index] = current.copyWith(clearCustomUnitPrice: true);
+        }
       }
       return list;
     });

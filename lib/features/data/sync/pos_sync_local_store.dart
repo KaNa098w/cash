@@ -621,6 +621,7 @@ class PosSyncLocalStore {
       if (posRow != null) {
         _upsertRow(db, 'pos_info', posRow);
       }
+      _upsertReturnAccessKeysFromPosInfo(db, posInfo, now);
 
       for (final raw in products) {
         final row = _mapProductRow(raw, now);
@@ -705,6 +706,7 @@ class PosSyncLocalStore {
   }) async {
     final db = await _database;
     final now = _nowIso();
+
     _inTransaction<void>(db, () {
       for (final change in changes) {
         _applyPullChange(db, change, now);
@@ -1463,14 +1465,20 @@ class PosSyncLocalStore {
       return;
     }
 
+    if (entity == _EntityKind.posInfo) {
+      final row = _mapPosInfoRow(payload);
+      if (row != null) _upsertRow(db, entity.table, row);
+      _upsertReturnAccessKeysFromPosInfo(db, payload, now);
+      return;
+    }
+
     final row = switch (entity) {
-      _EntityKind.posInfo => _mapPosInfoRow(payload),
       _EntityKind.product => _mapProductRow(payload, now),
       _EntityKind.account => _mapAccountRow(payload, now),
       _EntityKind.expenseType => _mapExpenseTypeRow(payload, now),
       _EntityKind.customer => _mapCustomerRow(payload, now),
       _EntityKind.returnAccessKey => _mapReturnAccessKeyRow(payload, now),
-      _EntityKind.sale || _EntityKind.refund => null,
+      _EntityKind.posInfo || _EntityKind.sale || _EntityKind.refund => null,
     };
 
     if (row == null) return;
@@ -2034,6 +2042,25 @@ class PosSyncLocalStore {
     };
   }
 
+  void _upsertReturnAccessKeysFromPosInfo(
+    sqlite.Database db,
+    Map<String, dynamic> posInfo,
+    String now,
+  ) {
+    final rawKeys = posInfo['return_access_keys'];
+    if (rawKeys is! List) return;
+
+    for (final raw in rawKeys) {
+      if (raw is! Map) continue;
+      final keyRow = _mapReturnAccessKeyRow(
+        Map<String, dynamic>.from(raw),
+        now,
+      );
+      if (keyRow == null) continue;
+      _upsertRow(db, 'return_access_keys', keyRow);
+    }
+  }
+
   Map<String, dynamic>? _mapProductRow(Map<String, dynamic> raw, String now) {
     final id = _string(raw['id']);
     if (id.isEmpty) return null;
@@ -2145,6 +2172,18 @@ class PosSyncLocalStore {
     final expiryDt = _parseDt(expiresAt);
     if (expiryDt == null) return true;
     return expiryDt.isAfter(DateTime.now());
+  }
+
+  /// Get all active return access keys (for debugging).
+  Future<List<String>> getAllActiveReturnAccessKeys() async {
+    final db = await _database;
+    final rows = db.select(
+      'SELECT key FROM return_access_keys WHERE is_active = 1 ORDER BY updated_at_local DESC',
+    );
+    return rows
+        .map((row) => _rowMap(row)['key']?.toString() ?? '')
+        .where((k) => k.isNotEmpty)
+        .toList();
   }
 
   /// Insert a new session into the local sessions table.

@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/core/models/pos_provision_response.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
@@ -25,12 +26,49 @@ class CashiersPage extends StatefulWidget {
 }
 
 class _CashiersPageState extends State<CashiersPage> {
+  PosProvisionResponse _filterProvisionForOpenShift(
+    AuthTokenProvider provider,
+    PosProvisionResponse provision,
+  ) {
+    if (!provider.hasShiftId) return provision;
+
+    final shiftUserId = (provider.shiftUserId?.trim().isNotEmpty == true)
+        ? provider.shiftUserId!.trim()
+        : (provider.activeUserId ?? '').trim();
+    if (shiftUserId.isEmpty) return provision;
+
+    final users =
+        provision.users.where((user) => user.id == shiftUserId).toList();
+    if (users.isEmpty) return provision;
+
+    return PosProvisionResponse(
+      id: provision.id,
+      name: provision.name,
+      number: provision.number,
+      key: provision.key,
+      accountId: provision.accountId,
+      storeId: provision.storeId,
+      storeName: provision.storeName,
+      allowCustomSalePrices: provision.allowCustomSalePrices,
+      allowBelowCostSalePrices: provision.allowBelowCostSalePrices,
+      allowRefundsWithoutSale: provision.allowRefundsWithoutSale,
+      organizationId: provision.organizationId,
+      users: users,
+      createdAt: provision.createdAt,
+      updatedAt: provision.updatedAt,
+    );
+  }
+
   Future<void> _wipeAllLocalData() async {
+    final posCubit = context.read<PosCubit>();
+    final productsCubit = context.read<ProductsCubit>();
+    final authCubit = context.read<AuthCubit>();
+
     await sl<PosSyncService>().clearAllLocalData();
 
-    await context.read<PosCubit>().resetAllLocalState();
-    await context.read<ProductsCubit>().reset();
-    await context.read<AuthCubit>().resetAll();
+    await posCubit.resetAllLocalState();
+    await productsCubit.reset();
+    await authCubit.resetAll();
 
     if (!mounted) return;
     context.go('/login');
@@ -80,13 +118,13 @@ class _CashiersPageState extends State<CashiersPage> {
           }
         },
         builder: (context, authState) {
-          final provision = switch (authState) {
+          final rawProvision = switch (authState) {
             AuthProvisioned(:final provision) => provision,
             AuthPinStep(:final provision) => provision,
             _ => provider.cachedProvision,
           };
 
-          if (provision == null) {
+          if (rawProvision == null) {
             return Builder(
               builder: (context) {
                 unawaited(
@@ -104,6 +142,8 @@ class _CashiersPageState extends State<CashiersPage> {
             );
           }
 
+          final provision =
+              _filterProvisionForOpenShift(provider, rawProvision);
           final selectedUser = authState is AuthPinStep ? authState.user : null;
           final errorText =
               authState is AuthPinStep ? authState.errorText : null;

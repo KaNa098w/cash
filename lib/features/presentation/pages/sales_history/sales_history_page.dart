@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' show min;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -31,6 +32,7 @@ import 'utils/app_scroll_behavior.dart';
 import 'utils/formatters.dart';
 import 'utils/sales_filter.dart';
 import 'widgets/sale_card.dart';
+import 'widgets/sale_items_box.dart';
 
 class SalesHistoryPage extends StatefulWidget {
   const SalesHistoryPage({super.key});
@@ -40,7 +42,7 @@ class SalesHistoryPage extends StatefulWidget {
 }
 
 class _SalesHistoryPageState extends State<SalesHistoryPage> {
-  static const Duration _historyIdleTimeout = Duration(seconds: 30);
+  static const Duration _historyIdleTimeout = Duration(seconds: 60);
   static const Duration _printLoadingDuration = Duration(seconds: 1);
   static const Duration _printCooldownDuration = Duration(seconds: 5);
 
@@ -56,8 +58,10 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   Timer? _saleSearchDebounce;
   Timer? _historyRefreshDebounce;
   Timer? _historyIdleTimer;
+  bool _historyIdlePaused = false;
   String _saleQuery = '';
   DateTime? _selectedDate;
+  SalesStatusFilter _statusFilter = SalesStatusFilter.all;
   StreamSubscription<PosState>? _posStateSub;
 
   int? _statusCodeOf(Object e) {
@@ -73,6 +77,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   static const double _fs = 18;
   final FocusNode _saleSearchFocusNode = FocusNode();
   bool _saleKeyboardOpen = false;
+  OverlayEntry? _saleKeyboardEntry;
 
   DateTime _dateOnly(DateTime value) =>
       DateTime(value.year, value.month, value.day);
@@ -84,6 +89,10 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
   void _resetHistoryIdleTimer() {
     if (!mounted) return;
+    if (_historyIdlePaused) {
+      _cancelHistoryIdleTimer();
+      return;
+    }
     final posCubit = context.read<PosCubit>();
     if (!posCubit.state.isHistoryMode) {
       _cancelHistoryIdleTimer();
@@ -155,6 +164,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     _cancelHistoryIdleTimer();
     _historyChangedSub?.cancel();
     _posStateSub?.cancel();
+    _closeSaleKeyboard();
     _saleSearchCtrl.dispose();
     _saleSearchFocusNode.dispose();
 
@@ -641,43 +651,78 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     if (_saleKeyboardOpen) return;
     _saleKeyboardOpen = true;
 
-    _runWithDialogFocus(() {
-      return showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        barrierColor: Colors.black.withValues(alpha: 0.15),
-        builder: (ctx) {
-          return OnScreenKeyboardSheet(
-            controllerGetter: () => _saleSearchCtrl,
-            onEnter: () {
-              Navigator.of(ctx).pop();
-              _applySaleSearch();
-            },
-            onClose: () => Navigator.of(ctx).pop(),
-          );
-        },
-      );
-    }).whenComplete(() {
-      _saleKeyboardOpen = false;
+    if (!_saleSearchFocusNode.hasFocus) {
+      _saleSearchFocusNode.requestFocus();
+      final text = _saleSearchCtrl.text;
+      _saleSearchCtrl.selection = TextSelection.collapsed(offset: text.length);
+    }
+
+    _saleKeyboardEntry = OverlayEntry(
+      builder: (ctx) {
+        return Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: Material(
+            color: Colors.transparent,
+            child: SizedBox(
+              width: double.infinity,
+              child: OnScreenKeyboardSheet(
+                controllerGetter: () => _saleSearchCtrl,
+                onEnter: () {
+                  _closeSaleKeyboard();
+                  _applySaleSearch();
+                },
+                onClose: _closeSaleKeyboard,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    Overlay.of(context).insert(_saleKeyboardEntry!);
+  }
+
+  void _closeSaleKeyboard() {
+    if (!_saleKeyboardOpen && _saleKeyboardEntry == null) return;
+    _saleKeyboardOpen = false;
+    _saleKeyboardEntry?.remove();
+    _saleKeyboardEntry = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _saleSearchFocusNode.requestFocus();
+      final text = _saleSearchCtrl.text;
+      _saleSearchCtrl.selection = TextSelection.collapsed(offset: text.length);
     });
   }
 
-  Future<void> _submitRefund(BuildContext context, SaleModel sale) async {
+  Future<bool> _submitRefund(BuildContext context, SaleModel sale) async {
     final auth = context.read<AuthTokenProvider>();
 
     final key = auth.posKey?.trim() ?? '';
     final deviceId = auth.deviceId?.trim() ?? '';
     final posSessionId = auth.shiftId?.trim() ?? '';
-    final fallbackAccountId = auth.accountId?.trim() ?? '';
 
-    if (key.isEmpty) return _snack('Нет posKey');
-    if (deviceId.isEmpty) return _snack('Нет deviceId');
-    if (posSessionId.isEmpty) return _snack('Смена не открыта');
+    if (key.isEmpty) {
+      _snack('Нет posKey');
+      return false;
+    }
+    if (deviceId.isEmpty) {
+      _snack('Нет deviceId');
+      return false;
+    }
+    if (posSessionId.isEmpty) {
+      _snack('Смена не открыта');
+      return false;
+    }
 
     final saleId = sale.localId.trim();
-    if (saleId.isEmpty) return _snack('saleId пустой (sale.localId)');
-    if (_controller.isRefundLoading(saleId)) return;
+    if (saleId.isEmpty) {
+      _snack('saleId пустой (sale.localId)');
+      return false;
+    }
+    if (_controller.isRefundLoading(saleId)) return false;
 
     final picks = _controller
         .salePickMap(saleId)
@@ -685,7 +730,10 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         .where((e) => e.checked && e.quantity > 0)
         .toList();
 
-    if (picks.isEmpty) return _snack('Выбери товары для возврата');
+    if (picks.isEmpty) {
+      _snack('Выбери товары для возврата');
+      return false;
+    }
 
     // Synced sales have server-assigned item IDs; local-only sales do not.
     final isSynced = sale.items.any((i) => i.id.isNotEmpty);
@@ -711,6 +759,12 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     );
 
     final sync = sl<PosSyncService>();
+    void showRefundError(String message) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
 
     // Build payments[] based on the original sale's payment method
     final salePaymentMethod = sale.paymentMethod.trim().toLowerCase();
@@ -721,14 +775,31 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     };
 
     final accounts = await sync.loadAccounts();
-    final cashAccount = accounts.firstWhere(
-      (a) => a.isCash,
-      orElse: () => LocalAccount(id: fallbackAccountId, name: ''),
-    );
-    final cardAccount = accounts.firstWhere(
-      (a) => !a.isCash && a.id != cashAccount.id,
-      orElse: () => cashAccount,
-    );
+    final visibleAccounts =
+        accounts.where((account) => account.visibleToPos).toList();
+    final cashAccount = visibleAccounts.cast<LocalAccount?>().firstWhere(
+          (a) => a?.isCash ?? false,
+          orElse: () => null,
+        );
+    final cardAccount = visibleAccounts.cast<LocalAccount?>().firstWhere(
+          (a) => a?.isBankOrPos ?? false,
+          orElse: () => null,
+        );
+
+    if ((refundPaymentMethod == 'cash' || refundPaymentMethod == 'mixed') &&
+        (cashAccount?.id.trim().isEmpty ?? true)) {
+      showRefundError(
+        'Не найден счет наличных. Обновите синхронизацию POS или настройте счет CASH.',
+      );
+      return false;
+    }
+    if ((refundPaymentMethod == 'card' || refundPaymentMethod == 'mixed') &&
+        (cardAccount?.id.trim().isEmpty ?? true)) {
+      showRefundError(
+        'Не найден счет карты. Обновите синхронизацию POS или настройте счет BANK/POS.',
+      );
+      return false;
+    }
 
     final refundClientId = 'refund_${DateTime.now().microsecondsSinceEpoch}';
     final List<Map<String, dynamic>> refundPayments;
@@ -736,12 +807,12 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       final half = totalAmount ~/ 2;
       refundPayments = [
         {
-          'account_id': cashAccount.id,
+          'account_id': cashAccount!.id,
           'amount': half,
           'client_payment_id': '$refundClientId-cash',
         },
         {
-          'account_id': cardAccount.id,
+          'account_id': cardAccount!.id,
           'amount': totalAmount - half,
           'client_payment_id': '$refundClientId-card',
         },
@@ -749,7 +820,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     } else if (refundPaymentMethod == 'card') {
       refundPayments = [
         {
-          'account_id': cardAccount.id,
+          'account_id': cardAccount!.id,
           'amount': totalAmount,
           'client_payment_id': '$refundClientId-card',
         },
@@ -757,7 +828,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     } else {
       refundPayments = [
         {
-          'account_id': cashAccount.id,
+          'account_id': cashAccount!.id,
           'amount': totalAmount,
           'client_payment_id': '$refundClientId-cash',
         },
@@ -774,6 +845,23 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
     _controller.setRefundLoading(saleId, true, () => setState(() {}));
 
+    // 🔍 Debug: Log saved return_access_key
+    try {
+      final sync = sl<PosSyncService>();
+      final savedKeys = await sync.getAllActiveReturnAccessKeys();
+      print('✅ [REFUND DEBUG] Refund initiated for sale: $saleId');
+      print('   Saved return_access_keys count: ${savedKeys.length}');
+      if (savedKeys.isNotEmpty) {
+        for (var i = 0; i < savedKeys.length; i++) {
+          print('   Key[$i]: ${savedKeys[i].substring(0, min(10, savedKeys[i].length))}...${savedKeys[i].length > 10 ? ' (length: ${savedKeys[i].length})' : ''}');
+        }
+      } else {
+        print('   ⚠️ No active return_access_keys found');
+      }
+    } catch (e) {
+      print('❌ [DEBUG] Error checking return_access_keys: $e');
+    }
+
     try {
       final ok = await _runWithDialogFocus(() async {
         return showDialog<bool>(
@@ -785,6 +873,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
               if (accessKey.isEmpty) return false;
 
               try {
+                print('🔐 [REFUND] Sending refund with accessKey: ${accessKey.substring(0, min(10, accessKey.length))}...${accessKey.length > 10 ? ' (length: ${accessKey.length})' : ''}');
                 final result = await sync.createRefund(
                   key: key,
                   deviceId: deviceId,
@@ -798,6 +887,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                   date: DateTime.now(),
                   returnAccessKey: accessKey,
                 );
+                print('✅ [REFUND] Success! Result: ${result.result}, ClientId: ${result.clientId}');
                 if (result.result == QueueSendResult.manual) {
                   throw Exception(
                     result.errorMessage ?? 'Возврат требует ручной обработки',
@@ -807,7 +897,11 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                 return true; // 200 — доступ есть
               } catch (e) {
                 // 401 — доступ нет, диалог покажет ошибку и попросит перескан
-                if (_statusCodeOf(e) == 401) return false;
+                if (_statusCodeOf(e) == 401) {
+                  print('❌ [REFUND] Access denied (401) for key: ${accessKey.substring(0, min(10, accessKey.length))}...');
+                  return false;
+                }
+                print('❌ [REFUND] Error: $e');
                 rethrow; // остальные ошибки покажем как "Ошибка запроса"
               }
             },
@@ -815,9 +909,9 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         );
       });
 
-      if (ok != true) return; // отмена/закрытие/нет доступа
+      if (ok != true) return false; // отмена/закрытие/нет доступа
 
-      if (!mounted) return;
+      if (!mounted) return false;
       _cubit.applyRefundOptimistic(
         saleId: saleId,
         refundId: effectiveRefundId,
@@ -843,13 +937,206 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       );
 
       _controller.clearPicksForSale(saleId, () => setState(() {}));
+      return true;
     } catch (e) {
-      if (!mounted) return;
-      _snack('Ошибка возврата: $e');
+      if (mounted) {
+        _snack('Ошибка возврата: $e');
+      }
+      return false;
     } finally {
       if (mounted) {
         _controller.setRefundLoading(saleId, false, () => setState(() {}));
       }
+    }
+  }
+
+  Future<void> _openRefundPickDialog(
+      BuildContext context, SaleModel sale) async {
+    final saleId = sale.localId.trim();
+    if (saleId.isEmpty) return _snack('saleId пустой (sale.localId)');
+    final cashierName = (context.read<AuthTokenProvider>().activeUserName ?? '')
+            .trim()
+            .isNotEmpty
+        ? context.read<AuthTokenProvider>().activeUserName!.trim()
+        : cashierLabel(sale);
+
+    _controller.clearPicksForSale(saleId, () => setState(() {}));
+
+    _historyIdlePaused = true;
+    _cancelHistoryIdleTimer();
+
+    try {
+      await _runWithDialogFocus(() {
+        return showDialog<void>(
+          context: context,
+          barrierColor: Colors.black.withValues(alpha: 0.45),
+          builder: (dialogContext) {
+            return StatefulBuilder(
+              builder: (dialogContext, setDialogState) {
+                void refresh() {
+                  setDialogState(() {});
+                  if (mounted) setState(() {});
+                }
+
+                final selectedCount = _controller.selectedItemsCount(saleId);
+                final selectedTotal = _controller.selectedTotal(saleId);
+                final canSubmit =
+                    selectedCount > 0 && !_controller.isRefundLoading(saleId);
+
+                return Dialog(
+                  insetPadding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                  backgroundColor: Colors.transparent,
+                  child: ConstrainedBox(
+                    constraints:
+                        const BoxConstraints(maxWidth: 1180, maxHeight: 420),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE5E5E5),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 10, 10, 16),
+                        child: Column(
+                          children: [
+                            _RefundDialogReceiptHeader(
+                              sale: sale,
+                              cashierName: cashierName,
+                            ),
+                            const SizedBox(height: 10),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                child: SaleItemsBox(
+                                  items: sale.items,
+                                  picks: _controller.salePickMap(saleId),
+                                  onToggleItem: (item, checked) {
+                                    _controller.toggleItem(
+                                      saleId: saleId,
+                                      item: item,
+                                      checked: checked,
+                                      notify: refresh,
+                                    );
+                                  },
+                                  onQtyChanged: (item, q) {
+                                    _controller.changeQty(
+                                      saleId: saleId,
+                                      item: item,
+                                      newQty: q,
+                                      notify: refresh,
+                                    );
+                                  },
+                                  refundedQtyOf: _controller.refundedQtyOf,
+                                  availableQtyOf: _controller.availableQtyOf,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _RefundDialogTotal(
+                                    count: selectedCount,
+                                    total: selectedTotal,
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 100,
+                                      height: 40,
+                                      child: ElevatedButton(
+                                        onPressed: () =>
+                                            Navigator.of(dialogContext)
+                                                .pop(false),
+                                        style: ElevatedButton.styleFrom(
+                                          elevation: 0,
+                                          backgroundColor:
+                                              const Color(0xFF9A9A9A),
+                                          foregroundColor: Colors.white,
+                                          padding: EdgeInsets.zero,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(3),
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'Отмена',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    SizedBox(
+                                      width: 104,
+                                      height: 40,
+                                      child: ElevatedButton(
+                                        onPressed: canSubmit
+                                            ? () async {
+                                                setDialogState(() {});
+                                                final success =
+                                                    await _submitRefund(
+                                                  dialogContext,
+                                                  sale,
+                                                );
+                                                if (!dialogContext.mounted) {
+                                                  return;
+                                                }
+                                                setDialogState(() {});
+                                                if (success) {
+                                                  Navigator.of(dialogContext)
+                                                      .pop();
+                                                }
+                                              }
+                                            : null,
+                                        style: ElevatedButton.styleFrom(
+                                          elevation: 0,
+                                          backgroundColor:
+                                              const Color(0xFF2DB8CF),
+                                          disabledBackgroundColor:
+                                              const Color(0xFFB6B6B6),
+                                          foregroundColor: Colors.white,
+                                          disabledForegroundColor: Colors.white,
+                                          padding: EdgeInsets.zero,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(3),
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'Возврат',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      });
+    } finally {
+      _historyIdlePaused = false;
+      if (mounted) _resetHistoryIdleTimer();
     }
   }
 
@@ -937,8 +1224,12 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
           value: _cubit,
           child: BlocBuilder<SalesHistoryCubit, SalesHistoryState>(
             builder: (context, state) {
-              final visibleSales =
-                  filterSales(state.sales, _saleQuery, date: _selectedDate);
+              final visibleSales = filterSales(
+                state.sales,
+                _saleQuery,
+                date: _selectedDate,
+                status: _statusFilter,
+              );
               final savedCashierName =
                   context.read<AuthTokenProvider>().activeUserName ?? '';
               final visibleTotalAmount = visibleSales.fold<num>(
@@ -952,9 +1243,19 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                   SalesSearchBar(
                     controller: _saleSearchCtrl,
                     focusNode: _saleSearchFocusNode,
-                    foundCount: (_saleQuery.isNotEmpty || _selectedDate != null)
+                    foundCount: (_saleQuery.isNotEmpty ||
+                            _selectedDate != null ||
+                            _statusFilter != SalesStatusFilter.all)
                         ? visibleSales.length
                         : null,
+                    statusFilter: _statusFilter,
+                    onStatusFilterChanged: (filter) {
+                      _trackUserActivity();
+                      setState(() {
+                        _statusFilter = filter;
+                        _expandedSaleId = null;
+                      });
+                    },
                     onSubmit: () {
                       _trackUserActivity();
                       _applySaleSearch();
@@ -983,117 +1284,142 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                     },
                   ),
                   Expanded(
-                    child: state.loading
-                        ? const Center(
-                            child:
-                                CircularProgressIndicator(color: Colors.grey))
-                        : state.error != null
-                            ? ErrorBlock(
-                                message: state.error!,
-                                onRetry: () {
-                                  _trackUserActivity();
-                                  final key = context
-                                          .read<AuthTokenProvider>()
-                                          .posKey
-                                          ?.trim() ??
-                                      '';
-                                  if (key.isNotEmpty) {
-                                    _cubit.loadFirst(key: key);
-                                  }
-                                },
-                              )
-                            : ScrollConfiguration(
-                                behavior: AppScrollBehavior(),
-                                child: Scrollbar(
-                                  controller: _scrollController,
-                                  thumbVisibility: true,
-                                  trackVisibility: true,
-                                  interactive: true,
-                                  thickness: 10,
-                                  radius: const Radius.circular(12),
-                                  child: ListView.separated(
-                                    controller: _scrollController,
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 4),
-                                    itemCount: visibleSales.length,
-                                    separatorBuilder: (_, __) =>
-                                        const SizedBox(height: 10),
-                                    itemBuilder: (_, index) {
-                                      final sale = visibleSales[index];
-                                      final expanded =
-                                          _expandedSaleId == sale.localId;
-                                      final saleId = sale.localId;
-                                      final printKey = _salePrintKey(sale);
-
-                                      return SaleCard(
-                                        sale: sale,
-                                        cashierName: savedCashierName,
-                                        expanded: expanded,
-                                        refundLoading:
-                                            _controller.isRefundLoading(saleId),
-                                        receiptPrintLoading: _controller
-                                            .isReceiptPrintLoading(printKey),
-                                        receiptPrintDisabled: _controller
-                                            .isReceiptPrintDisabled(printKey),
-                                        invoicePrintLoading: _controller
-                                            .isInvoicePrintLoading(printKey),
-                                        invoicePrintDisabled: _controller
-                                            .isInvoicePrintDisabled(printKey),
-                                        selectedCount: _controller
-                                            .selectedItemsCount(saleId),
-                                        selectedTotal:
-                                            _controller.selectedTotal(saleId),
-                                        onSubmitRefund: () {
+                    child: ColoredBox(
+                      color: const Color(0xFFF1F1F1),
+                      child: Column(
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 16),
+                            child: SalesHistoryHeader(),
+                          ),
+                          Expanded(
+                            child: state.loading
+                                ? const Center(
+                                    child: CircularProgressIndicator(
+                                        color: Colors.grey))
+                                : state.error != null
+                                    ? ErrorBlock(
+                                        message: state.error!,
+                                        onRetry: () {
                                           _trackUserActivity();
-                                          _submitRefund(context, sale);
-                                        },
-                                        onPrintReceipt: () {
-                                          _trackUserActivity();
-                                          _printSaleReceipt(sale);
-                                        },
-                                        onPrintInvoice: () {
-                                          _trackUserActivity();
-                                          _printInvoice(sale);
-                                        },
-                                        onToggle: () {
-                                          _trackUserActivity();
-                                          if (!expanded) {
-                                            _logOpenedSale(sale);
+                                          final key = context
+                                                  .read<AuthTokenProvider>()
+                                                  .posKey
+                                                  ?.trim() ??
+                                              '';
+                                          if (key.isNotEmpty) {
+                                            _cubit.loadFirst(key: key);
                                           }
-                                          setState(() {
-                                            _expandedSaleId =
-                                                expanded ? null : sale.localId;
-                                          });
                                         },
-                                        picks: _controller.salePickMap(saleId),
-                                        onToggleItem: (item, checked) =>
-                                            setState(() {
-                                          _trackUserActivity();
-                                          _controller.toggleItem(
-                                            saleId: saleId,
-                                            item: item,
-                                            checked: checked,
-                                            notify: () {},
-                                          );
-                                        }),
-                                        onQtyChanged: (item, q) => setState(() {
-                                          _trackUserActivity();
-                                          _controller.changeQty(
-                                            saleId: saleId,
-                                            item: item,
-                                            newQty: q,
-                                            notify: () {},
-                                          );
-                                        }),
-                                        refundedQtyOf:
-                                            _controller.refundedQtyOf,
-                                        availableQtyOf:
-                                            _controller.availableQtyOf,
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ),
+                                      )
+                                    : ScrollConfiguration(
+                                        behavior: AppScrollBehavior(),
+                                        child: Scrollbar(
+                                          controller: _scrollController,
+                                          thumbVisibility: true,
+                                          trackVisibility: true,
+                                          interactive: true,
+                                          thickness: 10,
+                                          radius: const Radius.circular(12),
+                                          child: ListView.separated(
+                                            controller: _scrollController,
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 16, vertical: 0),
+                                            itemCount: visibleSales.length,
+                                            separatorBuilder: (_, __) =>
+                                                const SizedBox(height: 14),
+                                            itemBuilder: (_, index) {
+                                              final sale = visibleSales[index];
+                                              final expanded =
+                                                  _expandedSaleId ==
+                                                      sale.localId;
+                                              final saleId = sale.localId;
+                                              final printKey =
+                                                  _salePrintKey(sale);
+
+                                              return SaleCard(
+                                                sale: sale,
+                                                cashierName: savedCashierName,
+                                                expanded: expanded,
+                                                refundLoading: _controller
+                                                    .isRefundLoading(saleId),
+                                                receiptPrintLoading: _controller
+                                                    .isReceiptPrintLoading(
+                                                        printKey),
+                                                receiptPrintDisabled:
+                                                    _controller
+                                                        .isReceiptPrintDisabled(
+                                                            printKey),
+                                                invoicePrintLoading: _controller
+                                                    .isInvoicePrintLoading(
+                                                        printKey),
+                                                invoicePrintDisabled:
+                                                    _controller
+                                                        .isInvoicePrintDisabled(
+                                                            printKey),
+                                                selectedCount: _controller
+                                                    .selectedItemsCount(saleId),
+                                                selectedTotal: _controller
+                                                    .selectedTotal(saleId),
+                                                onSubmitRefund: () {
+                                                  _trackUserActivity();
+                                                  _openRefundPickDialog(
+                                                      context, sale);
+                                                },
+                                                onPrintReceipt: () {
+                                                  _trackUserActivity();
+                                                  _printSaleReceipt(sale);
+                                                },
+                                                onPrintInvoice: () {
+                                                  _trackUserActivity();
+                                                  _printInvoice(sale);
+                                                },
+                                                onToggle: () {
+                                                  _trackUserActivity();
+                                                  if (!expanded) {
+                                                    _logOpenedSale(sale);
+                                                  }
+                                                  setState(() {
+                                                    _expandedSaleId = expanded
+                                                        ? null
+                                                        : sale.localId;
+                                                  });
+                                                },
+                                                picks: _controller
+                                                    .salePickMap(saleId),
+                                                onToggleItem: (item, checked) =>
+                                                    setState(() {
+                                                  _trackUserActivity();
+                                                  _controller.toggleItem(
+                                                    saleId: saleId,
+                                                    item: item,
+                                                    checked: checked,
+                                                    notify: () {},
+                                                  );
+                                                }),
+                                                onQtyChanged: (item, q) =>
+                                                    setState(() {
+                                                  _trackUserActivity();
+                                                  _controller.changeQty(
+                                                    saleId: saleId,
+                                                    item: item,
+                                                    newQty: q,
+                                                    notify: () {},
+                                                  );
+                                                }),
+                                                refundedQtyOf:
+                                                    _controller.refundedQtyOf,
+                                                availableQtyOf:
+                                                    _controller.availableQtyOf,
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                   _SalesHistoryTotalsBar(
                     checksCount: visibleChecksCount,
@@ -1104,6 +1430,191 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
             },
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _RefundDialogReceiptHeader extends StatelessWidget {
+  const _RefundDialogReceiptHeader({
+    required this.sale,
+    required this.cashierName,
+  });
+
+  final SaleModel sale;
+  final String cashierName;
+
+  String get _paymentLabel {
+    switch (sale.paymentMethod.trim().toLowerCase()) {
+      case 'cash':
+        return 'Наличными';
+      case 'card':
+        return 'Безналичными';
+      case 'mixed':
+        return 'Смешанная';
+      case 'credit':
+      case 'debt':
+      case 'partial_debt':
+        return 'В долг';
+      case 'closed':
+      case 'close':
+        return 'Закрыт';
+      default:
+        final raw = sale.paymentMethod.trim();
+        return raw.isEmpty ? '-' : raw;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textStyle = GoogleFonts.inter(
+      fontSize: 18,
+      height: 1.4,
+      letterSpacing: 0.18,
+      fontWeight: FontWeight.w500,
+      color: Colors.black,
+    );
+    final strongStyle = GoogleFonts.inter(
+      fontSize: 20,
+      height: 1.4,
+      letterSpacing: 0.27,
+      fontWeight: FontWeight.w700,
+      color: Colors.black,
+    );
+    final amountStyle = GoogleFonts.inter(
+      fontSize: 20,
+      height: 1.4,
+      letterSpacing: 0.27,
+      fontWeight: FontWeight.w600,
+      color: Colors.black,
+    );
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 14,
+            child: Text(
+              saleNumber(sale),
+              overflow: TextOverflow.ellipsis,
+              style: textStyle,
+            ),
+          ),
+          Expanded(
+            flex: 28,
+            child: Text(
+              fmtSaleDate(sale.date),
+              overflow: TextOverflow.ellipsis,
+              style: textStyle,
+            ),
+          ),
+          Expanded(
+            flex: 16,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFCBE9C5),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  _paymentLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    height: 1.4,
+                    letterSpacing: 0.34,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF258808),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 15,
+            child: Text(
+              cashierName,
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+              style: strongStyle,
+            ),
+          ),
+          Expanded(
+            flex: 14,
+            child: Text(
+              money2(sale.totalAmount),
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+              style: amountStyle,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RefundDialogTotal extends StatelessWidget {
+  const _RefundDialogTotal({
+    required this.count,
+    required this.total,
+  });
+
+  final int count;
+  final num total;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Text(
+            'Выбрано товаров: $count',
+            style: GoogleFonts.inter(
+              fontSize: 15,
+              height: 1.4,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF5F6772),
+            ),
+          ),
+          const Spacer(),
+          Text(
+            'Итого возврат',
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(width: 18),
+          Text(
+            money2(total),
+            textAlign: TextAlign.right,
+            style: GoogleFonts.inter(
+              fontSize: 22,
+              height: 1.4,
+              letterSpacing: 0.27,
+              fontWeight: FontWeight.w700,
+              color: Colors.black,
+            ),
+          ),
+        ],
       ),
     );
   }

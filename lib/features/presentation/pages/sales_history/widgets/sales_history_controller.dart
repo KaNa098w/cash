@@ -170,7 +170,7 @@ class SalesHistoryController {
 
     pick.checked = checked;
     if (checked) {
-      if (pick.quantity <= 0) pick.quantity = 1;
+      if (pick.quantity <= 0) pick.quantity = pick.maxQuantity;
       if (pick.quantity > pick.maxQuantity) pick.quantity = pick.maxQuantity;
     } else {
       pick.quantity = 0;

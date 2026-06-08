@@ -268,6 +268,34 @@ class _PaymentPanelState extends State<PaymentPanel> {
     return null;
   }
 
+  bool _validateCustomSalePrices(
+    List<CartItem> items, {
+    required bool canCustomPrice,
+  }) {
+    const epsilon = 0.01;
+
+    for (final item in items) {
+      if (item.product.isUniversal || item.customUnitPrice == null) continue;
+
+      final productName = item.product.name.trim().isEmpty
+          ? item.product.id
+          : item.product.name.trim();
+      final customPrice = item.effectiveUnitPrice;
+      final sellingPrice = item.product.price;
+
+      if (!canCustomPrice) {
+        _showError('Ручная цена запрещена для магазина: $productName');
+        return false;
+      }
+      if (sellingPrice > 0 && customPrice > sellingPrice + epsilon) {
+        _showError('Цена выше базовой запрещена: $productName');
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
@@ -404,6 +432,11 @@ class _PaymentPanelState extends State<PaymentPanel> {
               // Capture amounts before async gap
               final isMixed = _isMixedPayment;
               final totalAmountInt = posCubit.total.round();
+              final customPricesOk = _validateCustomSalePrices(
+                posCubit.state.items,
+                canCustomPrice: auth.allowCustomSalePrices,
+              );
+              if (!customPricesOk) return;
 
               final saleItems = <SaleItemModel>[];
               for (final it in posCubit.state.items) {
@@ -498,9 +531,10 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           name: posCubit.state.items[entry.key].product.name,
                           measurementUnit: posCubit
                               .state.items[entry.key].product.measurementUnit,
-                          arrivalCost: 0,
-                          sellingPrice: posCubit
-                              .state.items[entry.key].effectiveUnitPrice,
+                          arrivalCost: posCubit
+                              .state.items[entry.key].product.arrivalCost,
+                          sellingPrice:
+                              posCubit.state.items[entry.key].product.price,
                           wholesalePrice: 0,
                         ),
                       ),
@@ -510,21 +544,39 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
               // Load accounts to find cash/card account IDs
               final accounts = await sl<PosSyncService>().loadAccounts();
-              final cashAccount = accounts.firstWhere(
-                (a) => a.isCash,
-                orElse: () => LocalAccount(id: fallbackAccountId, name: ''),
-              );
-              final cardAccount = accounts.firstWhere(
-                (a) => !a.isCash && a.id != cashAccount.id,
-                orElse: () => cashAccount,
-              );
+              final visibleAccounts =
+                  accounts.where((account) => account.visibleToPos).toList();
+              final cashAccount = visibleAccounts
+                  .cast<LocalAccount?>()
+                  .firstWhere((a) => a?.isCash ?? false, orElse: () => null);
+              final cardAccount = visibleAccounts
+                  .cast<LocalAccount?>()
+                  .firstWhere((a) => a?.isBankOrPos ?? false,
+                      orElse: () => null);
+
+              if ((paymentMethod == 'cash' ||
+                      paymentMethod == 'mixed' ||
+                      (isDebtSale && debtPaidNow > 0)) &&
+                  (cashAccount?.id.trim().isEmpty ?? true)) {
+                _showError(
+                  'Не найден счет наличных. Обновите синхронизацию POS или настройте счет CASH.',
+                );
+                return;
+              }
+              if ((paymentMethod == 'card' || paymentMethod == 'mixed') &&
+                  (cardAccount?.id.trim().isEmpty ?? true)) {
+                _showError(
+                  'Не найден счет карты. Обновите синхронизацию POS или настройте счет BANK/POS.',
+                );
+                return;
+              }
 
               final List<Map<String, dynamic>> payments;
               if (isDebtSale) {
                 payments = debtPaidNow > 0
                     ? [
                         {
-                          'account_id': cashAccount.id,
+                          'account_id': cashAccount!.id,
                           'amount': debtPaidNow,
                           'client_payment_id': '$saleLocalId-debt-paid',
                         },
@@ -532,24 +584,23 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     : [];
               } else if (isMixed) {
                 payments = [
-                  {
-                    'account_id': cashAccount.id,
-                    'amount': mixedCashAmount,
-                    'client_payment_id': '$saleLocalId-cash',
-                  },
-                  {
-                    'account_id': cardAccount.id,
-                    'amount': mixedCardAmount,
-                    'client_payment_id': '$saleLocalId-card',
-                  },
-                ].where((payment) {
-                  final amount = payment['amount'];
-                  return amount is num && amount > 0;
-                }).toList(growable: false);
+                  if (mixedCashAmount > 0)
+                    {
+                      'account_id': cashAccount!.id,
+                      'amount': mixedCashAmount,
+                      'client_payment_id': '$saleLocalId-cash',
+                    },
+                  if (mixedCardAmount > 0)
+                    {
+                      'account_id': cardAccount!.id,
+                      'amount': mixedCardAmount,
+                      'client_payment_id': '$saleLocalId-card',
+                    },
+                ];
               } else if (paymentMethod == 'card') {
                 payments = [
                   {
-                    'account_id': cardAccount.id,
+                    'account_id': cardAccount!.id,
                     'amount': exactTotal,
                     'client_payment_id': '$saleLocalId-card',
                   },
@@ -557,7 +608,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
               } else {
                 payments = [
                   {
-                    'account_id': cashAccount.id,
+                    'account_id': cashAccount!.id,
                     'amount': exactTotal,
                     'client_payment_id': '$saleLocalId-cash',
                   },

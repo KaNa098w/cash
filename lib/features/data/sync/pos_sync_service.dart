@@ -148,6 +148,11 @@ class PosSyncService {
     return _localStore.loadQueueItemDetails(operationId);
   }
 
+  /// Get all active return access keys (for debugging).
+  Future<List<String>> getAllActiveReturnAccessKeys() {
+    return _localStore.getAllActiveReturnAccessKeys();
+  }
+
   Future<void> updateQueueOperationPayload({
     required String operationId,
     required Map<String, dynamic> payload,
@@ -805,6 +810,9 @@ class PosSyncService {
     required String key,
     required String deviceId,
     required String posSessionId,
+    String? posId,
+    String? storeId,
+    String? accountId,
 
     /// Server-assigned sale id. Pass empty string if the sale is not yet synced.
     required String saleId,
@@ -832,6 +840,9 @@ class PosSyncService {
         'sale_id': saleId
       else if ((clientSaleId ?? '').isNotEmpty)
         'client_sale_id': clientSaleId!,
+      if ((posId ?? '').trim().isNotEmpty) 'pos_id': posId!.trim(),
+      if ((storeId ?? '').trim().isNotEmpty) 'store_id': storeId!.trim(),
+      if ((accountId ?? '').trim().isNotEmpty) 'account_id': accountId!.trim(),
       'total_amount': totalAmount,
       'payment_method': paymentMethod,
       'payments': nonZeroPayments,

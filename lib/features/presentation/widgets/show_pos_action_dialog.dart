@@ -69,6 +69,10 @@ Future<void> showPosActionsDialog(BuildContext context) {
       Navigator.of(context, rootNavigator: true).pop();
       context.go('/debts');
     }),
+    _PosAction('ВОЗВРАТ\nТОВАРА', () async {
+      Navigator.of(context, rootNavigator: true).pop();
+      context.go('/refund-without-sale');
+    }),
     _PosAction('СВЕРНУТЬ', () async {
       Navigator.of(context, rootNavigator: true).pop();
 
@@ -2391,6 +2395,7 @@ File _resolveUpdaterExecutable() {
   return File(path.join(appDir, 'updater', _updaterExeName));
 }
 
+// ignore: unused_element
 Future<String> _getInstalledAppVersion() async {
   return kAppVersion;
 }

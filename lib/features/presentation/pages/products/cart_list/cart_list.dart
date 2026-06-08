@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/core/models/product_response.dart';
+import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/domain/entities/cart_item.dart';
@@ -59,6 +60,59 @@ class _CartListState extends State<CartList> {
 
   GlobalKey _rowKeyFor(int index) {
     return _rowKeys.putIfAbsent(index, GlobalKey.new);
+  }
+
+  Future<void> _openDiscountDialog(
+    BuildContext context, {
+    required int index,
+    required CartItem item,
+  }) async {
+    context.read<PosCubit>().selectItem(index);
+    if (item.product.isUniversal) return;
+
+    final auth = context.read<AuthTokenProvider>();
+    if (!auth.allowCustomSalePrices) {
+      final cubit = context.read<PosCubit>();
+      if (_canApplyAutomaticDiscount(item)) {
+        final confirmed = await _confirmApplyAutomaticDiscount(
+          context,
+          productName: item.product.name,
+          discountPercent: item.product.discountPercent,
+        );
+        if (!context.mounted || !confirmed) return;
+        cubit.applyAvailableDiscount(index);
+        return;
+      }
+      if (item.discountApplied && item.product.discountType == 'automatic') {
+        final confirmed = await _confirmRemoveAutomaticDiscount(
+          context,
+          productName: item.product.name,
+        );
+        if (!context.mounted || !confirmed) return;
+        cubit.removeAvailableDiscount(index);
+      }
+      return;
+    }
+
+    final action = await _showDiscountPriceDialog(
+      context,
+      item: item,
+      canCustomPrice: auth.allowCustomSalePrices,
+    );
+    if (!context.mounted || action == null) return;
+
+    final cubit = context.read<PosCubit>();
+    switch (action.type) {
+      case _DiscountActionType.applyAutomatic:
+        cubit.applyAvailableDiscount(index);
+      case _DiscountActionType.removeAutomatic:
+        cubit.removeAvailableDiscount(index);
+      case _DiscountActionType.setCustomPrice:
+        final price = action.price;
+        if (price != null) cubit.setPrice(index, price);
+      case _DiscountActionType.clearCustomPrice:
+        cubit.clearCustomPrice(index);
+    }
   }
 
   void _scrollSelectedItemIntoView(PosState state) {
@@ -300,45 +354,11 @@ class _CartListState extends State<CartList> {
                                       width: 60,
                                       child: _DiscountCell(
                                         item: it,
-                                        onApply: () async {
-                                          context
-                                              .read<PosCubit>()
-                                              .selectItem(i);
-                                          if (!_canApplyAutomaticDiscount(it)) {
-                                            return;
-                                          }
-
-                                          final confirmed =
-                                              await _confirmApplyAutomaticDiscount(
-                                            context,
-                                            productName: it.product.name,
-                                            discountPercent:
-                                                it.product.discountPercent,
-                                          );
-                                          if (!confirmed || !context.mounted) {
-                                            return;
-                                          }
-                                          context
-                                              .read<PosCubit>()
-                                              .applyAvailableDiscount(i);
-                                        },
-                                        onRemove: () {
-                                          context
-                                              .read<PosCubit>()
-                                              .selectItem(i);
-                                          _confirmRemoveAutomaticDiscount(
-                                            context,
-                                            productName: it.product.name,
-                                          ).then((confirmed) {
-                                            if (!confirmed ||
-                                                !context.mounted) {
-                                              return;
-                                            }
-                                            context
-                                                .read<PosCubit>()
-                                                .removeAvailableDiscount(i);
-                                          });
-                                        },
+                                        onTap: () => _openDiscountDialog(
+                                          context,
+                                          index: i,
+                                          item: it,
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(width: 16),
@@ -583,6 +603,20 @@ class _PriceCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (item.customUnitPrice != null) {
+      return Text(
+        money(item.effectiveUnitPrice),
+        textAlign: TextAlign.right,
+        style: GoogleFonts.inter(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          height: 1.4,
+          letterSpacing: 0.27,
+          color: const Color(0xFF16A34A),
+        ),
+      );
+    }
+
     final showDiscounted = item.discountApplied &&
         item.product.priceAfterDiscount > 0 &&
         item.product.priceAfterDiscount < item.product.price;
@@ -621,12 +655,10 @@ class _PriceCell extends StatelessWidget {
 
 class _DiscountCell extends StatelessWidget {
   final CartItem item;
-  final VoidCallback? onApply;
-  final VoidCallback? onRemove;
+  final VoidCallback? onTap;
   const _DiscountCell({
     required this.item,
-    this.onApply,
-    this.onRemove,
+    this.onTap,
   });
 
   @override
@@ -638,25 +670,36 @@ class _DiscountCell extends StatelessWidget {
         ? pct.toInt().toString()
         : pct.toStringAsFixed(1);
 
-    // Нет скидки или запрещена
-    if (dt == null || dt.isEmpty || dt == 'forbidden' || !hasRealDiscount) {
-      return _singleChip('0%', filled: false, active: false);
+    if (item.customUnitPrice != null) {
+      return GestureDetector(
+        onTap: onTap,
+        child: _singleChip('ручн', filled: true, active: true),
+      );
     }
 
-    // Скидка сразу применяется и недоступна для изменения
+    if (dt == null || dt.isEmpty || dt == 'forbidden' || !hasRealDiscount) {
+      return GestureDetector(
+        onTap: onTap,
+        child: _singleChip('0%', filled: false, active: true),
+      );
+    }
+
     if (dt == 'fixed') {
-      return _singleChip('$pctStr%', filled: true, active: true);
+      return GestureDetector(
+        onTap: onTap,
+        child: _singleChip('$pctStr%', filled: true, active: true),
+      );
     }
 
     if (dt == 'automatic') {
       if (item.discountApplied) {
         return GestureDetector(
-          onTap: onRemove,
+          onTap: onTap,
           child: _singleChip('$pctStr%', filled: true, active: true),
         );
       }
       return GestureDetector(
-        onTap: onApply,
+        onTap: onTap,
         child: _singleChip(
           '0%',
           filled: false,
@@ -666,7 +709,10 @@ class _DiscountCell extends StatelessWidget {
       );
     }
 
-    return _singleChip('0%', filled: false, active: false);
+    return GestureDetector(
+      onTap: onTap,
+      child: _singleChip('0%', filled: false, active: true),
+    );
   }
 
   bool _hasConfiguredDiscount(CartItem item) {
@@ -737,10 +783,10 @@ Future<bool> _confirmApplyAutomaticDiscount(
       ? discountPercent.toInt().toString()
       : discountPercent.toStringAsFixed(1);
 
-  final confirmed = await showDialog<bool>(
+  return await showDialog<bool>(
         context: context,
         barrierDismissible: true,
-        builder: (ctx) => _DiscountConfirmDialog(
+        builder: (_) => _DiscountConfirmDialog(
           title: 'Применить скидку',
           message:
               'Применить возможную скидку $pctStr% для товара "$productName"?',
@@ -749,18 +795,16 @@ Future<bool> _confirmApplyAutomaticDiscount(
         ),
       ) ??
       false;
-
-  return confirmed;
 }
 
 Future<bool> _confirmRemoveAutomaticDiscount(
   BuildContext context, {
   required String productName,
 }) async {
-  final confirmed = await showDialog<bool>(
+  return await showDialog<bool>(
         context: context,
         barrierDismissible: true,
-        builder: (ctx) => _DiscountConfirmDialog(
+        builder: (_) => _DiscountConfirmDialog(
           title: 'Убрать скидку',
           message: 'Хотите убрать скидку у товара "$productName"?',
           confirmLabel: 'Убрать',
@@ -768,8 +812,6 @@ Future<bool> _confirmRemoveAutomaticDiscount(
         ),
       ) ??
       false;
-
-  return confirmed;
 }
 
 class _DiscountConfirmDialog extends StatelessWidget {
@@ -877,6 +919,393 @@ class _DiscountConfirmDialog extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+enum _DiscountActionType {
+  applyAutomatic,
+  removeAutomatic,
+  setCustomPrice,
+  clearCustomPrice,
+}
+
+class _DiscountAction {
+  const _DiscountAction(this.type, {this.price});
+
+  final _DiscountActionType type;
+  final double? price;
+}
+
+Future<_DiscountAction?> _showDiscountPriceDialog(
+  BuildContext context, {
+  required CartItem item,
+  required bool canCustomPrice,
+}) {
+  return showDialog<_DiscountAction>(
+    context: context,
+    barrierDismissible: true,
+    builder: (_) => _DiscountPriceDialog(
+      item: item,
+      canCustomPrice: canCustomPrice,
+    ),
+  );
+}
+
+class _DiscountPriceDialog extends StatefulWidget {
+  const _DiscountPriceDialog({
+    required this.item,
+    required this.canCustomPrice,
+  });
+
+  final CartItem item;
+  final bool canCustomPrice;
+
+  @override
+  State<_DiscountPriceDialog> createState() => _DiscountPriceDialogState();
+}
+
+class _DiscountPriceDialogState extends State<_DiscountPriceDialog> {
+  late String _text;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.item.customUnitPrice ??
+        (widget.item.discountApplied &&
+                widget.item.product.priceAfterDiscount > 0
+            ? widget.item.product.priceAfterDiscount
+            : widget.item.product.price);
+    _text = _formatInput(initial);
+  }
+
+  double get _price => double.tryParse(_text.replaceAll(',', '.')) ?? 0;
+
+  String get _productName {
+    final name = widget.item.product.name.trim();
+    return name.isEmpty ? widget.item.product.id : name;
+  }
+
+  String _formatInput(double value) {
+    final fixed = value.toStringAsFixed(2);
+    return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
+  }
+
+  String get _manualPriceError {
+    if (!widget.canCustomPrice) return 'Ручная цена выключена для магазина';
+    if (_price <= 0) return 'Введите цену';
+    if (_price > widget.item.product.price) return 'Нельзя выше базовой цены';
+    return '';
+  }
+
+  bool get _canSaveManual => _manualPriceError.isEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final hasAutomatic = _canApplyAutomaticDiscount(item);
+    final canRemoveAutomatic =
+        item.discountApplied && item.product.discountType == 'automatic';
+    final canClearCustom = item.customUnitPrice != null;
+    final pct = item.product.discountPercent;
+    final pctStr = pct == pct.roundToDouble()
+        ? pct.toInt().toString()
+        : pct.toStringAsFixed(1);
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      backgroundColor: Colors.transparent,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.16),
+                  blurRadius: 30,
+                  offset: const Offset(0, 18),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Скидка и цена',
+                        style: TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF111827),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                Text(
+                  _productName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    height: 1.35,
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _PriceInfoPill(
+                        label: 'Текущая',
+                        value: money(item.effectiveUnitPrice),
+                        accent: true,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                if (hasAutomatic || canRemoveAutomatic || canClearCustom) ...[
+                  Row(
+                    children: [
+                      if (hasAutomatic)
+                        Expanded(
+                          child: _DiscountDialogButton(
+                            label: 'Скидка $pctStr%',
+                            icon: Icons.percent_rounded,
+                            color: const Color(0xFF16A34A),
+                            onPressed: () => Navigator.of(context).pop(
+                              const _DiscountAction(
+                                  _DiscountActionType.applyAutomatic),
+                            ),
+                          ),
+                        ),
+                      if (canRemoveAutomatic) ...[
+                        if (hasAutomatic) const SizedBox(width: 10),
+                        Expanded(
+                          child: _DiscountDialogButton(
+                            label: 'Убрать скидку',
+                            icon: Icons.undo_rounded,
+                            color: const Color(0xFFBE3A14),
+                            onPressed: () => Navigator.of(context).pop(
+                              const _DiscountAction(
+                                  _DiscountActionType.removeAutomatic),
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (canClearCustom) ...[
+                        if (hasAutomatic || canRemoveAutomatic)
+                          const SizedBox(width: 10),
+                        Expanded(
+                          child: _DiscountDialogButton(
+                            label: 'Обычная цена',
+                            icon: Icons.restart_alt_rounded,
+                            color: const Color(0xFF374151),
+                            onPressed: () => Navigator.of(context).pop(
+                              const _DiscountAction(
+                                  _DiscountActionType.clearCustomPrice),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                Container(
+                  height: 58,
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: widget.canCustomPrice
+                        ? const Color(0xFFF3F4F6)
+                        : const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: _manualPriceError.isEmpty
+                          ? const Color(0xFFE5E7EB)
+                          : const Color(0xFFFCA5A5),
+                    ),
+                  ),
+                  child: Text(
+                    _text.isEmpty ? '0' : _text,
+                    style: const TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                ),
+                if (_manualPriceError.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _manualPriceError,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFDC2626),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                AmountKeypad(
+                  text: _text,
+                  showQuickRows: false,
+                  onChanged: widget.canCustomPrice
+                      ? (value) => setState(() => _text = value)
+                      : (_) {},
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(54),
+                          side: const BorderSide(color: Color(0xFFD1D5DB)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: const Text(
+                          'Отмена',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _canSaveManual
+                            ? () => Navigator.of(context).pop(
+                                  _DiscountAction(
+                                    _DiscountActionType.setCustomPrice,
+                                    price: _price,
+                                  ),
+                                )
+                            : null,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(54),
+                          backgroundColor: const Color(0xFFF9B32C),
+                          foregroundColor: Colors.black,
+                          disabledBackgroundColor: const Color(0xFFE5E7EB),
+                          disabledForegroundColor: const Color(0xFF9CA3AF),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: Text(
+                          'Сохранить ${money(_price)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PriceInfoPill extends StatelessWidget {
+  const _PriceInfoPill({
+    required this.label,
+    required this.value,
+    this.accent = false,
+  });
+
+  final String label;
+  final String value;
+  final bool accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: accent ? const Color(0xFFEFF6FF) : const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: accent ? const Color(0xFFBFDBFE) : const Color(0xFFE5E7EB),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF6B7280),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 15,
+              color: accent ? const Color(0xFF1D4ED8) : const Color(0xFF111827),
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiscountDialogButton extends StatelessWidget {
+  const _DiscountDialogButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(48),
+        foregroundColor: color,
+        side: BorderSide(color: color.withValues(alpha: 0.35)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );
   }

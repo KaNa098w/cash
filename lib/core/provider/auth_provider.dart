@@ -17,6 +17,9 @@ class AuthTokenProvider extends ChangeNotifier {
   static const _kPosId = 'posId';
   static const _kStoreId = 'storeId';
   static const _kStoreName = 'storeName';
+  static const _kAllowCustomSalePrices = 'allowCustomSalePrices';
+  static const _kAllowBelowCostSalePrices = 'allowBelowCostSalePrices';
+  static const _kAllowRefundsWithoutSale = 'allowRefundsWithoutSale';
   static const _kOrganizationId = 'organizationId';
   static const _kAccountId = 'accountId';
 
@@ -25,6 +28,7 @@ class AuthTokenProvider extends ChangeNotifier {
   static const _kPinSalt = 'pinSalt';
 
   static const _kShiftId = 'shiftId';
+  static const _kShiftUserId = 'shiftUserId';
   static const _kReceiptPaperMm = 'receiptPaperMm';
   static const _kReceiptPrinterName = 'receiptPrinterName';
   static const _kInvoicePrinterName = 'invoicePrinterName';
@@ -55,6 +59,15 @@ class AuthTokenProvider extends ChangeNotifier {
   String? _storeName;
   String? get storeName => _storeName;
 
+  bool _allowCustomSalePrices = false;
+  bool get allowCustomSalePrices => _allowCustomSalePrices;
+
+  bool _allowBelowCostSalePrices = false;
+  bool get allowBelowCostSalePrices => _allowBelowCostSalePrices;
+
+  bool _allowRefundsWithoutSale = false;
+  bool get allowRefundsWithoutSale => _allowRefundsWithoutSale;
+
   String? _organizationId;
   String? get organizationId => _organizationId;
 
@@ -67,6 +80,11 @@ class AuthTokenProvider extends ChangeNotifier {
   String? _shiftId;
   String? get shiftId => _shiftId;
   bool get hasShiftId => _shiftId != null && _shiftId!.trim().isNotEmpty;
+
+  String? _shiftUserId;
+  String? get shiftUserId => _shiftUserId;
+  bool get hasShiftUserId =>
+      _shiftUserId != null && _shiftUserId!.trim().isNotEmpty;
 
   int _receiptPaperMm = 80;
   int get receiptPaperMm => _receiptPaperMm == 57 ? 57 : 80;
@@ -108,6 +126,9 @@ class AuthTokenProvider extends ChangeNotifier {
       accountId: _accountId!,
       storeId: _storeId!,
       storeName: _storeName ?? '',
+      allowCustomSalePrices: _allowCustomSalePrices,
+      allowBelowCostSalePrices: _allowBelowCostSalePrices,
+      allowRefundsWithoutSale: _allowRefundsWithoutSale,
       organizationId: _organizationId!,
       users: _users,
       createdAt: null,
@@ -132,11 +153,23 @@ class AuthTokenProvider extends ChangeNotifier {
     _posId = prefs.getString(_kPosId);
     _storeId = prefs.getString(_kStoreId);
     _storeName = prefs.getString(_kStoreName);
+    _allowCustomSalePrices = prefs.getBool(_kAllowCustomSalePrices) ?? false;
+    _allowBelowCostSalePrices =
+        prefs.getBool(_kAllowBelowCostSalePrices) ?? false;
+    _allowRefundsWithoutSale =
+        prefs.getBool(_kAllowRefundsWithoutSale) ?? false;
     _organizationId = prefs.getString(_kOrganizationId);
     _accountId = prefs.getString(_kAccountId);
 
     _shiftId = prefs.getString(_kShiftId);
+    _shiftUserId = prefs.getString(_kShiftUserId);
     _activeUserId = prefs.getString(_kActiveUserId);
+    if ((_shiftUserId ?? '').trim().isEmpty &&
+        (_shiftId ?? '').trim().isNotEmpty &&
+        (_activeUserId ?? '').trim().isNotEmpty) {
+      _shiftUserId = _activeUserId;
+      await prefs.setString(_kShiftUserId, _shiftUserId!);
+    }
     _receiptPaperMm = (prefs.getInt(_kReceiptPaperMm) == 57) ? 57 : 80;
     _receiptPrinterName = prefs.getString(_kReceiptPrinterName);
     _invoicePrinterName = prefs.getString(_kInvoicePrinterName);
@@ -196,6 +229,9 @@ class AuthTokenProvider extends ChangeNotifier {
     _posId = resp.id;
     _storeId = resp.storeId;
     _storeName = resp.storeName;
+    _allowCustomSalePrices = resp.allowCustomSalePrices;
+    _allowBelowCostSalePrices = resp.allowBelowCostSalePrices;
+    _allowRefundsWithoutSale = resp.allowRefundsWithoutSale;
     _organizationId = resp.organizationId;
     _accountId = resp.accountId;
 
@@ -220,6 +256,12 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.setString(_kPosId, _posId ?? '');
     await prefs.setString(_kStoreId, _storeId ?? '');
     await prefs.setString(_kStoreName, _storeName ?? '');
+    await prefs.setBool(_kAllowCustomSalePrices, _allowCustomSalePrices);
+    await prefs.setBool(
+      _kAllowBelowCostSalePrices,
+      _allowBelowCostSalePrices,
+    );
+    await prefs.setBool(_kAllowRefundsWithoutSale, _allowRefundsWithoutSale);
     await prefs.setString(_kOrganizationId, _organizationId ?? '');
     await prefs.setString(_kAccountId, _accountId ?? '');
 
@@ -233,11 +275,15 @@ class AuthTokenProvider extends ChangeNotifier {
     _posId = null;
     _storeId = null;
     _storeName = null;
+    _allowCustomSalePrices = false;
+    _allowBelowCostSalePrices = false;
+    _allowRefundsWithoutSale = false;
     _organizationId = null;
     _accountId = null;
     _users = [];
 
     _shiftId = null;
+    _shiftUserId = null;
     _activeUserId = null;
     _activeUserName = null;
     _receiptPaperMm = 80;
@@ -250,11 +296,15 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.remove(_kPosId);
     await prefs.remove(_kStoreId);
     await prefs.remove(_kStoreName);
+    await prefs.remove(_kAllowCustomSalePrices);
+    await prefs.remove(_kAllowBelowCostSalePrices);
+    await prefs.remove(_kAllowRefundsWithoutSale);
     await prefs.remove(_kOrganizationId);
     await prefs.remove(_kAccountId);
     await prefs.remove(_kUsers);
 
     await prefs.remove(_kShiftId);
+    await prefs.remove(_kShiftUserId);
     await prefs.remove(_kActiveUserId);
     await prefs.remove(_kActiveUserName);
     await prefs.remove(_kReceiptPaperMm);
@@ -307,16 +357,30 @@ class AuthTokenProvider extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kShiftId, v);
-    debugPrint('[AuthTokenProvider] shiftId saved to SharedPreferences key=$_kShiftId');
+    debugPrint(
+        '[AuthTokenProvider] shiftId saved to SharedPreferences key=$_kShiftId');
   }
 
   Future<void> clearShiftId() async {
     _shiftId = null;
+    _shiftUserId = null;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kShiftId);
+    await prefs.remove(_kShiftUserId);
 
     notifyListeners();
+  }
+
+  Future<void> setShiftUserId(String userId) async {
+    final v = userId.trim();
+    if (v.isEmpty) return;
+
+    _shiftUserId = v;
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kShiftUserId, v);
   }
 
   Future<void> setActiveUserId(String userId) async {

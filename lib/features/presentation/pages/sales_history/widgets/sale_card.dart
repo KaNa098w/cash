@@ -5,7 +5,6 @@ import '../models/refund_pick.dart';
 import '../utils/formatters.dart';
 import '../utils/sales_filter.dart';
 import 'bottom_action_button.dart';
-import 'refund_summary.dart';
 import 'sale_items_box.dart';
 import 'status_chip.dart';
 
@@ -58,6 +57,20 @@ class SaleCard extends StatelessWidget {
   final int Function(SaleItemModel item) availableQtyOf;
 
   static const _radius = 22.0;
+  static const _rowTextStyle = TextStyle(
+    fontSize: 18,
+    height: 1.4,
+    letterSpacing: 0.18,
+    fontWeight: FontWeight.w500,
+    color: Colors.black,
+  );
+  static const _cashierTextStyle = TextStyle(
+    fontSize: 18,
+    height: 1.4,
+    letterSpacing: 0.27,
+    fontWeight: FontWeight.w700,
+    color: Colors.black,
+  );
 
   bool get hasRefund {
     final refund = sale.refund;
@@ -71,9 +84,12 @@ class SaleCard extends StatelessWidget {
   String get paymentLabel {
     switch (sale.paymentMethod.trim().toLowerCase()) {
       case 'cash':
-        return 'Наличная';
+        return 'Наличными';
       case 'card':
-        return 'Безналичная';
+        return 'Безналичными';
+      case 'closed':
+      case 'close':
+        return 'Закрыт';
       case 'mixed':
         return 'Смешанная';
       case 'credit':
@@ -87,44 +103,14 @@ class SaleCard extends StatelessWidget {
   }
 
   Color get paymentBg {
-    switch (sale.paymentMethod.trim().toLowerCase()) {
-      case 'cash':
-        return const Color(0xFFE6F4EA);
-      case 'card':
-        return const Color(0xFFE0ECFF);
-      case 'mixed':
-        return const Color(0xFFF3E8FF);
-      case 'credit':
-      case 'debt':
-      case 'partial_debt':
-        return const Color(0xFFFFE6D6);
-      default:
-        return const Color(0xFFF3F5F4);
-    }
+    return const Color(0xFFCBE9C5);
   }
 
   Color get paymentFg {
-    switch (sale.paymentMethod.trim().toLowerCase()) {
-      case 'cash':
-        return const Color(0xFF258808);
-      case 'card':
-        return const Color(0xFF1D4ED8);
-      case 'mixed':
-        return const Color(0xFF7C3AED);
-      case 'credit':
-      case 'debt':
-      case 'partial_debt':
-        return const Color(0xFFB54708);
-      default:
-        return const Color(0xFF425A4E);
-    }
+    return const Color(0xFF258808);
   }
 
-  Color get cardShadow => const Color(0x140F172A);
-  Color get dateBg => const Color(0xFFF3F5F4);
-  Color get dateBorder => const Color(0xFFD9E1DC);
-  Color get dateFg => const Color(0xFF425A4E);
-  Color get actionBlueMuted => const Color(0xFF6A8C84);
+  Color get actionBlueMuted => const Color(0xFF33B5CC);
   Color get actionDarkMuted => const Color(0xFF6F7671);
 
   String get cashierDisplayName {
@@ -140,25 +126,14 @@ class SaleCard extends StatelessWidget {
         final compact = constraints.maxWidth < 900;
         final desktopNarrow = !compact && constraints.maxWidth < 1400;
         final actionWidth = (constraints.maxWidth - 36).clamp(180.0, 520.0);
-        final saleNumberWidth = desktopNarrow ? 220.0 : 280.0;
-        final dateWidth = desktopNarrow ? 220.0 : 400.0;
-        final statusWidth = desktopNarrow ? 190.0 : 250.0;
-        final cashierWidth = desktopNarrow ? 170.0 : 250.0;
-        final amountWidth = desktopNarrow ? 132.0 : 150.0;
-        final refundBtnWidth = desktopNarrow ? 180.0 : 220.0;
+        final refundBtnWidth = desktopNarrow ? 98.0 : 112.0;
         final invoiceBtnWidth = desktopNarrow ? 130.0 : 170.0;
         final printBtnWidth = desktopNarrow ? 180.0 : 220.0;
 
         return Container(
           decoration: BoxDecoration(
-            color: const Color(0xFFFFFEFC),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(_radius),
-            boxShadow: [
-              BoxShadow(
-                  color: cardShadow,
-                  blurRadius: 18,
-                  offset: const Offset(0, 6)),
-            ],
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(_radius),
@@ -168,7 +143,7 @@ class SaleCard extends StatelessWidget {
                   onTap: onToggle,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 22, vertical: 14),
+                        horizontal: 22, vertical: 13),
                     child: compact
                         ? Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -179,16 +154,16 @@ class SaleCard extends StatelessWidget {
                                     child: Text(
                                       saleNumber(sale),
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w700),
+                                      style: _rowTextStyle,
                                     ),
                                   ),
                                   const SizedBox(width: 10),
-                                  _DateBadge(
-                                    text: fmtSaleDate(sale.date),
-                                    bg: dateBg,
-                                    border: dateBorder,
-                                    fg: dateFg,
+                                  Flexible(
+                                    child: Text(
+                                      fmtSaleDate(sale.date),
+                                      overflow: TextOverflow.ellipsis,
+                                      style: _rowTextStyle,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -216,14 +191,16 @@ class SaleCard extends StatelessWidget {
                                     child: Text(
                                       cashierDisplayName,
                                       overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.right,
+                                      style: _cashierTextStyle,
                                     ),
                                   ),
                                   const SizedBox(width: 10),
                                   SizedBox(
                                     width: 132,
                                     child: _AmountText(
-                                      value: money0(sale.totalAmount),
-                                      fontWeight: FontWeight.w700,
+                                      value: money2(sale.totalAmount),
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -237,29 +214,27 @@ class SaleCard extends StatelessWidget {
                           )
                         : Row(
                             children: [
-                              SizedBox(
-                                width: saleNumberWidth,
+                              Expanded(
+                                flex: 14,
                                 child: Text(
                                   saleNumber(sale),
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w700),
+                                  style: _rowTextStyle,
                                 ),
                               ),
-                              SizedBox(
-                                width: dateWidth,
+                              Expanded(
+                                flex: 28,
                                 child: Align(
                                   alignment: Alignment.centerLeft,
-                                  child: _DateBadge(
-                                    text: fmtSaleDate(sale.date),
-                                    bg: dateBg,
-                                    border: dateBorder,
-                                    fg: dateFg,
+                                  child: Text(
+                                    fmtSaleDate(sale.date),
+                                    overflow: TextOverflow.ellipsis,
+                                    style: _rowTextStyle,
                                   ),
                                 ),
                               ),
-                              SizedBox(
-                                width: statusWidth,
+                              Expanded(
+                                flex: 16,
                                 child: Align(
                                   alignment: Alignment.centerLeft,
                                   child: Wrap(
@@ -277,23 +252,25 @@ class SaleCard extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                              SizedBox(
-                                  width: cashierWidth,
-                                  child: Text(cashierDisplayName,
-                                      overflow: TextOverflow.ellipsis)),
-                              const Spacer(),
-                              SizedBox(
-                                width: amountWidth,
+                              Expanded(
+                                flex: 15,
+                                child: Text(cashierDisplayName,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.right,
+                                    style: _cashierTextStyle),
+                              ),
+                              Expanded(
+                                flex: 14,
                                 child: _AmountText(
-                                  value: money0(sale.totalAmount),
-                                  fontWeight: FontWeight.w700,
+                                  value: money2(sale.totalAmount),
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                               const SizedBox(width: 10),
                               Icon(
                                 expanded ? Icons.expand_less : Icons.more_horiz,
                                 size: 22,
-                                color: const Color(0xFF7A837E),
+                                color: const Color(0xFF596579),
                               ),
                             ],
                           ),
@@ -312,25 +289,18 @@ class SaleCard extends StatelessWidget {
                           onQtyChanged: onQtyChanged,
                           refundedQtyOf: refundedQtyOf,
                           availableQtyOf: availableQtyOf,
+                          selectable: false,
                         ),
                         const SizedBox(height: 14),
                         if (compact) ...[
-                          RefundSummary(
-                              count: selectedCount, total: selectedTotal),
-                          const SizedBox(height: 12),
                           BottomActionButton(
-                            label: selectedCount == 0
-                                ? 'Возврат'
-                                : 'Оформить возврат',
+                            label: 'Возврат',
                             width: actionWidth,
                             fontSize: 16,
-                            bg: selectedCount == 0
-                                ? const Color(0xFFB0B0B0)
-                                : actionDarkMuted,
-                            onTap: (selectedCount == 0 || refundLoading)
-                                ? null
-                                : onSubmitRefund,
+                            bg: const Color(0xFF8D8D8D),
+                            onTap: refundLoading ? null : onSubmitRefund,
                             loading: refundLoading,
+                            horizontalPadding: 8,
                           ),
                           const SizedBox(height: 12),
                           BottomActionButton(
@@ -352,25 +322,16 @@ class SaleCard extends StatelessWidget {
                           ),
                         ] else
                           Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              Expanded(
-                                  child: RefundSummary(
-                                      count: selectedCount,
-                                      total: selectedTotal)),
-                              const SizedBox(width: 12),
                               BottomActionButton(
-                                label: selectedCount == 0
-                                    ? 'Возврат'
-                                    : 'Оформить возврат',
+                                label: 'Возврат',
                                 width: refundBtnWidth,
                                 fontSize: 16,
-                                bg: selectedCount == 0
-                                    ? const Color(0xFFB0B0B0)
-                                    : actionDarkMuted,
-                                onTap: (selectedCount == 0 || refundLoading)
-                                    ? null
-                                    : onSubmitRefund,
+                                bg: const Color(0xFF8D8D8D),
+                                onTap: refundLoading ? null : onSubmitRefund,
                                 loading: refundLoading,
+                                horizontalPadding: 8,
                               ),
                               const SizedBox(width: 12),
                               BottomActionButton(
@@ -441,42 +402,83 @@ class _AmountText extends StatelessWidget {
         value,
         maxLines: 1,
         textAlign: TextAlign.right,
-        style: TextStyle(fontWeight: fontWeight),
+        style: TextStyle(
+          fontSize: 18,
+          height: 1.4,
+          letterSpacing: 0.27,
+          fontWeight: fontWeight,
+          color: Colors.black,
+        ),
       ),
     );
   }
 }
 
-class _DateBadge extends StatelessWidget {
-  const _DateBadge({
-    required this.text,
-    required this.bg,
-    required this.border,
-    required this.fg,
-  });
-
-  final String text;
-  final Color bg;
-  final Color border;
-  final Color fg;
+class SalesHistoryHeader extends StatelessWidget {
+  const SalesHistoryHeader({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: border),
-      ),
-      child: Text(
-        text,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: fg,
-        ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 900;
+        if (compact) return const SizedBox.shrink();
+
+        return const Padding(
+          padding: EdgeInsets.fromLTRB(22, 0, 22, 8),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 14,
+                child: _HeaderText('№ чека'),
+              ),
+              Expanded(
+                flex: 28,
+                child: _HeaderText('Время'),
+              ),
+              Expanded(
+                flex: 16,
+                child: _HeaderText('Оплата'),
+              ),
+              Expanded(
+                flex: 15,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _HeaderText('Кассир'),
+                ),
+              ),
+              Expanded(
+                flex: 14,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _HeaderText('Сумма'),
+                ),
+              ),
+              SizedBox(width: 30),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _HeaderText extends StatelessWidget {
+  const _HeaderText(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        fontSize: 18,
+        height: 1.4,
+        letterSpacing: 0.18,
+        fontWeight: FontWeight.w500,
+        color: Colors.black,
       ),
     );
   }

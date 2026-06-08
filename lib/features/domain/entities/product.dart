@@ -6,6 +6,7 @@ class Product extends Equatable {
 
   /// Base selling price (before any discount).
   final double price;
+  final double arrivalCost;
   final double vat;
   final double quantity;
   final String measurementUnit;
@@ -23,6 +24,7 @@ class Product extends Equatable {
     required this.id,
     required this.name,
     required this.price,
+    this.arrivalCost = 0,
     this.vat = 0,
     this.quantity = 0,
     this.measurementUnit = 'шт.',
@@ -37,6 +39,9 @@ class Product extends Equatable {
         id: (json['id'] ?? '').toString(),
         name: (json['name'] ?? '').toString(),
         price: (json['price'] as num?)?.toDouble() ?? 0,
+        arrivalCost: (json['arrivalCost'] as num?)?.toDouble() ??
+            (json['arrival_cost'] as num?)?.toDouble() ??
+            0,
         vat: (json['vat'] as num?)?.toDouble() ?? 0,
         quantity: (json['quantity'] as num?)?.toDouble() ?? 0,
         measurementUnit: (json['measurementUnit'] ?? 'шт.').toString(),
@@ -52,6 +57,7 @@ class Product extends Equatable {
         'id': id,
         'name': name,
         'price': price,
+        'arrivalCost': arrivalCost,
         'vat': vat,
         'quantity': quantity,
         'measurementUnit': measurementUnit,
@@ -67,6 +73,7 @@ class Product extends Equatable {
         id,
         name,
         price,
+        arrivalCost,
         vat,
         quantity,
         measurementUnit,
@@ -81,6 +88,7 @@ class Product extends Equatable {
     String? id,
     String? name,
     double? price,
+    double? arrivalCost,
     double? vat,
     double? quantity,
     String? measurementUnit,
@@ -95,6 +103,7 @@ class Product extends Equatable {
       id: id ?? this.id,
       name: name ?? this.name,
       price: price ?? this.price,
+      arrivalCost: arrivalCost ?? this.arrivalCost,
       vat: vat ?? this.vat,
       quantity: quantity ?? this.quantity,
       measurementUnit: measurementUnit ?? this.measurementUnit,

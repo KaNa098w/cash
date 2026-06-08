@@ -58,13 +58,19 @@ class AuthCubit extends Cubit<AuthState> {
   Future<void> lockToCashiers() async {
     final cached = _tokenProvider.cachedProvision;
     final activeUserId = _tokenProvider.activeUserId?.trim() ?? '';
+    final shiftUserId = (_tokenProvider.shiftUserId?.trim().isNotEmpty == true)
+        ? _tokenProvider.shiftUserId!.trim()
+        : activeUserId;
+    if (_tokenProvider.hasShiftId && shiftUserId.isNotEmpty) {
+      await _tokenProvider.setShiftUserId(shiftUserId);
+    }
 
     await _tokenProvider.clearActiveUserId();
 
     if (cached != null) {
-      final lockedUsers = activeUserId.isEmpty
+      final lockedUsers = shiftUserId.isEmpty
           ? cached.users
-          : cached.users.where((user) => user.id == activeUserId).toList();
+          : cached.users.where((user) => user.id == shiftUserId).toList();
 
       emit(
         AuthProvisioned(
@@ -76,6 +82,9 @@ class AuthCubit extends Cubit<AuthState> {
             accountId: cached.accountId,
             storeId: cached.storeId,
             storeName: cached.storeName,
+            allowCustomSalePrices: cached.allowCustomSalePrices,
+            allowBelowCostSalePrices: cached.allowBelowCostSalePrices,
+            allowRefundsWithoutSale: cached.allowRefundsWithoutSale,
             organizationId: cached.organizationId,
             users: lockedUsers.isNotEmpty ? lockedUsers : cached.users,
             createdAt: cached.createdAt,
@@ -210,6 +219,7 @@ class AuthCubit extends Cubit<AuthState> {
       );
 
       await _tokenProvider.setShiftId(sessionId);
+      await _tokenProvider.setShiftUserId(user.id);
       await _tokenProvider.setActiveUserId(user.id);
 
       emit(const AuthSuccess());

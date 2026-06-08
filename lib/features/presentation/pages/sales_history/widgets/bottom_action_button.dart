@@ -10,6 +10,7 @@ class BottomActionButton extends StatelessWidget {
     this.height = 49,
     this.fontSize = 18,
     this.loading = false,
+    this.horizontalPadding = 18,
   });
 
   final String label;
@@ -19,6 +20,7 @@ class BottomActionButton extends StatelessWidget {
   final double height;
   final double fontSize;
   final bool loading;
+  final double horizontalPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -32,14 +34,16 @@ class BottomActionButton extends StatelessWidget {
           backgroundColor: bg,
           foregroundColor: Colors.white,
           textStyle: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w500),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
         ),
         child: loading
             ? const SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
               )
             : Text(label, overflow: TextOverflow.ellipsis),
       ),
