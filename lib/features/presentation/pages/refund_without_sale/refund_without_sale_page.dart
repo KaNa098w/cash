@@ -4,7 +4,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
@@ -16,6 +18,7 @@ import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/refund_access_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/keypad_widget.dart';
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
+import 'package:leemon_app/features/presentation/widgets/refund_reason_selector.dart';
 
 class RefundWithoutSalePage extends StatefulWidget {
   const RefundWithoutSalePage({super.key});
@@ -37,10 +40,6 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
   OverlayEntry? _keyboardEntry;
   Timer? _typingDebounce;
   Timer? _scanDebounce;
-  Timer? _hardwareScanResetTimer;
-  DateTime? _lastHardwareDigitAt;
-  String? _pendingHardwareDigit;
-  bool _hardwareScanMode = false;
 
   List<ProductModel> _products = const [];
   List<ProductModel> _results = const [];
@@ -49,8 +48,11 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
   bool _submitting = false;
   String _paymentMethod = 'cash';
   String? _selectedBankAccountId;
+  String? _reasonCode;
   String? _error;
   bool _accessDialogOpen = false;
+  bool _qtyDialogOpen = false;
+  bool _searchKeyboardOpen = false;
 
   @override
   void initState() {
@@ -68,7 +70,6 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
   void dispose() {
     _typingDebounce?.cancel();
     _scanDebounce?.cancel();
-    _hardwareScanResetTimer?.cancel();
     _keyboardEntry?.remove();
     _searchFocus.removeListener(_keepSearchFocused);
     _productsScroll.dispose();
@@ -79,10 +80,16 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
   }
 
   void _keepSearchFocused() {
-    if (_accessDialogOpen) return;
+    if (_accessDialogOpen || _qtyDialogOpen || _searchKeyboardOpen) return;
     if (_searchFocus.hasFocus) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _accessDialogOpen || _searchFocus.hasFocus) return;
+      if (!mounted ||
+          _accessDialogOpen ||
+          _qtyDialogOpen ||
+          _searchKeyboardOpen ||
+          _searchFocus.hasFocus) {
+        return;
+      }
       _searchFocus.requestFocus();
     });
   }
@@ -221,7 +228,7 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
       return;
     }
 
-    if (RegExp(r'^\d{8,}$').hasMatch(q)) {
+    if (RegExp(r'^\d{5,}$').hasMatch(q)) {
       _typingDebounce?.cancel();
       _scanDebounce?.cancel();
       _scanDebounce = Timer(const Duration(milliseconds: 80),
@@ -245,7 +252,7 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
       final localBarcode = (product.localBarcode ?? '').trim().toLowerCase();
       final sku = (product.sku ?? '').trim().toLowerCase();
       final name = product.name.trim().toLowerCase();
-      if (barcode == q || localBarcode == q) return true;
+      if (barcode == q || localBarcode == q || sku == q) return true;
       return barcode.contains(q) ||
           localBarcode.contains(q) ||
           sku.contains(q) ||
@@ -259,7 +266,8 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
           final barcode = (product?.barcode ?? '').trim().toLowerCase();
           final localBarcode =
               (product?.localBarcode ?? '').trim().toLowerCase();
-          return barcode == q || localBarcode == q;
+          final sku = (product?.sku ?? '').trim().toLowerCase();
+          return barcode == q || localBarcode == q || sku == q;
         },
         orElse: () => null,
       );
@@ -269,117 +277,33 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
         setState(() => _results = _products.take(60).toList(growable: false));
         return;
       }
+      if (results.length == 1) {
+        _addProduct(results.first);
+        _searchCtrl.clear();
+        setState(() => _results = _products.take(60).toList(growable: false));
+        return;
+      }
     }
 
     setState(() => _results = results);
   }
 
-  String? _digitFromPhysicalKey(PhysicalKeyboardKey key) {
-    final digits = <PhysicalKeyboardKey, String>{
-      PhysicalKeyboardKey.digit0: '0',
-      PhysicalKeyboardKey.digit1: '1',
-      PhysicalKeyboardKey.digit2: '2',
-      PhysicalKeyboardKey.digit3: '3',
-      PhysicalKeyboardKey.digit4: '4',
-      PhysicalKeyboardKey.digit5: '5',
-      PhysicalKeyboardKey.digit6: '6',
-      PhysicalKeyboardKey.digit7: '7',
-      PhysicalKeyboardKey.digit8: '8',
-      PhysicalKeyboardKey.digit9: '9',
-      PhysicalKeyboardKey.numpad0: '0',
-      PhysicalKeyboardKey.numpad1: '1',
-      PhysicalKeyboardKey.numpad2: '2',
-      PhysicalKeyboardKey.numpad3: '3',
-      PhysicalKeyboardKey.numpad4: '4',
-      PhysicalKeyboardKey.numpad5: '5',
-      PhysicalKeyboardKey.numpad6: '6',
-      PhysicalKeyboardKey.numpad7: '7',
-      PhysicalKeyboardKey.numpad8: '8',
-      PhysicalKeyboardKey.numpad9: '9',
-    };
-    return digits[key];
-  }
-
-  void _scheduleHardwareScanReset() {
-    _hardwareScanResetTimer?.cancel();
-    _hardwareScanResetTimer = Timer(
-      const Duration(milliseconds: 180),
-      () {
-        _lastHardwareDigitAt = null;
-        _pendingHardwareDigit = null;
-        _hardwareScanMode = false;
-      },
-    );
-  }
-
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
-
-    final digit = _digitFromPhysicalKey(event.physicalKey);
-    if (digit != null && _searchFocus.hasFocus && !_accessDialogOpen) {
-      final now = DateTime.now();
-      final last = _lastHardwareDigitAt;
-      final rapid = last != null &&
-          now.difference(last) <= const Duration(milliseconds: 45);
-
-      if (_hardwareScanMode) {
-        _lastHardwareDigitAt = now;
-        _scheduleHardwareScanReset();
-        _insertSearchText(digit);
-        return KeyEventResult.handled;
-      }
-
-      if (rapid && _pendingHardwareDigit != null) {
-        _hardwareScanMode = true;
-        _lastHardwareDigitAt = now;
-        _replaceSearchText('${_pendingHardwareDigit!}$digit');
-        _pendingHardwareDigit = null;
-        _scheduleHardwareScanReset();
-        return KeyEventResult.handled;
-      }
-
-      _pendingHardwareDigit = digit;
-      _lastHardwareDigitAt = now;
-      _scheduleHardwareScanReset();
-      return KeyEventResult.ignored;
-    }
 
     if (event.physicalKey == PhysicalKeyboardKey.enter ||
         event.physicalKey == PhysicalKeyboardKey.numpadEnter) {
       if (_accessDialogOpen) return KeyEventResult.ignored;
-      _hardwareScanMode = false;
-      _pendingHardwareDigit = null;
       _applySearch(autoAddBarcode: true);
       return KeyEventResult.handled;
     }
 
-    _pendingHardwareDigit = null;
-    _lastHardwareDigitAt = null;
     return KeyEventResult.ignored;
-  }
-
-  void _insertSearchText(String text) {
-    final value = _searchCtrl.value;
-    final start =
-        value.selection.start < 0 ? value.text.length : value.selection.start;
-    final end =
-        value.selection.end < 0 ? value.text.length : value.selection.end;
-    final next = value.text.replaceRange(start, end, text);
-    _searchCtrl.value = TextEditingValue(
-      text: next,
-      selection: TextSelection.collapsed(offset: start + text.length),
-    );
-  }
-
-  void _replaceSearchText(String text) {
-    _searchCtrl.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
   }
 
   void _showKeyboard() {
     if (_keyboardEntry != null) return;
+    _searchKeyboardOpen = true;
     _searchFocus.requestFocus();
     _keyboardEntry = OverlayEntry(
       builder: (_) => Positioned(
@@ -392,6 +316,7 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
             controllerGetter: () => _searchCtrl,
             onEnter: () => _applySearch(autoAddBarcode: true),
             onClose: _hideKeyboard,
+            appendOnFullSelection: true,
           ),
         ),
       ),
@@ -402,6 +327,7 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
   void _hideKeyboard() {
     _keyboardEntry?.remove();
     _keyboardEntry = null;
+    _searchKeyboardOpen = false;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _searchFocus.requestFocus();
     });
@@ -613,6 +539,7 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
         date: DateTime.now(),
         items: items,
         returnAccessKey: returnAccessKey,
+        reasonCode: _reasonCode,
       );
       _logRefund(
         'createRefund result=${result.result} error=${result.errorMessage ?? ''}',
@@ -625,18 +552,16 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
         });
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.result == QueueSendResult.sent
-                ? 'Возврат отправлен'
-                : 'Возврат добавлен в очередь',
-          ),
-        ),
-      );
+      final refundedItemsCount = _lines.length;
       await _clearDraft();
       _logRefund('refund completed and draft cleared');
       if (!mounted) return;
+      await _showRefundSuccessDialog(
+        itemsCount: refundedItemsCount,
+        totalAmount: total,
+      );
+      if (!mounted) return;
+      setState(() => _reasonCode = null);
       context.go('/pos');
     } catch (e) {
       _logRefund('createRefund exception: $e');
@@ -646,6 +571,137 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
         _error = 'Не удалось создать возврат: $e';
       });
     }
+  }
+
+  Future<void> _showRefundSuccessDialog({
+    required int itemsCount,
+    required num totalAmount,
+  }) async {
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'refund-success',
+      barrierColor: Colors.black.withValues(alpha: 0.45),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (ctx, _, __) {
+        return SafeArea(
+          child: Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: 420,
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.14),
+                      blurRadius: 22,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Icon(
+                        Icons.check_circle_rounded,
+                        color: Color(0xFF16A34A),
+                        size: 36,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Возврат успешно оформлен',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF9FAFB),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            'Позиции: $itemsCount',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF374151),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Сумма: ${money(totalAmount.toDouble())}',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF111827),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        style: ElevatedButton.styleFrom(
+                          elevation: 0,
+                          backgroundColor: const Color(0xFF16A34A),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'Готово',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (_, anim, __, child) {
+        final curved =
+            CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -665,7 +721,7 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Align(
-                alignment: Alignment.centerLeft,
+                alignment: Alignment.centerRight,
                 child: SizedBox(
                   height: 48,
                   child: FilledButton.icon(
@@ -703,6 +759,8 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
                               onAdd: _addProduct,
                               onRemove: _removeProduct,
                               onOpenKeyboard: _showKeyboard,
+                              onSubmitSearch: () =>
+                                  _applySearch(autoAddBarcode: true),
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -714,6 +772,7 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
                               paymentMethod: _paymentMethod,
                               bankAccounts: _bankAccounts,
                               selectedBankAccountId: _selectedBankAccountId,
+                              selectedReasonCode: _reasonCode,
                               submitting: _submitting,
                               error: _error,
                               onPaymentMethodChanged: (method) => setState(() {
@@ -728,8 +787,22 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
                               onBankAccountChanged: (id) => setState(
                                 () => _selectedBankAccountId = id,
                               ),
+                              onReasonChanged: (code) => setState(
+                                () => _reasonCode = code,
+                              ),
                               onChangeQty: _changeQty,
                               onSetQty: _setQty,
+                              onQtyDialogStateChanged: (open) {
+                                _qtyDialogOpen = open;
+                                if (!open) {
+                                  WidgetsBinding.instance
+                                      .addPostFrameCallback((_) {
+                                    if (mounted && !_accessDialogOpen) {
+                                      _searchFocus.requestFocus();
+                                    }
+                                  });
+                                }
+                              },
                               onSubmit: _submit,
                               onBack: _closePage,
                             ),
@@ -752,7 +825,7 @@ class _RefundLine {
   int quantity = 1;
 
   String get productId => (product.id ?? '').trim();
-  num get price => product.effectivePrice.round();
+  num get price => product.sellingPrice.round();
   num get total => price * quantity;
 }
 
@@ -924,6 +997,7 @@ class _ProductsPanel extends StatelessWidget {
     required this.onAdd,
     required this.onRemove,
     required this.onOpenKeyboard,
+    required this.onSubmitSearch,
   });
 
   final bool loading;
@@ -936,9 +1010,12 @@ class _ProductsPanel extends StatelessWidget {
   final ValueChanged<ProductModel> onAdd;
   final ValueChanged<ProductModel> onRemove;
   final VoidCallback onOpenKeyboard;
+  final VoidCallback onSubmitSearch;
 
   @override
   Widget build(BuildContext context) {
+    const topControlHeight = 36.0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -947,42 +1024,89 @@ class _ProductsPanel extends StatelessWidget {
           children: [
             Expanded(
               child: SizedBox(
-                height: 58,
-                child: TextField(
-                  controller: searchCtrl,
-                  focusNode: searchFocus,
-                  textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    hintText: 'Поиск товара или штрихкод',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                height: topControlHeight,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0x33000000),
+                      width: 1,
                     ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: TextField(
+                    controller: searchCtrl,
+                    focusNode: searchFocus,
+                    textInputAction: TextInputAction.search,
+                    textAlignVertical: TextAlignVertical.center,
+                    onTap: () => searchFocus.requestFocus(),
+                    onTapOutside: (_) => searchFocus.requestFocus(),
+                    onSubmitted: (_) => onSubmitSearch(),
+                    style: const TextStyle(fontSize: 18),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        vertical: 7,
+                        horizontal: 0,
+                      ),
+                      hintText: 'Введите наименование товара или код товара',
+                      hintStyle: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        height: 1.4,
+                        letterSpacing: 0.26,
+                        color: const Color(0xFF999999),
+                      ),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      suffixIconConstraints: const BoxConstraints(
+                        minHeight: topControlHeight,
+                        minWidth: 30,
+                      ),
+                      suffixIcon: IconButton(
+                        tooltip: 'Найти',
+                        padding: const EdgeInsets.only(right: 4),
+                        constraints: const BoxConstraints.tightFor(
+                          width: 30,
+                          height: topControlHeight,
+                        ),
+                        icon: SvgPicture.asset(
+                          'assets/svg/search.svg',
+                          width: 20,
+                          height: 20,
+                        ),
+                        onPressed: onSubmitSearch,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             SizedBox(
-              height: 58,
-              width: 58,
-              child: FilledButton(
-                onPressed: onOpenKeyboard,
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFF111827),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
+              height: topControlHeight,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: const Color(0x33000000), width: 1),
+                  borderRadius: BorderRadius.circular(7),
                 ),
-                child: const Icon(Icons.keyboard_alt_outlined),
+                child: IconButton(
+                  tooltip: 'Клавиатура',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    height: topControlHeight,
+                    width: 46,
+                  ),
+                  icon: SvgPicture.asset(
+                    'assets/svg/keyboard.svg',
+                    width: 20,
+                    height: 20,
+                  ),
+                  onPressed: onOpenKeyboard,
+                ),
               ),
             ),
           ],
@@ -1069,7 +1193,7 @@ class _ProductResultTile extends StatelessWidget {
             ),
             const SizedBox(width: 18),
             Text(
-              money(product.effectivePrice),
+              money(product.sellingPrice),
               style: const TextStyle(
                 color: Color(0xFF111827),
                 fontWeight: FontWeight.w900,
@@ -1094,12 +1218,15 @@ class _RefundCartPanel extends StatelessWidget {
     required this.paymentMethod,
     required this.bankAccounts,
     required this.selectedBankAccountId,
+    required this.selectedReasonCode,
     required this.submitting,
     required this.error,
     required this.onPaymentMethodChanged,
     required this.onBankAccountChanged,
+    required this.onReasonChanged,
     required this.onChangeQty,
     required this.onSetQty,
+    required this.onQtyDialogStateChanged,
     required this.onSubmit,
     required this.onBack,
   });
@@ -1109,12 +1236,15 @@ class _RefundCartPanel extends StatelessWidget {
   final String paymentMethod;
   final List<LocalAccount> bankAccounts;
   final String? selectedBankAccountId;
+  final String? selectedReasonCode;
   final bool submitting;
   final String? error;
   final ValueChanged<String> onPaymentMethodChanged;
   final ValueChanged<String?> onBankAccountChanged;
+  final ValueChanged<String?> onReasonChanged;
   final void Function(int index, int delta) onChangeQty;
   final void Function(int index, int quantity) onSetQty;
+  final ValueChanged<bool> onQtyDialogStateChanged;
   final VoidCallback onSubmit;
   final VoidCallback onBack;
 
@@ -1153,6 +1283,7 @@ class _RefundCartPanel extends StatelessWidget {
                         onMinus: () => onChangeQty(index, -1),
                         onPlus: () => onChangeQty(index, 1),
                         onSetQty: (quantity) => onSetQty(index, quantity),
+                        onDialogStateChanged: onQtyDialogStateChanged,
                       );
                     },
                   ),
@@ -1184,6 +1315,12 @@ class _RefundCartPanel extends StatelessWidget {
               onChanged: onBankAccountChanged,
             ),
           ],
+          const SizedBox(height: 12),
+          RefundReasonSelector(
+            selectedCode: selectedReasonCode,
+            onChanged: onReasonChanged,
+            compact: true,
+          ),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(14),
@@ -1288,7 +1425,7 @@ class _BankAccountSelect extends StatelessWidget {
             )
           else
             DropdownButtonFormField<String>(
-              value: value,
+              initialValue: value,
               isExpanded: true,
               borderRadius: BorderRadius.circular(14),
               decoration: InputDecoration(
@@ -1343,12 +1480,14 @@ class _RefundLineTile extends StatelessWidget {
     required this.onMinus,
     required this.onPlus,
     required this.onSetQty,
+    required this.onDialogStateChanged,
   });
 
   final _RefundLine line;
   final VoidCallback onMinus;
   final VoidCallback onPlus;
   final ValueChanged<int> onSetQty;
+  final ValueChanged<bool> onDialogStateChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1379,11 +1518,12 @@ class _RefundLineTile extends StatelessWidget {
           _QtyStepButton(label: '-', onTap: onMinus),
           InkWell(
             onTap: () async {
+              onDialogStateChanged(true);
               final value = await _showRefundQtyDialog(
                 context,
                 productName: line.product.name,
                 initialQty: line.quantity,
-              );
+              ).whenComplete(() => onDialogStateChanged(false));
               if (value == null) return;
               onSetQty(value);
             },
@@ -1421,6 +1561,7 @@ Future<int?> _showRefundQtyDialog(
 }) async {
   final focusNode = FocusNode();
   var text = initialQty.toString();
+  var didPrimeInitialSelection = false;
   var didSelectInitialText = false;
 
   int parseValue() => int.tryParse(text.trim()) ?? -1;
@@ -1476,7 +1617,8 @@ Future<int?> _showRefundQtyDialog(
     builder: (dialogContext) {
       return StatefulBuilder(
         builder: (ctx, setState) {
-          if (!didSelectInitialText) {
+          if (!didPrimeInitialSelection) {
+            didPrimeInitialSelection = true;
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!focusNode.hasFocus) focusNode.requestFocus();
               didSelectInitialText = true;

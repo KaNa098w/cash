@@ -253,9 +253,10 @@ class _LoginPageState extends State<LoginPage> {
             final isLoadingAuth = authState is AuthLoading;
 
             if (authState is AuthProvisioned || authState is AuthPinStep) {
-              final provision = authState is AuthProvisioned
+              final rawProvision = authState is AuthProvisioned
                   ? authState.provision
                   : (authState as AuthPinStep).provision;
+              final provision = provider.provisionForOpenShift(rawProvision);
               final selectedUser =
                   authState is AuthPinStep ? authState.user : null;
               final errorText =

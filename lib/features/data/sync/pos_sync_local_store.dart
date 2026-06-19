@@ -10,7 +10,7 @@ import 'package:leemon_app/core/models/product_response.dart';
 import 'package:leemon_app/core/models/sale_model.dart'
     show SaleItemModel, SaleModel;
 import 'package:leemon_app/core/models/sale_model.dart' as sale_models
-    show ProductModel;
+    show ProductModel, SalePaymentModel;
 
 import 'pos_sync_models.dart';
 
@@ -137,6 +137,7 @@ class PosSyncLocalStore {
         name TEXT NOT NULL,
         type TEXT NULL,
         value REAL NULL,
+        logo_url TEXT NULL,
         raw_json TEXT NOT NULL,
         updated_at_local TEXT NOT NULL
       );
@@ -310,6 +311,7 @@ class PosSyncLocalStore {
         store_id         TEXT,
         account_id       TEXT,
         reason           TEXT,
+        reason_code      TEXT,
         note             TEXT,
         return_key_used  TEXT,
         synced           INTEGER NOT NULL DEFAULT 0
@@ -351,6 +353,7 @@ class PosSyncLocalStore {
       'ALTER TABLE refunds ADD COLUMN store_id TEXT NULL',
       'ALTER TABLE refunds ADD COLUMN account_id TEXT NULL',
       'ALTER TABLE refunds ADD COLUMN note TEXT NULL',
+      'ALTER TABLE refunds ADD COLUMN reason_code TEXT NULL',
       'ALTER TABLE products ADD COLUMN local_barcode TEXT NULL',
       'ALTER TABLE products ADD COLUMN category_id TEXT NULL',
       'ALTER TABLE products ADD COLUMN category_name TEXT NULL',
@@ -367,6 +370,7 @@ class PosSyncLocalStore {
       'ALTER TABLE accounts ADD COLUMN allow_negative INTEGER DEFAULT 0',
       'ALTER TABLE accounts ADD COLUMN visible_to_pos INTEGER DEFAULT 1',
       'ALTER TABLE accounts ADD COLUMN organization_id TEXT NULL',
+      'ALTER TABLE accounts ADD COLUMN logo_url TEXT NULL',
     ]) {
       try {
         db.execute(stmt);
@@ -601,6 +605,7 @@ class PosSyncLocalStore {
     required Map<String, dynamic> posInfo,
     required List<Map<String, dynamic>> products,
     required List<Map<String, dynamic>> sales,
+    required List<Map<String, dynamic>> refunds,
     required List<Map<String, dynamic>> accounts,
     required List<Map<String, dynamic>> expenseTypes,
     required List<Map<String, dynamic>> customers,
@@ -616,6 +621,8 @@ class PosSyncLocalStore {
       db.execute('DELETE FROM customers;');
       db.execute('DELETE FROM return_access_keys;');
       db.execute('DELETE FROM sales_history;');
+      db.execute('DELETE FROM refunds;');
+      db.execute('DELETE FROM refund_items;');
 
       final posRow = _mapPosInfoRow(posInfo);
       if (posRow != null) {
@@ -652,6 +659,13 @@ class PosSyncLocalStore {
               now
             ],
           );
+        } catch (_) {
+          // Ignore malformed snapshot records and keep bootstrapping.
+        }
+      }
+      for (final raw in refunds) {
+        try {
+          _upsertRefundPullRecord(db, raw, now);
         } catch (_) {
           // Ignore malformed snapshot records and keep bootstrapping.
         }
@@ -723,16 +737,31 @@ class PosSyncLocalStore {
     });
   }
 
+  Future<void> upsertPosInfo(Map<String, dynamic> posInfo) async {
+    final db = await _database;
+    final now = _nowIso();
+    _inTransaction<void>(db, () {
+      final row = _mapPosInfoRow(posInfo);
+      if (row != null) {
+        _upsertRow(db, 'pos_info', row);
+      }
+      _upsertReturnAccessKeysFromPosInfo(db, posInfo, now);
+    });
+  }
+
   Future<List<LocalAccount>> loadAccounts() async {
     final db = await _database;
     final rows = db.select(
-      'SELECT id, name, type, COALESCE(visible_to_pos, 1) AS visible_to_pos FROM accounts ORDER BY name COLLATE NOCASE;',
+      'SELECT id, name, type, logo_url, raw_json, COALESCE(visible_to_pos, 1) AS visible_to_pos FROM accounts ORDER BY name COLLATE NOCASE;',
     );
     return rows.map((row) {
+      final rawJson = decodeJsonMap((row['raw_json'] ?? '{}').toString());
       return LocalAccount(
         id: row['id'].toString(),
         name: row['name'].toString(),
         type: row['type']?.toString(),
+        logoUrl: _nullableString(row['logo_url']) ??
+            _nullableString(rawJson['logo_url'] ?? rawJson['logoUrl']),
         visibleToPos: (row['visible_to_pos'] as int? ?? 1) == 1,
       );
     }).toList(growable: false);
@@ -1669,8 +1698,8 @@ class PosSyncLocalStore {
       '''
       INSERT INTO refunds (
         id, client_refund_id, client_sale_id, sale_id, date, total_amount,
-        pos_id, store_id, account_id, reason, note, return_key_used, synced
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        pos_id, store_id, account_id, reason, reason_code, note, return_key_used, synced
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
       ON CONFLICT(id) DO UPDATE SET
         client_refund_id = excluded.client_refund_id,
         client_sale_id = excluded.client_sale_id,
@@ -1681,6 +1710,7 @@ class PosSyncLocalStore {
         store_id = excluded.store_id,
         account_id = excluded.account_id,
         reason = excluded.reason,
+        reason_code = excluded.reason_code,
         note = excluded.note,
         return_key_used = excluded.return_key_used,
         synced = 1
@@ -1696,6 +1726,7 @@ class PosSyncLocalStore {
         _nullableString(payload['store_id']),
         _nullableString(payload['account_id']),
         _nullableString(payload['reason']),
+        _nullableString(payload['reason_code']),
         _nullableString(payload['note']),
         _nullableString(payload['return_access_key']),
       ],
@@ -1875,6 +1906,7 @@ class PosSyncLocalStore {
       'date': _string(refundRow['date']),
       'total_amount': _asInt(refundRow['total_amount']),
       'reason': refundRow['reason'],
+      'reason_code': refundRow['reason_code'],
       'note': refundRow['note'],
       'sale_id': _nullableString(refundRow['sale_id']),
       'pos_id': _nullableString(refundRow['pos_id']),
@@ -2050,6 +2082,8 @@ class PosSyncLocalStore {
     final rawKeys = posInfo['return_access_keys'];
     if (rawKeys is! List) return;
 
+    db.execute('DELETE FROM return_access_keys;');
+
     for (final raw in rawKeys) {
       if (raw is! Map) continue;
       final keyRow = _mapReturnAccessKeyRow(
@@ -2100,6 +2134,7 @@ class PosSyncLocalStore {
       'name': _string(raw['name'], fallback: id),
       'type': _nullableString(raw['type']),
       'value': raw['value'] == null ? null : _asDouble(raw['value']),
+      'logo_url': _nullableString(raw['logo_url'] ?? raw['logoUrl']),
       'allow_negative': _asBoolInt(raw['allow_negative']),
       'visible_to_pos':
           raw['visible_to_pos'] == null ? 1 : _asBoolInt(raw['visible_to_pos']),
@@ -2718,8 +2753,8 @@ class PosSyncLocalStore {
         '''
       INSERT OR IGNORE INTO refunds (
           id, client_refund_id, pos_session_id, client_sale_id, sale_id, date, total_amount,
-          pos_id, store_id, account_id, reason, note, return_key_used, synced
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+          pos_id, store_id, account_id, reason, reason_code, note, return_key_used, synced
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ''',
         [
           clientRefundId,
@@ -2733,6 +2768,7 @@ class PosSyncLocalStore {
           _nullableString(payload['store_id']),
           _nullableString(payload['account_id']),
           _nullableString(payload['reason']),
+          _nullableString(payload['reason_code']),
           _nullableString(payload['note']),
           _nullableString(payload['return_access_key']),
         ],
@@ -3000,6 +3036,36 @@ class PosSyncLocalStore {
     );
   }
 
+  Future<List<LocalSession>> loadSessions() async {
+    final db = await _database;
+    final rows = db.select(
+      '''
+      SELECT client_session_id, server_session_id, user_id, device_id,
+             opening_cash_amount, closing_cash_amount, opened_at, closed_at,
+             is_opened
+      FROM sessions
+      ORDER BY datetime(opened_at) DESC
+      ''',
+    );
+
+    return rows.map((row) {
+      final map = _rowMap(row);
+      return LocalSession(
+        clientSessionId: (map['client_session_id'] ?? '').toString(),
+        serverSessionId: _nullableString(map['server_session_id']),
+        userId: (map['user_id'] ?? '').toString(),
+        deviceId: (map['device_id'] ?? '').toString(),
+        openingCashAmount: _asDouble(map['opening_cash_amount']),
+        closingCashAmount: map['closing_cash_amount'] == null
+            ? null
+            : _asDouble(map['closing_cash_amount']),
+        openedAt: _parseDt(map['opened_at']) ?? DateTime.now(),
+        closedAt: _parseDt(map['closed_at']),
+        isOpened: _asInt(map['is_opened']) == 1,
+      );
+    }).toList(growable: false);
+  }
+
   _SalePaymentAmounts _salePaymentBreakdown(
     sqlite.Database db,
     Map<String, dynamic> payload,
@@ -3218,6 +3284,17 @@ class PosSyncLocalStore {
             );
           }).toList()
         : <SaleItemModel>[];
+    final paymentsRaw = payload['payments'];
+    final salePayments = (paymentsRaw is List)
+        ? paymentsRaw
+            .whereType<Map>()
+            .map(
+              (payment) => sale_models.SalePaymentModel.fromJson(
+                Map<String, dynamic>.from(payment),
+              ),
+            )
+            .toList(growable: false)
+        : const <sale_models.SalePaymentModel>[];
 
     return SaleModel(
       localId: (payload['client_sale_id'] ?? '').toString(),
@@ -3239,6 +3316,7 @@ class PosSyncLocalStore {
       posSessionId: payload['pos_session_id']?.toString(),
       customerId: payload['customer_id']?.toString(),
       items: items,
+      payments: salePayments,
     );
   }
 
@@ -3322,6 +3400,47 @@ class PosSyncLocalStore {
         })
         .whereType<SaleModel>()
         .toList(growable: false);
+  }
+
+  Future<List<RefundModel>> loadAllRefundsHistory() async {
+    final db = await _database;
+    final rows = db.select('SELECT * FROM refunds ORDER BY date DESC');
+
+    return rows.map((row) {
+      final map = _rowMap(row);
+      final refundId = _string(map['id']);
+      final itemRows = db.select(
+        'SELECT * FROM refund_items WHERE refund_id = ? ORDER BY id',
+        [refundId],
+      );
+      final items = itemRows.map((itemRow) {
+        final item = _rowMap(itemRow);
+        return RefundItemModel(
+          id: _string(item['id']),
+          refundId: refundId,
+          saleItemId: '',
+          productId: _string(item['product_id']),
+          quantity: _asInt(item['quantity']),
+          price: _asInt(item['price']),
+          maxQuantity: 0,
+        );
+      }).toList(growable: false);
+
+      return RefundModel(
+        id: refundId,
+        number: _nullableString(map['number']),
+        date: _parseDt(_string(map['date'])),
+        totalAmount: _asInt(map['total_amount']),
+        reason: _nullableString(map['reason']),
+        reasonCode: _nullableString(map['reason_code']),
+        note: _nullableString(map['note']),
+        saleId: _nullableString(map['sale_id']),
+        posId: _nullableString(map['pos_id']),
+        storeId: _nullableString(map['store_id']),
+        accountId: _nullableString(map['account_id']),
+        items: items,
+      );
+    }).toList(growable: false);
   }
 
   Map<String, dynamic>? _firstRow(sqlite.ResultSet result) {

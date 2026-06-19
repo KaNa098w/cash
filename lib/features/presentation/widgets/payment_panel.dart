@@ -21,6 +21,8 @@ import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_page.dart';
 import 'package:leemon_app/features/presentation/widgets/last_sale_amount_notifier.dart';
+import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
+import 'package:leemon_app/features/presentation/utils/comment_text_controller.dart';
 import 'package:uuid/uuid.dart';
 import '../../data/utils/money.dart';
 import '../../domain/entities/payment.dart';
@@ -35,16 +37,24 @@ class PaymentPanel extends StatefulWidget {
 class _PaymentPanelState extends State<PaymentPanel> {
   final _cashCtrl = TextEditingController();
   final _cardCtrl = TextEditingController();
+  final _commentCtrl = TextEditingController();
   final _cashFocusNode = FocusNode();
   final _cardFocusNode = FocusNode();
+  final _commentFocusNode = FocusNode();
+  OverlayEntry? _commentKeyboardEntry;
+  List<LocalAccount> _bankAccounts = const [];
+  String? _selectedBankAccountId;
+  bool _loadingBankAccounts = false;
   bool _paying = false;
   bool _paymentSuccess = false;
   bool _openingCustomerPicker = false;
   bool _isMixedPayment = false;
+  bool _mixedActiveIsCard = false;
 
   @override
   void initState() {
     super.initState();
+    _commentCtrl.addListener(_capitalizeComment);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final cubit = context.read<PosCubit>();
@@ -54,15 +64,103 @@ class _PaymentPanelState extends State<PaymentPanel> {
       _cardCtrl.clear();
       _cashFocusNode.requestFocus();
     });
+    _loadBankAccounts();
   }
 
   @override
   void dispose() {
+    _hideCommentKeyboard();
+    _commentCtrl.removeListener(_capitalizeComment);
+    _commentFocusNode.dispose();
     _cardFocusNode.dispose();
     _cashFocusNode.dispose();
+    _commentCtrl.dispose();
     _cardCtrl.dispose();
     _cashCtrl.dispose();
     super.dispose();
+  }
+
+  void _capitalizeComment() {
+    capitalizeFirstLetterInController(_commentCtrl);
+  }
+
+  Future<void> _loadBankAccounts() async {
+    if (_loadingBankAccounts) return;
+    setState(() => _loadingBankAccounts = true);
+    try {
+      final accounts = await sl<PosSyncService>().loadAccounts();
+      final bankAccounts = accounts
+          .where((account) =>
+              account.visibleToPos && account.normalizedType == 'bank')
+          .toList(growable: false);
+      if (!mounted) return;
+      setState(() {
+        _bankAccounts = bankAccounts;
+        final selectedExists = bankAccounts
+            .any((account) => account.id.trim() == _selectedBankAccountId);
+        if (!selectedExists) {
+          _selectedBankAccountId = null;
+        }
+      });
+    } finally {
+      if (mounted) setState(() => _loadingBankAccounts = false);
+    }
+  }
+
+  LocalAccount? get _selectedBankAccount {
+    final selectedId = (_selectedBankAccountId ?? '').trim();
+    if (selectedId.isEmpty) {
+      return null;
+    }
+    return _bankAccounts.cast<LocalAccount?>().firstWhere(
+          (account) => account?.id.trim() == selectedId,
+          orElse: () => null,
+        );
+  }
+
+  void _ensureCommentSelection() {
+    final selection = _commentCtrl.selection;
+    if (selection.isValid) return;
+
+    _commentCtrl.selection =
+        TextSelection.collapsed(offset: _commentCtrl.text.length);
+  }
+
+  void _showCommentKeyboard() {
+    if (_paying) return;
+    _commentFocusNode.requestFocus();
+    _ensureCommentSelection();
+    if (_commentKeyboardEntry != null) return;
+
+    _commentKeyboardEntry = OverlayEntry(
+      builder: (_) => Positioned(
+        left: 0,
+        right: 0,
+        bottom: 0,
+        child: Material(
+          color: Colors.transparent,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _CommentKeyboardPreview(controller: _commentCtrl),
+              const SizedBox(height: 6),
+              OnScreenKeyboardSheet(
+                controllerGetter: () => _commentCtrl,
+                onEnter: _hideCommentKeyboard,
+                onClose: _hideCommentKeyboard,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    Overlay.of(context, rootOverlay: true).insert(_commentKeyboardEntry!);
+  }
+
+  void _hideCommentKeyboard() {
+    _commentKeyboardEntry?.remove();
+    _commentKeyboardEntry = null;
   }
 
   void _applyTextToState(BuildContext context, String text) {
@@ -272,23 +370,15 @@ class _PaymentPanelState extends State<PaymentPanel> {
     List<CartItem> items, {
     required bool canCustomPrice,
   }) {
-    const epsilon = 0.01;
-
     for (final item in items) {
       if (item.product.isUniversal || item.customUnitPrice == null) continue;
 
       final productName = item.product.name.trim().isEmpty
           ? item.product.id
           : item.product.name.trim();
-      final customPrice = item.effectiveUnitPrice;
-      final sellingPrice = item.product.price;
 
       if (!canCustomPrice) {
         _showError('Ручная цена запрещена для магазина: $productName');
-        return false;
-      }
-      if (sellingPrice > 0 && customPrice > sellingPrice + epsilon) {
-        _showError('Цена выше базовой запрещена: $productName');
         return false;
       }
     }
@@ -299,13 +389,15 @@ class _PaymentPanelState extends State<PaymentPanel> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 500,
+      height: 540,
       width: 573,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 0),
         child: BlocConsumer<PosCubit, PosState>(
           listenWhen: (prev, curr) => prev.received != curr.received,
           listener: (context, state) {
+            if (_isMixedPayment) return;
+
             final text = _fmt(state.received);
             if (!_isMixedPayment && state.paymentKind == PaymentKind.card) {
               if (_cardCtrl.text != text) {
@@ -325,12 +417,18 @@ class _PaymentPanelState extends State<PaymentPanel> {
             final change = cubit.change.clamp(0, double.infinity);
             final hasItems = state.items.isNotEmpty;
             final isDebtSale = state.paymentKind == PaymentKind.credit;
+            final requiresBankAccount =
+                state.paymentKind == PaymentKind.card || _isMixedPayment;
+            final hasSelectedBankAccount =
+                !requiresBankAccount || _selectedBankAccount != null;
             final hasSelectedPaymentMethod =
                 state.paymentKind == PaymentKind.card ||
                     state.paymentKind == PaymentKind.credit ||
                     state.received > 0;
-            final canSubmitPayment =
-                !_paying && hasItems && hasSelectedPaymentMethod;
+            final canSubmitPayment = !_paying &&
+                hasItems &&
+                hasSelectedPaymentMethod &&
+                hasSelectedBankAccount;
 
             Future<void> submitPayment() async {
               if (!canSubmitPayment) return;
@@ -365,8 +463,17 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 _showError('Не выбран кассир');
                 return;
               }
+              if (fallbackAccountId.isEmpty) {
+                _showError('Не найден наличный счёт POS');
+                return;
+              }
               if (posCubit.state.items.isEmpty) {
                 _showError('Корзина пустая');
+                return;
+              }
+              final saleComment = _commentCtrl.text.trim();
+              if (saleComment.length > 1000) {
+                _showError('Комментарий не должен превышать 1000 символов');
                 return;
               }
 
@@ -469,10 +576,20 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     .toStringAsFixed(2),
               );
               final mixedCardAmount = double.parse(
-                (exactTotal - mixedCashAmount)
+                _parseAmount(_cardCtrl.text)
                     .clamp(0, exactTotal)
                     .toStringAsFixed(2),
               );
+              if (isMixed) {
+                final mixedTotal = double.parse(
+                  (mixedCashAmount + mixedCardAmount).toStringAsFixed(2),
+                );
+                if ((mixedTotal - exactTotal).abs() > 0.01) {
+                  _showError(
+                      'Сумма наличных и безналичных должна быть равна итогу');
+                  return;
+                }
+              }
 
               final debtPaidNow = isDebtSale
                   ? _parseAmount(_cashCtrl.text).clamp(0, exactTotal).round()
@@ -499,7 +616,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
               final saleLocalId = const Uuid().v4();
 
-              final sale = SaleModel(
+              var sale = SaleModel(
                 localId: saleLocalId,
                 number: '',
                 date: DateTime.now(),
@@ -512,7 +629,11 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     isDebtSale && debtPaidNow > 0 ? 'cash' : null,
                 dueDate:
                     isDebtSale ? _defaultDebtDueDate(DateTime.now()) : null,
-                comment: isDebtSale ? 'Продажа в долг' : null,
+                comment: saleComment.isNotEmpty
+                    ? saleComment
+                    : isDebtSale
+                        ? 'Продажа в долг'
+                        : null,
                 idempotencyKey:
                     '$posId-${DateTime.now().millisecondsSinceEpoch}-$saleLocalId',
                 posId: posId,
@@ -549,36 +670,60 @@ class _PaymentPanelState extends State<PaymentPanel> {
               final cashAccount = visibleAccounts
                   .cast<LocalAccount?>()
                   .firstWhere((a) => a?.isCash ?? false, orElse: () => null);
-              final cardAccount = visibleAccounts
-                  .cast<LocalAccount?>()
-                  .firstWhere((a) => a?.isBankOrPos ?? false,
-                      orElse: () => null);
+              final bankAccounts = _bankAccounts.isNotEmpty
+                  ? _bankAccounts
+                  : visibleAccounts
+                      .where((account) => account.normalizedType == 'bank')
+                      .toList(growable: false);
+              final cardAccount = _selectedBankAccount;
 
-              if ((paymentMethod == 'cash' ||
-                      paymentMethod == 'mixed' ||
-                      (isDebtSale && debtPaidNow > 0)) &&
-                  (cashAccount?.id.trim().isEmpty ?? true)) {
+              final needsBankAccount =
+                  paymentMethod == 'card' || paymentMethod == 'mixed';
+              if (needsBankAccount && bankAccounts.isEmpty) {
                 _showError(
-                  'Не найден счет наличных. Обновите синхронизацию POS или настройте счет CASH.',
+                  'Не найден банковский счет. Обновите синхронизацию POS или настройте счет типа BANK.',
                 );
                 return;
               }
-              if ((paymentMethod == 'card' || paymentMethod == 'mixed') &&
+
+              if (needsBankAccount &&
                   (cardAccount?.id.trim().isEmpty ?? true)) {
-                _showError(
-                  'Не найден счет карты. Обновите синхронизацию POS или настройте счет BANK/POS.',
-                );
+                _showError('Выберите счет безналичной оплаты');
                 return;
               }
+
+              Map<String, dynamic> accountJson(LocalAccount account) => {
+                    'id': account.id,
+                    'name': account.name,
+                    'type': account.type,
+                    if ((account.logoUrl ?? '').trim().isNotEmpty)
+                      'logo_url': account.logoUrl!.trim(),
+                  };
+              final posCashAccountJson = {
+                'id': fallbackAccountId,
+                'name': (cashAccount?.name.trim().isNotEmpty ?? false)
+                    ? cashAccount!.name
+                    : 'POS cash',
+                'type': cashAccount?.type ?? 'POS',
+              };
+
+              sale = sale.copyWith(
+                comment: saleComment.isNotEmpty
+                    ? saleComment
+                    : isDebtSale
+                        ? 'РџСЂРѕРґР°Р¶Р° РІ РґРѕР»Рі'
+                        : null,
+              );
 
               final List<Map<String, dynamic>> payments;
               if (isDebtSale) {
                 payments = debtPaidNow > 0
                     ? [
                         {
-                          'account_id': cashAccount!.id,
+                          'account_id': fallbackAccountId,
                           'amount': debtPaidNow,
-                          'client_payment_id': '$saleLocalId-debt-paid',
+                          'client_payment_id': const Uuid().v4(),
+                          'account': posCashAccountJson,
                         },
                       ]
                     : [];
@@ -586,15 +731,17 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 payments = [
                   if (mixedCashAmount > 0)
                     {
-                      'account_id': cashAccount!.id,
+                      'account_id': fallbackAccountId,
                       'amount': mixedCashAmount,
-                      'client_payment_id': '$saleLocalId-cash',
+                      'client_payment_id': const Uuid().v4(),
+                      'account': posCashAccountJson,
                     },
                   if (mixedCardAmount > 0)
                     {
                       'account_id': cardAccount!.id,
                       'amount': mixedCardAmount,
-                      'client_payment_id': '$saleLocalId-card',
+                      'client_payment_id': const Uuid().v4(),
+                      'account': accountJson(cardAccount),
                     },
                 ];
               } else if (paymentMethod == 'card') {
@@ -602,18 +749,26 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   {
                     'account_id': cardAccount!.id,
                     'amount': exactTotal,
-                    'client_payment_id': '$saleLocalId-card',
+                    'client_payment_id': const Uuid().v4(),
+                    'account': accountJson(cardAccount),
                   },
                 ];
               } else {
                 payments = [
                   {
-                    'account_id': cashAccount!.id,
+                    'account_id': fallbackAccountId,
                     'amount': exactTotal,
-                    'client_payment_id': '$saleLocalId-cash',
+                    'client_payment_id': const Uuid().v4(),
+                    'account': posCashAccountJson,
                   },
                 ];
               }
+
+              sale = sale.copyWith(
+                payments: payments
+                    .map((payment) => SalePaymentModel.fromJson(payment))
+                    .toList(growable: false),
+              );
 
               final repo = GetIt.I<SaleRepository>();
 
@@ -718,6 +873,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 await Future.delayed(const Duration(milliseconds: 950));
                 if (!mounted) return;
                 Navigator.of(this.context).pop();
+                _commentCtrl.clear();
                 posCubit.clearAfterPayment();
               } catch (_) {
                 _showError('Не удалось провести оплату');
@@ -729,7 +885,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
             }
 
             bool useCardInput() {
-              if (_isMixedPayment) return _cardFocusNode.hasFocus;
+              if (_isMixedPayment) return _mixedActiveIsCard;
               return state.paymentKind == PaymentKind.card;
             }
 
@@ -744,17 +900,31 @@ class _PaymentPanelState extends State<PaymentPanel> {
               );
             }
 
-            String limitedAmountText(String text) {
+            String normalizeAmountText(String text) {
               final normalized = text.replaceAll(',', '.').trim();
+              if (normalized.isEmpty) return '0';
+              if (normalized == '.') return '0.';
+              if (normalized.startsWith('.')) return '0$normalized';
+              return normalized.replaceFirst(RegExp(r'^0+(?=\d)'), '');
+            }
+
+            String limitedAmountText(String text) {
+              final normalized = normalizeAmountText(text);
               if (normalized.isEmpty ||
                   normalized == '0.' ||
                   normalized == '.') {
-                return text;
+                return normalized;
               }
 
-              final amount = _parseAmount(text);
-              if (amount <= total) return text;
+              final amount = _parseAmount(normalized);
+              if (amount <= total) return normalized;
               return _fmt(total);
+            }
+
+            void placeCashCursorAtEnd() {
+              _cashCtrl.selection = TextSelection.collapsed(
+                offset: _cashCtrl.text.length,
+              );
             }
 
             void setMixedCashText(String text) {
@@ -805,6 +975,15 @@ class _PaymentPanelState extends State<PaymentPanel> {
               }
             }
 
+            void addQuick(int inc) {
+              final curr =
+                  double.tryParse(activeText().replaceAll(',', '.')) ?? 0;
+              final next = _isMixedPayment
+                  ? (curr + inc).clamp(0, total).toDouble()
+                  : curr + inc;
+              setActiveText(_fmt(next));
+            }
+
             void appendToken(String token) {
               var t = activeText();
 
@@ -831,15 +1010,6 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
               t = t.replaceFirst(RegExp(r'^0+(?=\d)'), '');
               setActiveText(t);
-            }
-
-            void addQuick(int inc) {
-              final curr =
-                  double.tryParse(activeText().replaceAll(',', '.')) ?? 0;
-              final next = _isMixedPayment
-                  ? (curr + inc).clamp(0, total).toDouble()
-                  : curr + inc;
-              setActiveText(_fmt(next));
             }
 
             final customerName = state.activeCustomer?.name.trim();
@@ -883,7 +1053,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           left: 3.12695,
                           top: 0,
                           width: 566,
-                          height: 493.296,
+                          height: 531.296,
                           child: Container(
                             decoration: BoxDecoration(
                               color: const Color(0xFFF2F2F2),
@@ -942,34 +1112,40 @@ class _PaymentPanelState extends State<PaymentPanel> {
                             paymentKind: state.paymentKind,
                             mixed: _isMixedPayment,
                             onCash: () {
-                              setState(() => _isMixedPayment = false);
+                              setState(() {
+                                _isMixedPayment = false;
+                                _mixedActiveIsCard = false;
+                              });
                               cubit.setPaymentKind(PaymentKind.cash);
                               _cashFocusNode.requestFocus();
                             },
                             onCard: () {
-                              setState(() => _isMixedPayment = false);
+                              setState(() {
+                                _isMixedPayment = false;
+                                _mixedActiveIsCard = false;
+                                _selectedBankAccountId = null;
+                              });
                               cubit.setPaymentKind(PaymentKind.card);
                               _setCardText(context, _fmt(total));
+                              if (_bankAccounts.isEmpty) _loadBankAccounts();
                               _cardFocusNode.requestFocus();
                             },
                             onMixed: () {
-                              setState(() => _isMixedPayment = true);
+                              setState(() {
+                                _isMixedPayment = true;
+                                _mixedActiveIsCard = false;
+                                _selectedBankAccountId = null;
+                              });
                               cubit.setPaymentKind(PaymentKind.cash);
-                              final cashText = _cashCtrl.text.trim().isEmpty
-                                  ? '0'
-                                  : _cashCtrl.text;
-                              _setText(
-                                context,
-                                cashText,
-                                applyToState: false,
-                              );
-                              _setCardText(
-                                context,
-                                complementText(cashText),
-                                applyToState: false,
-                              );
-                              cubit.setReceived(total);
+                              if (_bankAccounts.isEmpty) _loadBankAccounts();
+                              _setText(context, '0', applyToState: false);
+                              _setCardText(context, '0', applyToState: false);
+                              cubit.setReceived(0);
                               _cashFocusNode.requestFocus();
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!mounted || !_isMixedPayment) return;
+                                placeCashCursorAtEnd();
+                              });
                             },
                           ),
                         ),
@@ -984,8 +1160,14 @@ class _PaymentPanelState extends State<PaymentPanel> {
                               label: 'Наличный счет',
                               controller: _cashCtrl,
                               focusNode: _cashFocusNode,
+                              onTap: () {
+                                if (_isMixedPayment) {
+                                  setState(() => _mixedActiveIsCard = false);
+                                }
+                              },
                               onChanged: (v) {
                                 if (_isMixedPayment) {
+                                  _mixedActiveIsCard = false;
                                   setMixedCashText(v);
                                   return;
                                 }
@@ -1007,8 +1189,14 @@ class _PaymentPanelState extends State<PaymentPanel> {
                               controller: _cardCtrl,
                               focusNode: _cardFocusNode,
                               readOnly: !_isMixedPayment,
+                              onTap: () {
+                                if (_isMixedPayment) {
+                                  setState(() => _mixedActiveIsCard = true);
+                                }
+                              },
                               onChanged: (v) {
                                 if (_isMixedPayment) {
+                                  _mixedActiveIsCard = true;
                                   setMixedCardText(v);
                                 }
                               },
@@ -1118,46 +1306,63 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           onTap: () {},
                         ),
                         if (!isDebtSale) ...[
-                          Positioned(
-                            left: 299.417,
-                            top: 208.732,
-                            width: 121.306,
-                            height: 46.4758,
-                            child: _WhiteButton(
-                              text: '+1 000',
-                              onTap: () => addQuick(1000),
+                          if (state.paymentKind == PaymentKind.cash &&
+                              !_isMixedPayment) ...[
+                            Positioned(
+                              left: 299.417,
+                              top: 208.732,
+                              width: 121.306,
+                              height: 46.4758,
+                              child: _WhiteButton(
+                                text: '+1 000',
+                                onTap: () => addQuick(1000),
+                              ),
                             ),
-                          ),
-                          Positioned(
-                            left: 435.312,
-                            top: 208.732,
-                            width: 121.306,
-                            height: 46.4758,
-                            child: _WhiteButton(
-                              text: '+2 000',
-                              onTap: () => addQuick(2000),
+                            Positioned(
+                              left: 435.312,
+                              top: 208.732,
+                              width: 121.306,
+                              height: 46.4758,
+                              child: _WhiteButton(
+                                text: '+2 000',
+                                onTap: () => addQuick(2000),
+                              ),
                             ),
-                          ),
-                          Positioned(
-                            left: 299.417,
-                            top: 267.794,
-                            width: 121.306,
-                            height: 46.4758,
-                            child: _WhiteButton(
-                              text: '+5 000',
-                              onTap: () => addQuick(5000),
+                            Positioned(
+                              left: 299.417,
+                              top: 267.794,
+                              width: 121.306,
+                              height: 46.4758,
+                              child: _WhiteButton(
+                                text: '+5 000',
+                                onTap: () => addQuick(5000),
+                              ),
                             ),
-                          ),
-                          Positioned(
-                            left: 435.312,
-                            top: 267.794,
-                            width: 121.306,
-                            height: 46.4758,
-                            child: _WhiteButton(
-                              text: '+10 000',
-                              onTap: () => addQuick(10000),
+                            Positioned(
+                              left: 435.312,
+                              top: 267.794,
+                              width: 121.306,
+                              height: 46.4758,
+                              child: _WhiteButton(
+                                text: '+10 000',
+                                onTap: () => addQuick(10000),
+                              ),
                             ),
-                          ),
+                          ] else
+                            Positioned(
+                              left: 299.417,
+                              top: 208.732,
+                              width: 257.201,
+                              height: 105.538,
+                              child: _BankAccountButtons(
+                                accounts: _bankAccounts,
+                                selectedId: _selectedBankAccountId,
+                                loading: _loadingBankAccounts,
+                                onSelected: (id) {
+                                  setState(() => _selectedBankAccountId = id);
+                                },
+                              ),
+                            ),
                         ] else
                           Positioned(
                             left: 299.417,
@@ -1213,7 +1418,13 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           child: _GreyButton(
                             text: 'В ДОЛГ',
                             onTap: hasItems
-                                ? () => cubit.setPaymentKind(PaymentKind.credit)
+                                ? () {
+                                    setState(() {
+                                      _isMixedPayment = false;
+                                      _mixedActiveIsCard = false;
+                                    });
+                                    cubit.setPaymentKind(PaymentKind.credit);
+                                  }
                                 : null,
                             selected: state.paymentKind == PaymentKind.credit,
                           ),
@@ -1265,6 +1476,17 @@ class _PaymentPanelState extends State<PaymentPanel> {
                             onTap: canSubmitPayment && !_paymentSuccess
                                 ? submitPayment
                                 : null,
+                          ),
+                        ),
+                        Positioned(
+                          left: 14.8535,
+                          top: 489.5,
+                          width: 541,
+                          height: 35,
+                          child: _InlineSaleCommentField(
+                            controller: _commentCtrl,
+                            focusNode: _commentFocusNode,
+                            onOpenKeyboard: _showCommentKeyboard,
                           ),
                         ),
                       ],
@@ -1551,9 +1773,9 @@ class _PaymentTabs extends StatelessWidget {
   final VoidCallback onCard;
   final VoidCallback onMixed;
 
-  static const double _tabHeight = 42;
-  static const double _dividerTop = 6;
-  static const double _dividerHeight = 30;
+  static const double _tabHeight = 34.3978;
+  static const double _dividerTop = 4;
+  static const double _dividerHeight = 26;
 
   @override
   Widget build(BuildContext context) {
@@ -1597,28 +1819,24 @@ class _PaymentTabs extends StatelessWidget {
               height: _dividerHeight,
               child: ColoredBox(color: Color(0xFFB6B6B6)),
             ),
-            SizedBox(
-              height: _tabHeight,
+            Positioned.fill(
               child: Row(
                 children: [
-                  SizedBox(
-                    width: 180.59,
+                  Expanded(
                     child: _PaymentTabButton(
                       text: 'Наличные',
                       selected: !mixed && paymentKind == PaymentKind.cash,
                       onTap: onCash,
                     ),
                   ),
-                  SizedBox(
-                    width: 171.205,
+                  Expanded(
                     child: _PaymentTabButton(
                       text: 'Безналичные',
                       selected: !mixed && paymentKind == PaymentKind.card,
                       onTap: onCard,
                     ),
                   ),
-                  SizedBox(
-                    width: 189.97,
+                  Expanded(
                     child: _PaymentTabButton(
                       text: 'Смешенная',
                       selected: mixed,
@@ -1648,23 +1866,840 @@ class _PaymentTabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return SizedBox.expand(
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          padding: EdgeInsets.zero,
+          backgroundColor: Colors.transparent,
+          foregroundColor: selected ? Colors.white : Colors.black,
+          minimumSize: Size.zero,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+        ),
+        child: Text(
+          text,
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            height: 1,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SalePaymentDetails {
+  const _SalePaymentDetails({
+    required this.comment,
+    this.bankAccount,
+  });
+
+  final String comment;
+  final LocalAccount? bankAccount;
+}
+
+class _SalePaymentDetailsDialog extends StatefulWidget {
+  const _SalePaymentDetailsDialog({
+    required this.bankAccounts,
+    required this.requireBankAccount,
+  });
+
+  final List<LocalAccount> bankAccounts;
+  final bool requireBankAccount;
+
+  @override
+  State<_SalePaymentDetailsDialog> createState() =>
+      _SalePaymentDetailsDialogState();
+}
+
+class _SalePaymentDetailsDialogState extends State<_SalePaymentDetailsDialog> {
+  final _commentCtrl = TextEditingController();
+  final _commentFocus = FocusNode();
+  OverlayEntry? _keyboardEntry;
+  LocalAccount? _selectedBankAccount;
+
+  @override
+  void initState() {
+    super.initState();
+    _commentCtrl.addListener(_capitalizeComment);
+    if (widget.requireBankAccount && widget.bankAccounts.isNotEmpty) {
+      _selectedBankAccount = widget.bankAccounts.first;
+    }
+  }
+
+  @override
+  void dispose() {
+    _hideKeyboard();
+    _commentCtrl.removeListener(_capitalizeComment);
+    _commentCtrl.dispose();
+    _commentFocus.dispose();
+    super.dispose();
+  }
+
+  void _capitalizeComment() {
+    capitalizeFirstLetterInController(_commentCtrl);
+  }
+
+  void _ensureSelection() {
+    final selection = _commentCtrl.selection;
+    if (selection.isValid) return;
+    _commentCtrl.selection =
+        TextSelection.collapsed(offset: _commentCtrl.text.length);
+  }
+
+  void _showKeyboard() {
+    _commentFocus.requestFocus();
+    _ensureSelection();
+    if (_keyboardEntry != null) return;
+
+    _keyboardEntry = OverlayEntry(
+      builder: (_) => Positioned(
+        left: 0,
+        right: 0,
+        bottom: 0,
+        child: Material(
+          color: Colors.transparent,
+          child: OnScreenKeyboardSheet(
+            controllerGetter: () => _commentCtrl,
+            onEnter: _hideKeyboard,
+            onClose: _hideKeyboard,
+          ),
+        ),
+      ),
+    );
+
+    Overlay.of(context, rootOverlay: true).insert(_keyboardEntry!);
+  }
+
+  void _hideKeyboard() {
+    _keyboardEntry?.remove();
+    _keyboardEntry = null;
+  }
+
+  void _submit() {
+    final comment = _commentCtrl.text.trim();
+    if (comment.length > 1000) return;
+    if (widget.requireBankAccount && _selectedBankAccount == null) return;
+
+    Navigator.of(context).pop(
+      _SalePaymentDetails(
+        comment: comment,
+        bankAccount: _selectedBankAccount,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canSubmit =
+        !widget.requireBankAccount || _selectedBankAccount != null;
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 22),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 620),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF1ED),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.receipt_long_rounded,
+                      color: Color(0xFF456B5A),
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      widget.requireBankAccount
+                          ? 'Детали безналичной оплаты'
+                          : 'Комментарий к оплате',
+                      style: GoogleFonts.inter(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFF111827),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Закрыть',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              if (widget.requireBankAccount) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Банковский счет',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF475569),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: widget.bankAccounts.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (_, index) {
+                        final account = widget.bankAccounts[index];
+                        final selected = account.id == _selectedBankAccount?.id;
+                        final title = account.name.trim().isEmpty
+                            ? 'Банк ${account.id}'
+                            : account.name.trim();
+
+                        return Material(
+                          color: selected
+                              ? const Color(0xFFEAF7F1)
+                              : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(8),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () =>
+                                setState(() => _selectedBankAccount = account),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 11),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: selected
+                                      ? const Color(0xFF33CC99)
+                                      : const Color(0xFFE2E8F0),
+                                  width: selected ? 1.5 : 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    selected
+                                        ? Icons.radio_button_checked_rounded
+                                        : Icons.radio_button_off_rounded,
+                                    color: selected
+                                        ? const Color(0xFF16A34A)
+                                        : const Color(0xFF94A3B8),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Tooltip(
+                                      message: title,
+                                      child: _BankAccountLogoOrName(
+                                        account: account,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Text(
+                'Комментарий',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF475569),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 112,
+                child: _SaleCommentBox(
+                  controller: _commentCtrl,
+                  focusNode: _commentFocus,
+                  onOpenKeyboard: _showKeyboard,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 46),
+                        foregroundColor: const Color(0xFF374151),
+                        side: const BorderSide(color: Color(0xFFD1D5DB)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text('Отмена'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: canSubmit ? _submit : null,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 46),
+                        backgroundColor: const Color(0xFF33CC99),
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: const Color(0xFFA8DABD),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text('Продолжить'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BankAccountButtons extends StatelessWidget {
+  const _BankAccountButtons({
+    required this.accounts,
+    required this.selectedId,
+    required this.loading,
+    required this.onSelected,
+  });
+
+  final List<LocalAccount> accounts;
+  final String? selectedId;
+  final bool loading;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
+    if (accounts.isEmpty) {
+      return _BankEmptyBox(onTap: () {});
+    }
+
+    final effectiveSelectedId =
+        accounts.any((account) => account.id == selectedId) ? selectedId : null;
+
+    return GridView.builder(
+      padding: EdgeInsets.zero,
+      physics: const ClampingScrollPhysics(),
+      itemCount: accounts.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 14,
+        childAspectRatio: 2.62,
+      ),
+      itemBuilder: (context, index) {
+        final account = accounts[index];
+        final name = account.name.trim().isEmpty
+            ? 'Банк ${account.id}'
+            : account.name.trim();
+        final selected = account.id == effectiveSelectedId;
+
+        return _BankNameButton(
+          name: name,
+          account: account,
+          selected: selected,
+          onTap: () => onSelected(account.id),
+        );
+      },
+    );
+  }
+}
+
+class _BankNameButton extends StatelessWidget {
+  const _BankNameButton({
+    required this.name,
+    required this.selected,
+    required this.onTap,
+    this.account,
+  });
+
+  final String name;
+  final LocalAccount? account;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
     return TextButton(
       onPressed: onTap,
       style: TextButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
         padding: EdgeInsets.zero,
-        backgroundColor: Colors.transparent,
-        foregroundColor: selected ? Colors.white : Colors.black,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(4.69061),
+          side: BorderSide(
+            color: selected ? const Color(0xFF33CC99) : Colors.transparent,
+            width: selected ? 1.3 : 0,
+          ),
+        ),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         visualDensity: VisualDensity.compact,
       ),
-      child: Text(
-        text,
+      child: Tooltip(
+        message: name,
+        child: account == null
+            ? _BankAccountNameText(name: name)
+            : _BankAccountLogoOrName(account: account!),
+      ),
+    );
+  }
+}
+
+class _BankAccountLogoOrName extends StatelessWidget {
+  const _BankAccountLogoOrName({
+    required this.account,
+  });
+
+  final LocalAccount account;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = account.name.trim().isEmpty
+        ? 'Банк ${account.id}'
+        : account.name.trim();
+    final logoUrl = (account.logoUrl ?? '').trim();
+    if (logoUrl.isEmpty) {
+      return _BankAccountNameText(name: name);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(1),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(3.5),
+        child: SizedBox.expand(
+          child: Image.network(
+            logoUrl,
+            fit: BoxFit.contain,
+            alignment: Alignment.center,
+            errorBuilder: (_, __, ___) => _BankAccountNameText(name: name),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BankAccountNameText extends StatelessWidget {
+  const _BankAccountNameText({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      name,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: GoogleFonts.inter(
+        fontSize: 12,
+        fontWeight: FontWeight.w800,
+        color: Colors.black,
+        height: 1,
+      ),
+    );
+  }
+}
+
+class _BankEmptyBox extends StatelessWidget {
+  const _BankEmptyBox({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _BankNameButton(
+      name: 'Банк',
+      selected: false,
+      onTap: onTap,
+    );
+  }
+}
+
+class _InlineSaleCommentField extends StatelessWidget {
+  const _InlineSaleCommentField({
+    required this.controller,
+    required this.focusNode,
+    required this.onOpenKeyboard,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final VoidCallback onOpenKeyboard;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: const Color(0xFF999999), width: 1),
+      ),
+      child: Stack(
+        children: [
+          TextField(
+            controller: controller,
+            focusNode: focusNode,
+            maxLines: 1,
+            readOnly: true,
+            showCursor: true,
+            textAlign: TextAlign.left,
+            textAlignVertical: TextAlignVertical.center,
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(1000),
+            ],
+            decoration: InputDecoration(
+              hintText:
+                  '\u041a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0439',
+              counterText: '',
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: const EdgeInsets.fromLTRB(12, 12, 42, 6),
+              hintStyle: GoogleFonts.inter(
+                fontSize: 12.76,
+                fontWeight: FontWeight.w500,
+                color: const Color(0xFF999999),
+                height: 1,
+              ),
+            ),
+            style: GoogleFonts.inter(
+              fontSize: 12.76,
+              fontWeight: FontWeight.w500,
+              color: Colors.black,
+              height: 1,
+            ),
+          ),
+          Positioned(
+            right: 4,
+            top: 1,
+            bottom: 1,
+            child: IconButton(
+              tooltip:
+                  '\u041a\u043b\u0430\u0432\u0438\u0430\u0442\u0443\u0440\u0430',
+              onPressed: onOpenKeyboard,
+              icon: const Icon(
+                Icons.keyboard_alt_outlined,
+                color: Color(0xFF999999),
+                size: 20,
+              ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ignore: unused_element
+class _BottomSaleCommentField extends StatelessWidget {
+  const _BottomSaleCommentField({
+    required this.controller,
+    required this.focusNode,
+    required this.onOpenKeyboard,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final VoidCallback onOpenKeyboard;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: const Color(0xFF999999), width: 1),
+      ),
+      child: TextField(
+        controller: controller,
+        focusNode: focusNode,
+        maxLines: 1,
+        textAlign: TextAlign.left,
+        textAlignVertical: TextAlignVertical.center,
+        onTap: onOpenKeyboard,
+        inputFormatters: [
+          LengthLimitingTextInputFormatter(1000),
+        ],
+        decoration: InputDecoration(
+          hintText: 'Комментарий',
+          counterText: '',
+          border: InputBorder.none,
+          isDense: true,
+          contentPadding: const EdgeInsets.fromLTRB(12, 10, 36, 10),
+          hintStyle: GoogleFonts.inter(
+            fontSize: 12.76,
+            fontWeight: FontWeight.w500,
+            color: const Color(0xFF999999),
+            height: 1,
+          ),
+        ),
         style: GoogleFonts.inter(
-          fontSize: 14,
-          fontWeight: FontWeight.w800,
+          fontSize: 12.76,
+          fontWeight: FontWeight.w500,
+          color: Colors.black,
           height: 1,
         ),
+      ),
+    );
+  }
+}
+
+class _CommentKeyboardPreview extends StatelessWidget {
+  const _CommentKeyboardPreview({required this.controller});
+
+  final TextEditingController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      bottom: false,
+      minimum: const EdgeInsets.symmetric(horizontal: 14),
+      child: Container(
+        height: 38,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFF33CC99), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.14),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.chat_bubble_outline_rounded,
+              size: 17,
+              color: Color(0xFF64748B),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: AnimatedBuilder(
+                animation: controller,
+                builder: (context, _) {
+                  final text = controller.text.trim();
+                  return Text(
+                    text.isEmpty ? 'Комментарий' : text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: text.isEmpty
+                          ? const Color(0xFF999999)
+                          : const Color(0xFF111827),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 25),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ignore: unused_element
+class _InlineBankAccountSelect extends StatelessWidget {
+  const _InlineBankAccountSelect({
+    required this.accounts,
+    required this.selectedId,
+    required this.loading,
+    required this.onChanged,
+  });
+
+  final List<LocalAccount> accounts;
+  final String? selectedId;
+  final bool loading;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.only(left: 10, right: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF00A1FF), width: 1),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.account_balance_rounded,
+            size: 18,
+            color: Color(0xFF64748B),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: loading
+                ? Text(
+                    'Загрузка счетов...',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF64748B),
+                    ),
+                  )
+                : DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: selectedId,
+                      isExpanded: true,
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                      hint: Text(
+                        accounts.isEmpty ? 'Нет счетов bank' : 'Счет',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
+                      items: accounts
+                          .map(
+                            (account) => DropdownMenuItem<String>(
+                              value: account.id,
+                              child: Text(
+                                account.name.trim().isEmpty
+                                    ? 'Банк ${account.id}'
+                                    : account.name.trim(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF111827),
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: accounts.isEmpty ? null : onChanged,
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SaleCommentBox extends StatelessWidget {
+  const _SaleCommentBox({
+    required this.controller,
+    required this.focusNode,
+    required this.onOpenKeyboard,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final VoidCallback onOpenKeyboard;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8.502),
+        border: Border.all(color: const Color(0xFF00A1FF), width: 1),
+      ),
+      child: Stack(
+        children: [
+          TextField(
+            controller: controller,
+            focusNode: focusNode,
+            maxLength: 1000,
+            maxLines: null,
+            expands: true,
+            textAlignVertical: TextAlignVertical.top,
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(1000),
+            ],
+            decoration: InputDecoration(
+              hintText: 'Комментарий к продаже',
+              counterText: '',
+              hintStyle: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF999999),
+              ),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.fromLTRB(
+                10,
+                10,
+                42,
+                10,
+              ),
+            ),
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.black,
+              height: 1.15,
+            ),
+          ),
+          Positioned(
+            right: 6,
+            top: 6,
+            child: IconButton(
+              tooltip: 'Клавиатура',
+              onPressed: onOpenKeyboard,
+              icon: const Icon(
+                Icons.keyboard_alt_outlined,
+                color: Color(0xFF999999),
+                size: 24,
+              ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1679,6 +2714,7 @@ class _BlueInput extends StatelessWidget {
     required this.onSubmitted,
     required this.borderColor,
     this.readOnly = false,
+    this.onTap,
   });
 
   final String label;
@@ -1688,43 +2724,89 @@ class _BlueInput extends StatelessWidget {
   final ValueChanged<String> onSubmitted;
   final Color borderColor;
   final bool readOnly;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8.502),
-        border: Border.all(color: borderColor, width: 1),
-      ),
+    return AnimatedBuilder(
+      animation: focusNode,
+      builder: (context, child) {
+        final focused = focusNode.hasFocus;
+        final effectiveBorder = focused ? const Color(0xFF33CC99) : borderColor;
+
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            color: focused ? const Color(0xFFF8FFFC) : Colors.white,
+            borderRadius: BorderRadius.circular(8.502),
+            border: Border.all(
+              color: effectiveBorder.withValues(alpha: focused ? 0.9 : 0.65),
+              width: focused ? 1.2 : 1,
+            ),
+            boxShadow: focused
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFF33CC99).withValues(alpha: 0.12),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ]
+                : const [],
+          ),
+          child: child,
+        );
+      },
       child: Stack(
         children: [
           Positioned(
             left: 8,
             top: 7,
-            child: Text(
-              label,
-              style: GoogleFonts.inter(
-                color: const Color(0xFF8A8A8A),
-                fontWeight: FontWeight.w700,
-                fontSize: 11,
-                height: 1,
-              ),
+            child: AnimatedBuilder(
+              animation: focusNode,
+              builder: (context, _) {
+                return Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    color: focusNode.hasFocus
+                        ? const Color(0xFF168F6A)
+                        : const Color(0xFF8A8A8A),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                    height: 1,
+                  ),
+                );
+              },
             ),
           ),
           TextField(
             controller: controller,
             focusNode: focusNode,
-            autofocus: true,
+            autofocus: false,
             readOnly: readOnly,
-            enableInteractiveSelection: !readOnly,
+            enableInteractiveSelection: false,
+            contextMenuBuilder: null,
             onTap: () {
+              onTap?.call();
               final text = controller.text;
               controller.selection = TextSelection.collapsed(
                 offset: text.length,
               );
             },
-            onChanged: onChanged,
+            onChanged: (value) {
+              onChanged(value);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!focusNode.hasFocus) return;
+                final text = controller.text;
+                if (controller.selection.isCollapsed &&
+                    controller.selection.baseOffset == text.length) {
+                  return;
+                }
+                controller.selection = TextSelection.collapsed(
+                  offset: text.length,
+                );
+              });
+            },
             onSubmitted: onSubmitted,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
@@ -1738,7 +2820,7 @@ class _BlueInput extends StatelessWidget {
             textAlign: TextAlign.right,
             style: GoogleFonts.inter(
               fontSize: 18,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
               color: Colors.black,
               height: 1,
             ),

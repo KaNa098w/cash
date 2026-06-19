@@ -15,6 +15,7 @@ class AuthTokenProvider extends ChangeNotifier {
   static const _kPosName = 'posName';
   static const _kPosNumber = 'posNumber';
   static const _kPosId = 'posId';
+  static const _kPosIsTest = 'posIsTest';
   static const _kStoreId = 'storeId';
   static const _kStoreName = 'storeName';
   static const _kAllowCustomSalePrices = 'allowCustomSalePrices';
@@ -52,6 +53,9 @@ class AuthTokenProvider extends ChangeNotifier {
 
   String? _posId;
   String? get posId => _posId;
+
+  bool _posIsTest = false;
+  bool get posIsTest => _posIsTest;
 
   String? _storeId;
   String? get storeId => _storeId;
@@ -126,6 +130,7 @@ class AuthTokenProvider extends ChangeNotifier {
       accountId: _accountId!,
       storeId: _storeId!,
       storeName: _storeName ?? '',
+      isTest: _posIsTest,
       allowCustomSalePrices: _allowCustomSalePrices,
       allowBelowCostSalePrices: _allowBelowCostSalePrices,
       allowRefundsWithoutSale: _allowRefundsWithoutSale,
@@ -133,6 +138,36 @@ class AuthTokenProvider extends ChangeNotifier {
       users: _users,
       createdAt: null,
       updatedAt: null,
+    );
+  }
+
+  PosProvisionResponse provisionForOpenShift(PosProvisionResponse provision) {
+    if (!hasShiftId) return provision;
+
+    final userId = (_shiftUserId?.trim().isNotEmpty == true)
+        ? _shiftUserId!.trim()
+        : (_activeUserId ?? '').trim();
+    if (userId.isEmpty) return provision;
+
+    final users = provision.users.where((user) => user.id == userId).toList();
+    if (users.isEmpty) return provision;
+
+    return PosProvisionResponse(
+      id: provision.id,
+      name: provision.name,
+      number: provision.number,
+      key: provision.key,
+      accountId: provision.accountId,
+      storeId: provision.storeId,
+      storeName: provision.storeName,
+      isTest: provision.isTest,
+      allowCustomSalePrices: provision.allowCustomSalePrices,
+      allowBelowCostSalePrices: provision.allowBelowCostSalePrices,
+      allowRefundsWithoutSale: provision.allowRefundsWithoutSale,
+      organizationId: provision.organizationId,
+      users: users,
+      createdAt: provision.createdAt,
+      updatedAt: provision.updatedAt,
     );
   }
 
@@ -151,6 +186,7 @@ class AuthTokenProvider extends ChangeNotifier {
     _posName = prefs.getString(_kPosName);
     _posNumber = prefs.getString(_kPosNumber);
     _posId = prefs.getString(_kPosId);
+    _posIsTest = prefs.getBool(_kPosIsTest) ?? false;
     _storeId = prefs.getString(_kStoreId);
     _storeName = prefs.getString(_kStoreName);
     _allowCustomSalePrices = prefs.getBool(_kAllowCustomSalePrices) ?? false;
@@ -164,6 +200,7 @@ class AuthTokenProvider extends ChangeNotifier {
     _shiftId = prefs.getString(_kShiftId);
     _shiftUserId = prefs.getString(_kShiftUserId);
     _activeUserId = prefs.getString(_kActiveUserId);
+    _activeUserName = prefs.getString(_kActiveUserName);
     if ((_shiftUserId ?? '').trim().isEmpty &&
         (_shiftId ?? '').trim().isNotEmpty &&
         (_activeUserId ?? '').trim().isNotEmpty) {
@@ -227,6 +264,7 @@ class AuthTokenProvider extends ChangeNotifier {
     _posName = resp.name;
     _posNumber = resp.number;
     _posId = resp.id;
+    _posIsTest = resp.isTest;
     _storeId = resp.storeId;
     _storeName = resp.storeName;
     _allowCustomSalePrices = resp.allowCustomSalePrices;
@@ -254,6 +292,7 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.setString(_kPosName, _posName ?? '');
     await prefs.setString(_kPosNumber, _posNumber ?? '');
     await prefs.setString(_kPosId, _posId ?? '');
+    await prefs.setBool(_kPosIsTest, _posIsTest);
     await prefs.setString(_kStoreId, _storeId ?? '');
     await prefs.setString(_kStoreName, _storeName ?? '');
     await prefs.setBool(_kAllowCustomSalePrices, _allowCustomSalePrices);
@@ -273,6 +312,7 @@ class AuthTokenProvider extends ChangeNotifier {
     _posName = null;
     _posNumber = null;
     _posId = null;
+    _posIsTest = false;
     _storeId = null;
     _storeName = null;
     _allowCustomSalePrices = false;
@@ -294,6 +334,7 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.remove(_kPosName);
     await prefs.remove(_kPosNumber);
     await prefs.remove(_kPosId);
+    await prefs.remove(_kPosIsTest);
     await prefs.remove(_kStoreId);
     await prefs.remove(_kStoreName);
     await prefs.remove(_kAllowCustomSalePrices);

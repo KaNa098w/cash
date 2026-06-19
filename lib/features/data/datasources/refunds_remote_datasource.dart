@@ -1,8 +1,63 @@
 import 'package:dio/dio.dart';
+import 'package:leemon_app/core/models/refund_model.dart';
 
 class RefundsRemoteDatasource {
   final Dio _dio;
   RefundsRemoteDatasource(this._dio);
+
+  Future<RefundPageModel> fetchRefunds({
+    required String key,
+    int page = 1,
+    String? saleId,
+    String? customerId,
+    DateTime? date,
+    num? totalAmount,
+  }) async {
+    final safeKey = key.trim();
+    if (safeKey.isEmpty) {
+      throw Exception('fetchRefunds: pos key is empty');
+    }
+
+    final query = <String, dynamic>{
+      'page': page,
+      if ((saleId ?? '').trim().isNotEmpty) 'filter[sale_id]': saleId!.trim(),
+      if ((customerId ?? '').trim().isNotEmpty)
+        'filter[customer_id]': customerId!.trim(),
+      if (date != null) 'filter[date]': _formatIsoDate(date),
+      if (totalAmount != null) 'filter[total_amount]': _toIntMoney(totalAmount),
+    };
+
+    final resp = await _dio.get(
+      '/organizations/pos/$safeKey/refunds',
+      queryParameters: query,
+    );
+
+    final body = resp.data;
+    if (body is! Map<String, dynamic>) {
+      throw Exception('fetchRefunds: invalid response format (expected Map)');
+    }
+
+    return RefundPageModel.fromApiResponse(body);
+  }
+
+  Future<List<RefundModel>> fetchAllRefunds({
+    required String key,
+    DateTime? date,
+  }) async {
+    final first = await fetchRefunds(key: key, page: 1, date: date);
+    final all = <RefundModel>[...first.items];
+    var page = first.currentPage;
+    final lastPage = first.lastPage <= 0 ? first.currentPage : first.lastPage;
+
+    while (page < lastPage) {
+      page++;
+      final next = await fetchRefunds(key: key, page: page, date: date);
+      all.addAll(next.items);
+      if (next.currentPage <= 0 || next.currentPage >= next.lastPage) break;
+    }
+
+    return all;
+  }
 
   Future<String> createRefundV2({
     required String key,
@@ -12,6 +67,8 @@ class RefundsRemoteDatasource {
     required List<RefundItemPayload> items,
     required String returnAccessKey,
     DateTime? date,
+    String? reasonCode,
+    String? note,
   }) async {
     final safeKey = key.trim();
     if (safeKey.isEmpty) {
@@ -35,6 +92,9 @@ class RefundsRemoteDatasource {
       "total_amount": _toIntMoney(totalAmount),
       if (customerId != null && customerId.trim().isNotEmpty)
         "customer_id": customerId.trim(),
+      if ((reasonCode ?? '').trim().isNotEmpty)
+        "reason_code": reasonCode!.trim(),
+      if ((note ?? '').trim().isNotEmpty) "note": note!.trim(),
       "items": items.map((e) => e.toJson()).toList(),
     };
 
@@ -73,6 +133,8 @@ class RefundsRemoteDatasource {
     required List<RefundItemPayload> items,
     DateTime? date,
     required String returnAccessKey,
+    String? reasonCode,
+    String? note,
   }) async {
     final safeKey = key.trim();
     final rid = refundId.trim();
@@ -90,6 +152,9 @@ class RefundsRemoteDatasource {
     final payload = <String, dynamic>{
       "date": _formatDateForApi(date ?? DateTime.now()),
       "total_amount": _toIntMoney(totalAmount),
+      if ((reasonCode ?? '').trim().isNotEmpty)
+        "reason_code": reasonCode!.trim(),
+      if ((note ?? '').trim().isNotEmpty) "note": note!.trim(),
       if (customerId != null && customerId.trim().isNotEmpty)
         "customer_id": customerId.trim(),
 
@@ -128,6 +193,11 @@ class RefundsRemoteDatasource {
   String _formatDateForApi(DateTime d) {
     String two(int v) => v.toString().padLeft(2, '0');
     return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
+  }
+
+  String _formatIsoDate(DateTime d) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 }
 

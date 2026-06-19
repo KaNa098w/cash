@@ -336,11 +336,13 @@ Future<pw.Document> buildReceiptPdf(ReceiptPdfData data) async {
               'Дата: ${formatReceiptDate(data.receiptDate)}',
               style: pw.TextStyle(font: base, fontSize: metaFs),
             ),
-            pw.SizedBox(height: 2),
-            pw.Text(
-              'Чек №: ${data.receiptNumber}',
-              style: pw.TextStyle(font: base, fontSize: metaFs),
-            ),
+            if (data.receiptNumber.trim().isNotEmpty) ...[
+              pw.SizedBox(height: 2),
+              pw.Text(
+                'Чек №: ${data.receiptNumber.trim()}',
+                style: pw.TextStyle(font: base, fontSize: metaFs),
+              ),
+            ],
             pw.SizedBox(height: 2),
             pw.Text(
               'Кассир: ${data.cashierName}',

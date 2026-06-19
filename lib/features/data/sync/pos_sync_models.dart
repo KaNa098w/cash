@@ -358,6 +358,7 @@ class ShiftClosureSummaryData {
     required this.expenseTotal,
     required this.expectedCashAmount,
     required this.totalSalesAmount,
+    this.cashlessAccounts = const <CashlessAccountReport>[],
   });
 
   final String sessionId;
@@ -371,6 +372,57 @@ class ShiftClosureSummaryData {
   final num expenseTotal;
   final num expectedCashAmount;
   final num totalSalesAmount;
+  final List<CashlessAccountReport> cashlessAccounts;
+}
+
+class CashlessAccountReport {
+  const CashlessAccountReport({
+    required this.accountId,
+    required this.accountName,
+    required this.salesTotal,
+    required this.refundsTotal,
+    required this.incomeTotal,
+    required this.expenseTotal,
+    required this.netTotal,
+  });
+
+  final String accountId;
+  final String accountName;
+  final double salesTotal;
+  final double refundsTotal;
+  final double incomeTotal;
+  final double expenseTotal;
+  final double netTotal;
+}
+
+class LocalSession {
+  const LocalSession({
+    required this.clientSessionId,
+    required this.userId,
+    required this.deviceId,
+    required this.openingCashAmount,
+    required this.openedAt,
+    required this.isOpened,
+    this.serverSessionId,
+    this.closingCashAmount,
+    this.closedAt,
+  });
+
+  final String clientSessionId;
+  final String? serverSessionId;
+  final String userId;
+  final String deviceId;
+  final num openingCashAmount;
+  final num? closingCashAmount;
+  final DateTime openedAt;
+  final DateTime? closedAt;
+  final bool isOpened;
+
+  bool matches(String sessionId) {
+    final value = sessionId.trim();
+    if (value.isEmpty) return false;
+    return clientSessionId == value || (serverSessionId ?? '') == value;
+  }
 }
 
 class LocalAccount {
@@ -378,12 +430,14 @@ class LocalAccount {
     required this.id,
     required this.name,
     this.type,
+    this.logoUrl,
     this.visibleToPos = true,
   });
 
   final String id;
   final String name;
   final String? type;
+  final String? logoUrl;
   final bool visibleToPos;
 
   String get normalizedType => (type ?? '').trim().toLowerCase();

@@ -52,7 +52,7 @@ class SaleRemoteDataSource {
       queryParameters: {
         'page': page,
         'perPage': perPage,
-        'include': 'items,refund.items',
+        'include': 'items,refund.items,payments.account',
         'sort': sort,
         if ((customerId ?? '').trim().isNotEmpty)
           'filter[customer_id]': customerId!.trim(),
@@ -104,7 +104,12 @@ class SaleRemoteDataSource {
     if (safeKey.isEmpty) throw Exception('fetchSaleById: key is empty');
     if (sid.isEmpty) throw Exception('fetchSaleById: saleId is empty');
 
-    final resp = await _dio.get('/organizations/pos/sales/$sid');
+    final resp = await _dio.get(
+      '/organizations/pos/sales/$sid',
+      queryParameters: {
+        'include': 'items,refund.items,payments.account',
+      },
+    );
 
     final body = resp.data;
     if (body is! Map<String, dynamic>) {

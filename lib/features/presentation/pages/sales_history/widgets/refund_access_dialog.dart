@@ -8,9 +8,13 @@ class RefundAccessDialog extends StatefulWidget {
   const RefundAccessDialog({
     super.key,
     required this.onScanned,
+    this.title = 'Доступ к возврату',
+    this.scanTitle = 'Сканируй штрих-код доступа',
   });
 
   final RefundAccessSubmit onScanned;
+  final String title;
+  final String scanTitle;
 
   @override
   State<RefundAccessDialog> createState() => _RefundAccessDialogState();
@@ -170,18 +174,17 @@ class _RefundAccessDialogState extends State<RefundAccessDialog> {
                   child: const Icon(Icons.lock_outline, size: 22),
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Доступ к возврату',
-                    style:
-                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                    widget.title,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w700),
                   ),
                 ),
                 IconButton(
                   tooltip: 'Закрыть',
-                  onPressed: _checking
-                      ? null
-                      : () => Navigator.of(context).pop(false),
+                  onPressed:
+                      _checking ? null : () => Navigator.of(context).pop(false),
                   icon: const Icon(Icons.close),
                 ),
               ],
@@ -199,7 +202,7 @@ class _RefundAccessDialogState extends State<RefundAccessDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _checking ? 'Проверяем…' : 'Сканируй штрих-код доступа',
+                    _checking ? 'Проверяем...' : widget.scanTitle,
                     style: const TextStyle(
                         fontSize: 15, fontWeight: FontWeight.w600),
                   ),
@@ -210,8 +213,7 @@ class _RefundAccessDialogState extends State<RefundAccessDialog> {
                         : _manualUnlocked
                             ? 'Ручной ввод разрешён.'
                             : 'Ручной ввод запрещён.',
-                    style:
-                        const TextStyle(fontSize: 13, color: Colors.black54),
+                    style: const TextStyle(fontSize: 13, color: Colors.black54),
                   ),
                   if (_manualUnlocked && !_checking) ...[
                     const SizedBox(height: 12),

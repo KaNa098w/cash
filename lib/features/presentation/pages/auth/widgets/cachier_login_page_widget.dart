@@ -26,7 +26,7 @@ class CashierLoginStep extends StatefulWidget {
     // Leemon logo (снизу слева)
     this.partnerLogo,
     this.siteText = 'Сайт: leemon.kz',
-    this.contactsText = 'Контакты менеджера: +7 702 136 70 77',
+    this.contactsText = 'Контакты менеджера: +7 775 205 11 00',
     this.onWipeAllData,
   });
 
@@ -125,6 +125,12 @@ class _CashierLoginStepState extends State<CashierLoginStep> {
       if (_selected == null && widget.provision.users.isNotEmpty) {
         setState(() => _selected = widget.provision.users.first);
       }
+    }
+
+    final nextError = widget.errorText?.trim() ?? '';
+    final oldError = oldWidget.errorText?.trim() ?? '';
+    if (nextError.isNotEmpty && nextError != oldError && _pin.isNotEmpty) {
+      setState(() => _pin = '');
     }
   }
 
@@ -725,7 +731,7 @@ class _LoginCard extends StatelessWidget {
             height: 42,
             child: _BlueFieldShell(
               child: DropdownButtonFormField<PosUser>(
-                value: safeSelected,
+                initialValue: safeSelected,
                 isExpanded: true,
                 items: safeUsers
                     .map(
@@ -788,16 +794,10 @@ class _LoginCard extends StatelessWidget {
                   border: InputBorder.none,
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                  errorText: errorText,
-                  errorMaxLines: 2,
                   hintStyle: GoogleFonts.inter(
                     fontSize: 16,
                     fontWeight: FontWeight.w400,
                     color: const Color(0xFF999999),
-                  ),
-                  errorStyle: GoogleFonts.inter(
-                    fontSize: 10,
-                    height: 0.8,
                   ),
                 ),
                 style: GoogleFonts.inter(
@@ -808,9 +808,16 @@ class _LoginCard extends StatelessWidget {
               ),
             ),
           ),
+          if (errorText != null && errorText!.trim().isNotEmpty)
+            Positioned(
+              left: 29,
+              top: 188,
+              width: 259,
+              child: _PinErrorMessage(message: errorText!.trim()),
+            ),
           Positioned(
             left: 29,
-            top: 202,
+            top: errorText != null && errorText!.trim().isNotEmpty ? 222 : 202,
             child: _PinKeypad(
               onDigit: onDigit,
               onBackspace: onBackspace,
@@ -891,6 +898,49 @@ class _BlueFieldShell extends StatelessWidget {
         border: Border.all(color: const Color(0xFF00A1FF), width: 1),
       ),
       child: child,
+    );
+  }
+}
+
+class _PinErrorMessage extends StatelessWidget {
+  const _PinErrorMessage({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 32),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF1F0),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: const Color(0xFFE0827B), width: 1),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            size: 16,
+            color: Color(0xFFD15850),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFFD15850),
+                height: 1.15,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -48,8 +48,9 @@ class ProductsCubit extends Cubit<ProductsState> {
     void Function(int currentPage, int lastPage)? onPageProgress,
   }) async {
     try {
-      final currentProducts =
-          state is ProductsLoaded ? (state as ProductsLoaded).products : <ProductModel>[];
+      final currentProducts = state is ProductsLoaded
+          ? (state as ProductsLoaded).products
+          : <ProductModel>[];
       emit(const ProductsLoading());
 
       final result = await repo.getPopularProducts(
@@ -94,6 +95,26 @@ class ProductsCubit extends Cubit<ProductsState> {
 
   Future<void> loadNextPage() async {
     // no-op
+  }
+
+  void updateProduct(ProductModel product) {
+    final current = state;
+    if (current is! ProductsLoaded) return;
+
+    final productId = (product.id ?? '').trim();
+    if (productId.isEmpty) return;
+
+    final products = current.products
+        .map((item) => (item.id ?? '').trim() == productId ? product : item)
+        .toList(growable: false);
+
+    emit(
+      ProductsLoaded(
+        products: products,
+        page: current.page,
+        hasMore: current.hasMore,
+      ),
+    );
   }
 
   Future<void> reset() async {

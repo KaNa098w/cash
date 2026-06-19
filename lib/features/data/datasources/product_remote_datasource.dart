@@ -31,7 +31,7 @@ class ProductRemoteDataSource {
       final data = response.data;
 
       if (data is! Map<String, dynamic>) {
-        throw Exception(                                                                                                                                                                                                                                                                                                                                                                                                              
+        throw Exception(
           'Invalid products response format: expected Map, got ${data.runtimeType}',
         );
       }
@@ -47,7 +47,7 @@ class ProductRemoteDataSource {
         if (e is! Map) {
           throw Exception('Product item is not a Map: ${e.runtimeType}');
         }
-        return ProductModel.fromJson(Map<String, dynamic>.from(e as Map));
+        return ProductModel.fromJson(Map<String, dynamic>.from(e));
       }).toList();
 
       final meta = data['meta'] as Map<String, dynamic>? ?? const {};
@@ -94,5 +94,60 @@ class ProductRemoteDataSource {
     }
 
     return all;
+  }
+
+  Future<ProductModel> updateProductPrice({
+    required String key,
+    required String productId,
+    required String userId,
+    required String deviceId,
+    required double sellingPrice,
+    String? refundAccessKey,
+  }) async {
+    final safeKey = key.trim();
+    final safeProductId = productId.trim();
+    final safeUserId = userId.trim();
+    final safeDeviceId = deviceId.trim();
+    final accessKey = refundAccessKey?.trim();
+
+    if (safeKey.isEmpty) {
+      throw Exception('updateProductPrice: pos key is empty');
+    }
+    if (safeProductId.isEmpty) {
+      throw Exception('updateProductPrice: product id is empty');
+    }
+    if (safeUserId.isEmpty) {
+      throw Exception('updateProductPrice: user id is empty');
+    }
+    if (safeDeviceId.isEmpty) {
+      throw Exception('updateProductPrice: device id is empty');
+    }
+
+    final response = await _dio.put(
+      '/organizations/pos/$safeKey/products/$safeProductId/price',
+      data: {
+        'selling_price': sellingPrice,
+        'user_id': safeUserId,
+        'device_id': safeDeviceId,
+        if (accessKey != null && accessKey.isNotEmpty)
+          'refund_access_key': accessKey,
+      },
+      options: accessKey == null || accessKey.isEmpty
+          ? null
+          : Options(headers: {'X-Return-Access-Key': accessKey}),
+    );
+
+    final body = response.data;
+    if (body is! Map<String, dynamic>) {
+      throw Exception(
+        'updateProductPrice: invalid response format (expected Map)',
+      );
+    }
+    final data = body['data'];
+    if (data is! Map) {
+      throw Exception('updateProductPrice: invalid "data" (expected Map)');
+    }
+
+    return ProductModel.fromJson(Map<String, dynamic>.from(data));
   }
 }

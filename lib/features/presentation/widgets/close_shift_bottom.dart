@@ -12,6 +12,7 @@ import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_state.dart';
+import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 
 class CloseShiftPage extends StatefulWidget {
   const CloseShiftPage({super.key});
@@ -23,11 +24,16 @@ class CloseShiftPage extends StatefulWidget {
 class _CloseShiftPageState extends State<CloseShiftPage> {
   final _ctrl = TextEditingController();
   final _amountFocusNode = FocusNode();
+  final _shortageCommentCtrl = TextEditingController();
+  final _shortageCommentFocusNode = FocusNode();
+  OverlayEntry? _shortageCommentKeyboardEntry;
 
   bool _submitting = false;
   bool _showSuccessState = false;
   bool _showConfirmDialog = false;
   bool _printingReport = false;
+  bool _shortageCommentKeyboardOpen = false;
+  String? _shortageCommentError;
 
   late final Future<ShiftClosureSummaryData?> _summaryFuture;
 
@@ -38,7 +44,6 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
     _summaryFuture = sessionId.isEmpty
         ? Future<ShiftClosureSummaryData?>.value(null)
         : _loadClosureSummary(sessionId);
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _focusAmountInput();
@@ -48,38 +53,66 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
   Future<ShiftClosureSummaryData?> _loadClosureSummary(String sessionId) async {
     final auth = context.read<AuthTokenProvider>();
     final key = auth.posKey?.trim() ?? '';
+    final deviceId = auth.deviceId?.trim() ?? '';
     final sync = GetIt.I<PosSyncService>();
-    if (key.isNotEmpty) {
-      try {
-        return await sync.loadShiftClosureSummaryFromBackend(
-          key: key,
-          sessionId: sessionId,
-        );
-      } catch (_) {}
+    if (key.isEmpty) {
+      throw Exception(
+          'posKey отсутствует: невозможно загрузить итоги с бэка');
     }
-    return sync.loadShiftClosureSummary(sessionId);
+    if (deviceId.isEmpty) {
+      throw Exception(
+          'deviceId отсутствует: невозможно загрузить итоги с бэка');
+    }
+    return sync.loadShiftClosureSummaryFromBackend(
+      key: key,
+      sessionId: sessionId,
+      deviceId: deviceId,
+    );
   }
 
   Future<ShiftReportData?> _loadShiftReport(String sessionId) async {
     final auth = context.read<AuthTokenProvider>();
     final key = auth.posKey?.trim() ?? '';
+    final deviceId = auth.deviceId?.trim() ?? '';
     final sync = GetIt.I<PosSyncService>();
-    if (key.isNotEmpty) {
-      try {
-        return await sync.loadShiftReportFromBackend(
-          key: key,
-          sessionId: sessionId,
-          includeProducts: true,
-        );
-      } catch (_) {}
+    if (key.isEmpty) {
+      throw Exception(
+          'posKey отсутствует: невозможно загрузить Z-отчет с бэка');
     }
-    return sync.loadShiftReport(sessionId);
+    if (deviceId.isEmpty) {
+      throw Exception(
+          'deviceId отсутствует: невозможно загрузить Z-отчет с бэка');
+    }
+    return sync.loadShiftReportFromBackend(
+      key: key,
+      sessionId: sessionId,
+      deviceId: deviceId,
+      includeProducts: true,
+    );
+  }
+
+  Future<List<LocalAccount>> loadBankAccounts() async {
+    final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
+    if (key.isEmpty) {
+      throw Exception(
+          'posKey отсутствует: невозможно загрузить счета с бэка');
+    }
+    final accounts = await GetIt.I<PosSyncService>().loadAccountsFromBackend(
+      key: key,
+    );
+    return accounts
+        .where((account) =>
+            account.visibleToPos && account.normalizedType == 'bank')
+        .toList(growable: false);
   }
 
   @override
   void dispose() {
+    _hideShortageCommentKeyboard();
     _ctrl.dispose();
     _amountFocusNode.dispose();
+    _shortageCommentCtrl.dispose();
+    _shortageCommentFocusNode.dispose();
     super.dispose();
   }
 
@@ -87,6 +120,43 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
     if (!mounted) return;
     _amountFocusNode.requestFocus();
     _ctrl.selection = TextSelection.collapsed(offset: _ctrl.text.length);
+  }
+
+  void _showShortageCommentKeyboard() {
+    _shortageCommentFocusNode.requestFocus();
+    if (_shortageCommentKeyboardEntry != null) return;
+    if (mounted) {
+      setState(() => _shortageCommentKeyboardOpen = true);
+    }
+
+    _shortageCommentKeyboardEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        left: 0,
+        right: 0,
+        bottom: 0,
+        child: Material(
+          color: Colors.transparent,
+          child: OnScreenKeyboardSheet(
+            controllerGetter: () => _shortageCommentCtrl,
+            onEnter: _hideShortageCommentKeyboard,
+            onClose: _hideShortageCommentKeyboard,
+          ),
+        ),
+      ),
+    );
+    Overlay.of(context, rootOverlay: true).insert(
+      _shortageCommentKeyboardEntry!,
+    );
+  }
+
+  void _hideShortageCommentKeyboard() {
+    _shortageCommentKeyboardEntry?.remove();
+    _shortageCommentKeyboardEntry = null;
+    if (mounted && _shortageCommentKeyboardOpen) {
+      setState(() => _shortageCommentKeyboardOpen = false);
+    } else {
+      _shortageCommentKeyboardOpen = false;
+    }
   }
 
   num? _parseAmount(String s) {
@@ -166,19 +236,50 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
     final amount = _parseAmount(_ctrl.text);
     if (amount == null || amount < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Введите корректную сумму')),
+        const SnackBar(
+            content: Text(
+                'Введите корректную сумму')),
       );
       return;
     }
 
-    setState(() => _submitting = true);
+    late final ShiftClosureSummaryData? summary;
+    try {
+      summary = await _summaryFuture;
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Не удалось загрузить итоги смены с бэка: $error'),
+        ),
+      );
+      return;
+    }
+    String? closeComment;
+    if (!mounted) return;
+    if (summary != null && amount < summary.expectedCashAmount) {
+      closeComment = _shortageCommentCtrl.text.trim();
+      if (closeComment.isEmpty) {
+        setState(() {
+          _showConfirmDialog = true;
+          _shortageCommentError = 'Укажите причину недостачи';
+        });
+        _shortageCommentFocusNode.requestFocus();
+        return;
+      }
+    }
+
+    setState(() {
+      _showConfirmDialog = false;
+      _submitting = true;
+    });
+    _hideShortageCommentKeyboard();
     await context.read<AuthCubit>().closeSessionWithCash(
           closingCashAmount: amount,
+          comment: closeComment,
         );
-    if (mounted) {
-      _showConfirmDialog = false;
-      setState(() => _submitting = false);
-    }
+    if (mounted) setState(() => _submitting = false);
   }
 
   Future<void> _printReport() async {
@@ -232,8 +333,10 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
             expenseTotal: report.expenseTotal,
             expectedCashAmount: report.expectedCashAmount,
             reportTitle: 'Z-ОТЧЁТ',
-            reportSubtitle: 'Данные для закрытия смены',
-            footerText: 'Подтверждение закрытия',
+            reportSubtitle:
+                'Данные для закрытия смены',
+            footerText:
+                'Подтверждение закрытия',
             items: report.items
                 .map(
                   (item) => ReceiptPdfItem(
@@ -260,12 +363,22 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
     final amount = _parseAmount(_ctrl.text);
     if (amount == null || amount < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Введите корректную сумму')),
+        const SnackBar(
+            content: Text(
+                'Введите корректную сумму')),
       );
       return;
     }
 
-    setState(() => _showConfirmDialog = true);
+    setState(() {
+      _shortageCommentError = null;
+      _showConfirmDialog = true;
+    });
+    _summaryFuture.then((summary) {
+      if (!mounted || !_showConfirmDialog || summary == null) return;
+      if (amount >= summary.expectedCashAmount) return;
+      _shortageCommentFocusNode.requestFocus();
+    });
   }
 
   void _closePage() {
@@ -372,7 +485,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 34),
+                                  const SizedBox(height: 72),
                                   Expanded(
                                     child: isPhone
                                         ? Column(
@@ -401,12 +514,15 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                                                 child:
                                                     _buildLeftBlock(hasShift),
                                               ),
-                                              const SizedBox(width: 42),
+                                              const SizedBox(width: 46),
                                               Expanded(
-                                                flex: 4,
-                                                child: _buildRightBlock(
-                                                  isClosingFlow ||
-                                                      _printingReport,
+                                                flex: 5,
+                                                child: Transform.translate(
+                                                  offset: const Offset(0, -54),
+                                                  child: _buildRightBlock(
+                                                    isClosingFlow ||
+                                                        _printingReport,
+                                                  ),
                                                 ),
                                               ),
                                             ],
@@ -421,16 +537,16 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                             color: const Color(0xFF3F444C),
                             padding: EdgeInsets.fromLTRB(
                               horizontalPadding,
-                              24,
+                              23,
                               horizontalPadding,
-                              24,
+                              23,
                             ),
                             child: Row(
                               children: [
                                 const Spacer(),
                                 SizedBox(
-                                  width: isPhone ? double.infinity : 192,
-                                  height: 54,
+                                  width: isPhone ? double.infinity : 164,
+                                  height: 48,
                                   child: ElevatedButton(
                                     onPressed: isClosingFlow || _printingReport
                                         ? null
@@ -440,7 +556,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                                       backgroundColor: const Color(0xFF33CC99),
                                       foregroundColor: Colors.white,
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
                                     ),
                                     child: const Text(
@@ -464,23 +580,39 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                 if (_showConfirmDialog)
                   Positioned.fill(
                     child: GestureDetector(
-                      onTap: () => setState(() => _showConfirmDialog = false),
+                      onTap: () => setState(() {
+                        _hideShortageCommentKeyboard();
+                        _showConfirmDialog = false;
+                      }),
                       child: Container(
                         color: const Color(0x88000000),
                         alignment: Alignment.center,
                         child: GestureDetector(
                           onTap: () {},
-                          child: FutureBuilder<ShiftClosureSummaryData?>(
-                            future: _summaryFuture,
-                            builder: (context, snapshot) {
+                          child: AnimatedPadding(
+                            duration: const Duration(milliseconds: 180),
+                            curve: Curves.easeOutCubic,
+                            padding: EdgeInsets.only(
+                              bottom:
+                                  _shortageCommentKeyboardOpen ? 340 : 0,
+                            ),
+                            child: FutureBuilder<ShiftClosureSummaryData?>(
+                              future: _summaryFuture,
+                              builder: (context, snapshot) {
                               final summary = snapshot.data;
                               final enteredAmount =
                                   _parseAmount(_ctrl.text) ?? 0;
+                              final hasShortage = summary != null &&
+                                  enteredAmount < summary.expectedCashAmount;
+                              final difference = summary == null
+                                  ? 0
+                                  : enteredAmount -
+                                      summary.expectedCashAmount;
                               final screenWidth =
                                   MediaQuery.of(context).size.width;
                               final dialogWidth =
                                   screenWidth < 920 ? screenWidth - 24 : 620.0;
-                              return Container(
+                                return Container(
                                 width: dialogWidth,
                                 decoration: BoxDecoration(
                                   color: Colors.white,
@@ -528,13 +660,15 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           _ModalRow(
-                                            label: 'Фактическая сумма',
+                                            label:
+                                                'Фактическая сумма',
                                             value: money(enteredAmount),
                                             strong: true,
                                           ),
                                           const SizedBox(height: 10),
                                           _ModalRow(
-                                            label: 'Ожидается в кассе',
+                                            label:
+                                                'Ожидается в кассе',
                                             value: summary == null
                                                 ? '-'
                                                 : money(
@@ -542,7 +676,8 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                                           ),
                                           const SizedBox(height: 10),
                                           _ModalRow(
-                                            label: 'Продажи за смену',
+                                            label:
+                                                'Продажи за смену',
                                             value: summary == null
                                                 ? '-'
                                                 : money(
@@ -565,17 +700,101 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                                           if (summary != null) ...[
                                             const SizedBox(height: 10),
                                             _ModalRow(
-                                              label: 'Разница',
-                                              value: money(
-                                                enteredAmount -
-                                                    summary.expectedCashAmount,
+                                              label:
+                                                  'Разница',
+                                              value: money(difference),
+                                              valueColor: difference < 0
+                                                  ? const Color(0xFFD15850)
+                                                  : difference > 0
+                                                      ? const Color(0xFF047857)
+                                                      : const Color(0xFF111827),
+                                            ),
+                                          ],
+                                          if (hasShortage) ...[
+                                            const SizedBox(height: 14),
+                                            TextField(
+                                              controller: _shortageCommentCtrl,
+                                              focusNode:
+                                                  _shortageCommentFocusNode,
+                                              autofocus: true,
+                                              minLines: 2,
+                                              maxLines: 4,
+                                              maxLength: 1000,
+                                              textInputAction:
+                                                  TextInputAction.newline,
+                                              onChanged: (_) {
+                                                if (_shortageCommentError ==
+                                                    null) {
+                                                  return;
+                                                }
+                                                setState(() =>
+                                                    _shortageCommentError =
+                                                        null);
+                                              },
+                                              style: const TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w700,
+                                                color: Color(0xFF111827),
                                               ),
-                                              valueColor: enteredAmount -
-                                                          summary
-                                                              .expectedCashAmount ==
-                                                      0
-                                                  ? const Color(0xFF111827)
-                                                  : const Color(0xFFD15850),
+                                              decoration: InputDecoration(
+                                                labelText: 'Комментарий',
+                                                labelStyle: const TextStyle(
+                                                  color: Color(0xFF4B5563),
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                                floatingLabelStyle:
+                                                    const TextStyle(
+                                                  color: Color(0xFF4B5563),
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                                hintText:
+                                                    'Напишите причину недостача',
+                                                errorText:
+                                                    _shortageCommentError,
+                                                suffixIcon: IconButton(
+                                                  tooltip: 'Клавиатура',
+                                                  onPressed:
+                                                      _showShortageCommentKeyboard,
+                                                  icon: const Icon(
+                                                    Icons
+                                                        .keyboard_alt_outlined,
+                                                    color: Color(0xFF111827),
+                                                  ),
+                                                ),
+                                                filled: true,
+                                                fillColor:
+                                                    const Color(0xFFF7F7F8),
+                                                counterStyle: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                                border: OutlineInputBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                  borderSide:
+                                                      const BorderSide(
+                                                    color: Color(0xFFE0E0E0),
+                                                  ),
+                                                ),
+                                                enabledBorder:
+                                                    OutlineInputBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                  borderSide:
+                                                      const BorderSide(
+                                                    color: Color(0xFFE0E0E0),
+                                                  ),
+                                                ),
+                                                focusedBorder:
+                                                    OutlineInputBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                  borderSide:
+                                                      const BorderSide(
+                                                    color: Color(0xFF33CC99),
+                                                    width: 2,
+                                                  ),
+                                                ),
+                                              ),
                                             ),
                                           ],
                                         ],
@@ -595,8 +814,10 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                                               height: 54,
                                               child: ElevatedButton(
                                                 onPressed: () => setState(
-                                                  () => _showConfirmDialog =
-                                                      false,
+                                                  () {
+                                                    _hideShortageCommentKeyboard();
+                                                    _showConfirmDialog = false;
+                                                  },
                                                 ),
                                                 style: ElevatedButton.styleFrom(
                                                   elevation: 0,
@@ -700,7 +921,8 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                                   ],
                                 ),
                               );
-                            },
+                              },
+                            ),
                           ),
                         ),
                       ),
@@ -833,118 +1055,184 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
     return FutureBuilder<ShiftClosureSummaryData?>(
       future: _summaryFuture,
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _SummaryErrorCard(error: snapshot.error);
+        }
         final summary = snapshot.data;
         if (summary == null) {
           return const _LoadingSummaryCard();
         }
 
-        final nonCashTotal = summary.cardSalesTotal +
-            summary.transferSalesTotal +
-            summary.creditSalesTotal;
-
         return SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const _SectionTitle('Касса'),
-              const SizedBox(height: 10),
-              Row(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 650;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: _InfoTile(
-                      lines: [
-                        _InfoLine('Дата', _formatDate(now)),
-                        _InfoLine('Время', _formatTime(now), emphasize: true),
+                  const _SectionTitle('Касса'),
+                  const SizedBox(height: 12),
+                  if (compact)
+                    Column(
+                      children: [
+                        _InfoTile(
+                          minHeight: 98,
+                          lines: [
+                            _InfoLine(
+                                'Начало', _formatDate(now)),
+                            _InfoLine(
+                                'Время', _formatTime(now)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        _TwoTileRow(
+                          left: _InfoTile(
+                            background: const Color(0xFFF3E2AC),
+                            lines: [
+                              _InfoLine(
+                                'Смена',
+                                shiftId.isEmpty ? '-' : shiftId,
+                              ),
+                            ],
+                          ),
+                          right: _InfoTile(
+                            background: const Color(0xFFE0E0E0),
+                            lines: [
+                              _InfoLine(
+                                'Кассир',
+                                cashierName.isEmpty ? '-' : cashierName,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _InfoTile(
+                          minHeight: 68,
+                          lines: [
+                            _InfoLine('Касса',
+                                posName.isEmpty ? '-' : posName),
+                          ],
+                        ),
                       ],
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _InfoTile(
-                      background: const Color(0xFFF3E2AC),
-                      lines: [
-                        _InfoLine(
-                            'Номер кассы', shiftId.isEmpty ? '-' : shiftId),
-                        _InfoLine(
-                          'Кассир',
-                          cashierName.isEmpty ? '-' : cashierName,
+                    )
+                  else
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 7,
+                          child: _InfoTile(
+                            minHeight: 98,
+                            lines: [
+                              _InfoLine('Начало',
+                                  _formatDate(now)),
+                              _InfoLine(
+                                  'Время', _formatTime(now)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 12,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    _InfoTile(
+                                      minHeight: 42,
+                                      background: const Color(0xFFF3E2AC),
+                                      lines: [
+                                        _InfoLine(
+                                          'Смена',
+                                          shiftId.isEmpty ? '-' : shiftId,
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _InfoTile(
+                                      minHeight: 42,
+                                      background: const Color(0xFFE0E0E0),
+                                      lines: [
+                                        _InfoLine(
+                                          'Кассир',
+                                          cashierName.isEmpty
+                                              ? '-'
+                                              : cashierName,
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _InfoTile(
+                                  minHeight: 98,
+                                  lines: [
+                                    _InfoLine(
+                                      'Касса',
+                                      posName.isEmpty ? '-' : posName,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _InfoTile(
-                      lines: [
-                        _InfoLine('Касса', posName.isEmpty ? '-' : posName),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 34),
-              const _SectionTitle('Продажа'),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _InfoTile(
-                      lines: [
-                        _InfoLine('Продажи', money(summary.totalSalesAmount)),
-                        _InfoLine(
-                            'Количество чеков', '${summary.salesCount} шт'),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _InfoTile(
-                      background: const Color(0xFFD8E8B8),
-                      lines: [
-                        _InfoLine('Наличные', money(summary.cashSalesTotal)),
-                        _InfoLine(
-                          'Безналичные и долги',
-                          money(nonCashTotal),
+                  const SizedBox(height: 34),
+                  const _SectionTitle('Продажа'),
+                  const SizedBox(height: 12),
+                  _SalesSummaryTiles(summary: summary),
+                  const SizedBox(height: 34),
+                  const _SectionTitle(
+                      'Взнос и вынос'),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 7,
+                        child: _InfoTile(
+                          background: const Color(0xFFDDEFC4),
+                          lines: [
+                            _InfoLine('Взнос',
+                                money(summary.incomeTotal)),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 6,
+                        child: _InfoTile(
+                          background: const Color(0xFFEECFC9),
+                          lines: [
+                            _InfoLine('Расход',
+                                money(summary.expenseTotal)),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 6,
+                        child: _InfoTile(
+                          lines: [
+                            _InfoLine('Возврат',
+                                money(summary.refundsTotal)),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _InfoTile(
-                      lines: [
-                        _InfoLine('Возврат', money(summary.refundsTotal)),
-                      ],
-                    ),
-                  ),
+                  const SizedBox(height: 4),
                 ],
-              ),
-              const SizedBox(height: 34),
-              const _SectionTitle('Взнос и вынос'),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _InfoTile(
-                      background: const Color(0xFFD8E8B8),
-                      lines: [
-                        _InfoLine('Взнос', money(summary.incomeTotal)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _InfoTile(
-                      background: const Color(0xFFF0C8BC),
-                      lines: [
-                        _InfoLine('Расход', money(summary.expenseTotal)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-            ],
+              );
+            },
           ),
         );
       },
@@ -952,7 +1240,6 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
   }
 
   Widget _buildRightBlock(bool isBusy) {
-    const panelWidth = 238.0;
     return FutureBuilder<ShiftClosureSummaryData?>(
       future: _summaryFuture,
       builder: (context, snapshot) {
@@ -961,159 +1248,214 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
           ignoring: isBusy,
           child: Opacity(
             opacity: isBusy ? 0.55 : 1,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (summary != null)
-                  SizedBox(
-                    width: panelWidth,
-                    height: 177,
-                    child: Container(
-                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Начало смены',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF8D929A),
-                            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final panelWidth = constraints.maxWidth.clamp(178.0, 220.0);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    if (summary != null)
+                      SizedBox(
+                        width: panelWidth,
+                        height: 144,
+                        child: Container(
+                          padding: const EdgeInsets.fromLTRB(9, 8, 9, 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            money(summary.openingCashAmount),
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF111827),
-                              height: 1,
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          const Text(
-                            'Наличные',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF8D929A),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${summary.salesCount} шт',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF111827),
-                              height: 1,
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          const Text(
-                            'Ожидается',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF8D929A),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            money(summary.expectedCashAmount),
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF33CC99),
-                              height: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 18),
-                InkWell(
-                  onTap: _focusAmountInput,
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    width: panelWidth,
-                    height: 56,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: const Color(0xFF2F9CFF),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _ctrl,
-                            focusNode: _amountFocusNode,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            textInputAction: TextInputAction.done,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                RegExp(r'[0-9\.,]'),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Начало смены',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFF8D929A),
+                                      height: 1,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    money(summary.openingCashAmount),
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFF111827),
+                                      height: 1,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Наличные',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFF8D929A),
+                                      height: 1,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${summary.salesCount} шт',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFF111827),
+                                      height: 1,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Ожидается',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFF8D929A),
+                                      height: 1,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    money(summary.expectedCashAmount),
+                                    style: const TextStyle(
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFF33CC99),
+                                      height: 1,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
-                            onSubmitted: (_) => _openConfirmDialog(),
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF111827),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 24),
+                    InkWell(
+                      onTap: _focusAmountInput,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        width: panelWidth,
+                        height: 49,
+                        padding: const EdgeInsets.symmetric(horizontal: 11),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: const Color(0xFF2F9CFF),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _ctrl,
+                                focusNode: _amountFocusNode,
+                                enableInteractiveSelection: false,
+                                contextMenuBuilder: null,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                  decimal: true,
+                                ),
+                                textInputAction: TextInputAction.done,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(
+                                    RegExp(r'[0-9\.,]'),
+                                  ),
+                                ],
+                                onTap: _focusAmountInput,
+                                onChanged: (_) {
+                                  WidgetsBinding.instance
+                                      .addPostFrameCallback((_) {
+                                    if (!mounted ||
+                                        !_amountFocusNode.hasFocus) {
+                                      return;
+                                    }
+                                    final text = _ctrl.text;
+                                    if (_ctrl.selection.isCollapsed &&
+                                        _ctrl.selection.baseOffset ==
+                                            text.length) {
+                                      return;
+                                    }
+                                    _ctrl.selection = TextSelection.collapsed(
+                                      offset: text.length,
+                                    );
+                                  });
+                                },
+                                onSubmitted: (_) => _openConfirmDialog(),
+                                textAlign: TextAlign.right,
+                                style: const TextStyle(
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF111827),
+                                ),
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  border: InputBorder.none,
+                                  contentPadding: EdgeInsets.zero,
+                                  hintText: '0',
+                                  hintStyle: TextStyle(
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFF111827),
+                                  ),
+                                ),
+                              ),
                             ),
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              border: InputBorder.none,
-                              contentPadding: EdgeInsets.zero,
-                              hintText: '0',
-                              hintStyle: TextStyle(
-                                fontSize: 22,
+                            const SizedBox(width: 8),
+                            const Text(
+                              '₸',
+                              style: TextStyle(
+                                fontSize: 19,
                                 fontWeight: FontWeight.w900,
                                 color: Color(0xFF111827),
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          '₸',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF111827),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: _ShiftCloseKeypad(
-                      width: panelWidth,
-                      onToken: (token) {
-                        setState(() => _appendAmountToken(token));
-                      },
+                    const SizedBox(height: 17),
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final bottomPadding =
+                              constraints.maxHeight >= 320 ? 22.0 : 12.0;
+                          return Align(
+                            alignment: Alignment.topCenter,
+                            child: Padding(
+                              padding: EdgeInsets.only(bottom: bottomPadding),
+                              child: _ShiftCloseKeypad(
+                                width: panelWidth,
+                                maxHeight:
+                                    constraints.maxHeight - bottomPadding,
+                                onToken: (token) {
+                                  setState(() => _appendAmountToken(token));
+                                },
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ),
-              ],
+                  ],
+                );
+              },
             ),
           ),
         );
@@ -1143,19 +1485,48 @@ class _LoadingSummaryCard extends StatelessWidget {
   }
 }
 
+class _SummaryErrorCard extends StatelessWidget {
+  const _SummaryErrorCard({required this.error});
+
+  final Object? error;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          'Не удалось загрузить данные смены с бэка.\n$error',
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFFD15850),
+            height: 1.35,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ShiftCloseKeypad extends StatelessWidget {
   const _ShiftCloseKeypad({
     required this.width,
+    required this.maxHeight,
     required this.onToken,
   });
 
   final double width;
+  final double maxHeight;
   final ValueChanged<String> onToken;
 
   @override
   Widget build(BuildContext context) {
-    const buttonSize = 72.0;
-    const gap = 11.0;
+    final boundedHeight = maxHeight.isFinite ? maxHeight : 321.0;
+    final compact = boundedHeight < 300;
+    final gap = compact ? 8.0 : 11.0;
+    final buttonSize = ((boundedHeight - gap * 3) / 4).clamp(54.0, 72.0);
 
     return SizedBox(
       width: width,
@@ -1286,14 +1657,14 @@ class _ShiftCloseDigitButton extends StatelessWidget {
           backgroundColor: const Color(0xFFDADADA),
           foregroundColor: Colors.black,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
           ),
         ),
         child: customIcon ??
             Text(
               label ?? '',
               style: const TextStyle(
-                fontSize: 20,
+                fontSize: 19,
                 fontWeight: FontWeight.w500,
                 color: Colors.black,
                 height: 1,
@@ -1388,11 +1759,163 @@ class _SectionTitle extends StatelessWidget {
     return Text(
       title,
       style: const TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.w800,
-        color: Color(0xFF111827),
+        fontSize: 19,
+        fontWeight: FontWeight.w900,
+        color: Colors.black,
       ),
     );
+  }
+}
+
+class _TwoTileRow extends StatelessWidget {
+  const _TwoTileRow({
+    required this.left,
+    required this.right,
+  });
+
+  final Widget left;
+  final Widget right;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(child: left),
+        const SizedBox(width: 8),
+        Expanded(child: right),
+      ],
+    );
+  }
+}
+
+class _SalesSummaryTiles extends StatelessWidget {
+  const _SalesSummaryTiles({required this.summary});
+
+  final ShiftClosureSummaryData summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final totalsTile = _InfoTile(
+      minHeight: 98,
+      lines: [
+        _InfoLine('Продажа', money(summary.totalSalesAmount)),
+        _InfoLine('Количество чеков', '${summary.salesCount} шт'),
+      ],
+    );
+    final cashTile = _InfoTile(
+      background: const Color(0xFFDDEFC4),
+      lines: [
+        _InfoLine('Наличными', money(summary.cashSalesTotal)),
+      ],
+    );
+    final debtTile = _InfoTile(
+      background: const Color(0xFFE0E0E0),
+      lines: [
+        _InfoLine('Долги', money(summary.creditSalesTotal)),
+      ],
+    );
+    final cashlessTiles = _cashlessTiles(summary.cashlessAccounts);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 650) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 7,
+                child: _spacedColumn([
+                  totalsTile,
+                  for (var i = 2; i < cashlessTiles.length; i += 3)
+                    cashlessTiles[i],
+                ]),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 6,
+                child: _spacedColumn([
+                  cashTile,
+                  for (var i = 0; i < cashlessTiles.length; i += 3)
+                    cashlessTiles[i],
+                ]),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 6,
+                child: _spacedColumn([
+                  debtTile,
+                  for (var i = 1; i < cashlessTiles.length; i += 3)
+                    cashlessTiles[i],
+                ]),
+              ),
+            ],
+          );
+        }
+
+        final tiles = <Widget>[
+          totalsTile,
+          cashTile,
+          debtTile,
+          ...cashlessTiles,
+        ];
+        final columnCount = constraints.maxWidth < 650 ? 2 : 3;
+        final totalGap = 8 * (columnCount - 1);
+        final tileWidth =
+            ((constraints.maxWidth - totalGap) / columnCount).floorToDouble();
+
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final tile in tiles)
+              SizedBox(
+                width: tileWidth,
+                child: tile,
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _spacedColumn(List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < children.length; i++) ...[
+          children[i],
+          if (i != children.length - 1) const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+
+  List<Widget> _cashlessTiles(List<CashlessAccountReport> accounts) {
+    if (accounts.isEmpty) {
+      return const [
+        _InfoTile(
+          background: Color(0xFFD2E4EF),
+          lines: [
+            _InfoLine('Безналичные', '0'),
+          ],
+        ),
+      ];
+    }
+
+    return [
+      for (final account in accounts)
+        _InfoTile(
+          background: const Color(0xFFD2E4EF),
+          lines: [
+            _InfoLine(
+              account.accountName.trim().isEmpty
+                  ? 'Счет BANK'
+                  : account.accountName.trim(),
+              money(account.netTotal),
+            ),
+          ],
+        ),
+    ];
   }
 }
 
@@ -1400,19 +1923,21 @@ class _InfoTile extends StatelessWidget {
   const _InfoTile({
     required this.lines,
     this.background = Colors.white,
+    this.minHeight = 42,
   });
 
   final List<_InfoLine> lines;
   final Color background;
+  final double minHeight;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(minHeight: 62),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      constraints: BoxConstraints(minHeight: minHeight),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1420,23 +1945,28 @@ class _InfoTile extends StatelessWidget {
           for (var i = 0; i < lines.length; i++) ...[
             Text(
               lines[i].label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontSize: 11,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w900,
                 color: Color(0xFF8D929A),
+                height: 1,
               ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               lines[i].value,
-              style: TextStyle(
-                fontSize: lines[i].emphasize ? 16 : 20,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 18,
                 fontWeight: FontWeight.w900,
-                color: const Color(0xFF111827),
+                color: Colors.black,
                 height: 1.05,
               ),
             ),
-            if (i != lines.length - 1) const SizedBox(height: 8),
+            if (i != lines.length - 1) const SizedBox(height: 12),
           ],
         ],
       ),
@@ -1445,11 +1975,10 @@ class _InfoTile extends StatelessWidget {
 }
 
 class _InfoLine {
-  const _InfoLine(this.label, this.value, {this.emphasize = false});
+  const _InfoLine(this.label, this.value);
 
   final String label;
   final String value;
-  final bool emphasize;
 }
 
 class _ModalRow extends StatelessWidget {

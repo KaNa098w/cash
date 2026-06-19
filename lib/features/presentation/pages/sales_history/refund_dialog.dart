@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
+import 'package:leemon_app/features/presentation/utils/comment_text_controller.dart';
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 
 class RefundDialogResult {
@@ -38,12 +39,16 @@ class _RefundDialogState extends State<RefundDialog> {
   @override
   void initState() {
     super.initState();
+    _reasonCtrl.addListener(_capitalizeReason);
+    _noteCtrl.addListener(_capitalizeNote);
     _amountCtrl.text = widget.sale.totalAmount.toString();
     _reasonCtrl.text = 'Возврат';
   }
 
   @override
   void dispose() {
+    _reasonCtrl.removeListener(_capitalizeReason);
+    _noteCtrl.removeListener(_capitalizeNote);
     _amountCtrl.dispose();
     _reasonCtrl.dispose();
     _noteCtrl.dispose();
@@ -53,6 +58,14 @@ class _RefundDialogState extends State<RefundDialog> {
     _noteFocus.dispose();
 
     super.dispose();
+  }
+
+  void _capitalizeReason() {
+    capitalizeFirstLetterInController(_reasonCtrl);
+  }
+
+  void _capitalizeNote() {
+    capitalizeFirstLetterInController(_noteCtrl);
   }
 
   TextEditingController _getActiveCtrl() => _activeCtrl ?? _amountCtrl;
@@ -167,7 +180,7 @@ class _RefundDialogState extends State<RefundDialog> {
               alignment: Alignment.centerLeft,
               child: Text(
                 'Чек: $checkNo',
-                style: TextStyle(color: Colors.black.withOpacity(0.6)),
+                style: TextStyle(color: Colors.black.withValues(alpha: 0.6)),
               ),
             ),
           ],

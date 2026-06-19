@@ -275,6 +275,31 @@ class PosCubit extends Cubit<PosState> {
     _emitAndPersist(state.copyWith(tickets: tickets));
   }
 
+  void updateProductPriceFromModel(int index, ProductModel model) {
+    if (index < 0 || index >= state.items.length) return;
+    final productId = (model.id ?? '').trim();
+    if (productId.isEmpty) return;
+
+    final updatedProduct = _mapProductModelToProduct(model);
+    final tickets = _updateActiveTicketItems((items) {
+      final list = List<CartItem>.from(items);
+      if (index >= 0 && index < list.length) {
+        final current = list[index];
+        if (current.product.id == productId) {
+          list[index] = current.copyWith(
+            product: updatedProduct,
+            discount: 0,
+            clearCustomUnitPrice: true,
+            discountApplied: updatedProduct.discountType == 'fixed',
+          );
+        }
+      }
+      return list;
+    });
+
+    _emitAndPersist(state.copyWith(tickets: tickets));
+  }
+
   void clearCustomPrice(int index) {
     if (index < 0 || index >= state.items.length) return;
     final tickets = _updateActiveTicketItems((items) {
@@ -402,6 +427,8 @@ class PosCubit extends Cubit<PosState> {
       final list = List<CartItem>.from(ticketItems);
       if (index >= 0 && index < list.length) {
         list[index] = list[index].copyWith(
+          discount: 0,
+          clearCustomUnitPrice: true,
           discountApplied: true,
         );
       }

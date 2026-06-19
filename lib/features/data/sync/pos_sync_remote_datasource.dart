@@ -46,9 +46,13 @@ class PosSyncRemoteDataSource {
   Future<Map<String, dynamic>> fetchXReport({
     required String key,
     required String sessionId,
+    required String deviceId,
   }) async {
     final response = await _dio.get(
       '/organizations/pos/$key/sessions/$sessionId/x-report',
+      queryParameters: {
+        'device_id': deviceId,
+      },
       options: _silentOptions,
     );
     final body = _asMap(response.data);
@@ -299,9 +303,12 @@ class PosSyncRemoteDataSource {
   bool isManualErrorCode(String code) {
     switch (code.trim().toUpperCase()) {
       case 'VALIDATION_FAILED':
+      case 'SUBSCRIPTION_INACTIVE':
       case 'INSUFFICIENT_STOCK':
+      case 'POS_NOT_CONFIGURED':
       case 'REFERENCE_NOT_FOUND':
       case 'ACCOUNT_NOT_ALLOWED':
+      case 'IDEMPOTENCY_CONFLICT':
         return true;
       default:
         return false;

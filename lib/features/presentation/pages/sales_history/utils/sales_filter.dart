@@ -1,3 +1,4 @@
+import 'package:leemon_app/core/models/refund_model.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 
 enum SalesStatusFilter {
@@ -57,6 +58,44 @@ bool _hasRefund(SaleModel sale) {
         refund.items.isNotEmpty;
   }
   return sale.items.any((item) => (item.refund_quantity ?? 0) > 0);
+}
+
+List<RefundModel> filterRefunds(
+  List<RefundModel> refunds,
+  String query, {
+  DateTime? date,
+}) {
+  var result = refunds;
+
+  if (date != null) {
+    result = result.where((refund) {
+      final refundDate = refund.date;
+      if (refundDate == null) return false;
+      final d = refundDate.toLocal();
+      return d.year == date.year && d.month == date.month && d.day == date.day;
+    }).toList();
+  }
+
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return result;
+
+  return result.where((refund) {
+    final number = (refund.number ?? '').trim().toLowerCase();
+    final id = refund.id.trim().toLowerCase();
+    final saleId = (refund.saleId ?? '').trim().toLowerCase();
+    final customerId = (refund.customerId ?? '').trim().toLowerCase();
+    return number.contains(q) ||
+        id.contains(q) ||
+        saleId.contains(q) ||
+        customerId.contains(q);
+  }).toList();
+}
+
+String refundNumber(RefundModel refund) {
+  final n = (refund.number ?? '').trim();
+  if (n.isNotEmpty) return n;
+
+  return 'Без номера';
 }
 
 String saleNumber(SaleModel s) {

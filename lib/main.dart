@@ -19,6 +19,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:leemon_app/core/di/api/device_id_store.dart';
 import 'package:leemon_app/core/service/customer_display_service.dart';
+import 'package:leemon_app/core/service/device_window_mode_service.dart';
 import 'package:leemon_app/features/domain/repositories/auth_repository.dart';
 import 'package:leemon_app/features/domain/repositories/product_repository.dart';
 import 'package:leemon_app/features/domain/repositories/session_repository.dart';
@@ -53,6 +54,9 @@ Future<void> main() async {
 
   final prefs = await SharedPreferences.getInstance();
   final savedEnv = prefs.getString('app_environment');
+  final savedDeviceMode = DeviceWindowMode.fromValue(
+    prefs.getString(deviceWindowModePrefsKey),
+  );
   final defaultEnv = isDesktop ? AppEnvironment.prod : AppEnvironment.dev;
   final initialEnv = switch (savedEnv) {
     'dev' => AppEnvironment.dev,
@@ -64,7 +68,8 @@ Future<void> main() async {
     await windowManager.ensureInitialized().timeout(const Duration(seconds: 3));
     AppConfig.init(env: initialEnv);
     await initDependencies();
-    kioskListener = _KioskWindowListener();
+    kioskListener =
+        _KioskWindowListener(savedDeviceMode ?? DeviceWindowMode.monoblock);
     windowManager.addListener(kioskListener);
   } else {
     AppConfig.init(env: initialEnv);
@@ -93,12 +98,12 @@ Future<void> main() async {
           create: (_) => ProductsCubit(sl<ProductRepository>()),
         ),
       ],
-      child: const PosApp(),
+      child: const _PosApp(),
     ),
   );
 
   if (isDesktop && kioskListener != null) {
-    unawaited(_showDesktopWindow(kioskListener));
+    unawaited(_showDesktopWindow(kioskListener.mode));
   }
 
   unawaited(_initializeLocalSync());
@@ -118,8 +123,9 @@ Future<bool> _acquireSingleInstanceLock() async {
   }
 }
 
-Future<void> _showDesktopWindow(_KioskWindowListener kioskListener) async {
+Future<void> _showDesktopWindow(DeviceWindowMode? savedMode) async {
   const options = WindowOptions(backgroundColor: Colors.transparent);
+  final startupMode = savedMode ?? DeviceWindowMode.monoblock;
 
   Future<void> showAndFocus() async {
     if (Platform.isMacOS) {
@@ -127,22 +133,11 @@ Future<void> _showDesktopWindow(_KioskWindowListener kioskListener) async {
         TitleBarStyle.hidden,
         windowButtonVisibility: false,
       );
-      await windowManager.setSize(const Size(1200, 800));
-      await windowManager.setMinimumSize(const Size(1200, 800));
-      await windowManager.center();
     }
 
-    if (!Platform.isMacOS) {
-      await windowManager
-          .setFullScreen(true)
-          .timeout(const Duration(seconds: 2));
-    }
-
+    await DeviceWindowModeService.apply(startupMode);
     await windowManager.show();
     await windowManager.focus();
-    await windowManager.setResizable(false);
-    await windowManager.setMaximizable(false);
-    await windowManager.setMinimizable(true);
   }
 
   try {
@@ -155,11 +150,10 @@ Future<void> _showDesktopWindow(_KioskWindowListener kioskListener) async {
     await showAndFocus();
   }
 
-  // Let the native window and first Flutter frame settle before toggling
-  // fullscreen. This avoids a first-launch race on Windows where the taskbar
-  // icon can disappear and the window may appear to close.
+  // Keep the saved screen mode on restart. Fresh installs still open as
+  // monoblock until the cashier changes the mode from the in-app menu.
   await Future.delayed(const Duration(milliseconds: 250));
-  await kioskListener.ensureKioskMode();
+  await DeviceWindowModeService.apply(startupMode);
 }
 
 Future<void> _initializeLocalSync() async {
@@ -172,14 +166,28 @@ Future<void> _initializeLocalSync() async {
 }
 
 class _KioskWindowListener with WindowListener {
+  _KioskWindowListener(this.mode);
+
+  DeviceWindowMode? mode;
   bool _restoring = false;
   DateTime? _lastRunAt;
 
-  Future<void> ensureKioskMode() async {
+  void updateMode(DeviceWindowMode nextMode) {
+    mode = nextMode;
+  }
+
+  Future<void> ensureWindowMode() async {
     if (kIsWeb ||
         !(Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       return;
     }
+    final savedMode = await DeviceWindowModeService.load();
+    if (savedMode != null) {
+      mode = savedMode;
+    }
+    final currentMode = mode;
+    if (currentMode == null) return;
+    if (currentMode == DeviceWindowMode.laptop) return;
     if (_restoring) return;
 
     final now = DateTime.now();
@@ -194,19 +202,9 @@ class _KioskWindowListener with WindowListener {
 
     try {
       await Future.delayed(const Duration(milliseconds: 80));
-
+      await DeviceWindowModeService.apply(currentMode);
       await windowManager.show();
       await windowManager.focus();
-
-      if (!Platform.isMacOS && !await windowManager.isFullScreen()) {
-        await windowManager
-            .setFullScreen(true)
-            .timeout(const Duration(seconds: 2));
-      }
-
-      await windowManager.setResizable(false);
-      await windowManager.setMaximizable(false);
-      await windowManager.setMinimizable(true);
     } catch (_) {
       // Avoid freezing startup if fullscreen transition gets stuck on OS side.
     } finally {
@@ -216,23 +214,23 @@ class _KioskWindowListener with WindowListener {
 
   @override
   void onWindowRestore() {
-    unawaited(ensureKioskMode());
+    unawaited(ensureWindowMode());
   }
 
   @override
   void onWindowLeaveFullScreen() {
-    unawaited(ensureKioskMode());
+    unawaited(ensureWindowMode());
   }
 }
 
-class PosApp extends StatefulWidget {
-  const PosApp({super.key});
+class _PosApp extends StatefulWidget {
+  const _PosApp();
 
   @override
-  State<PosApp> createState() => _PosAppState();
+  State<_PosApp> createState() => _PosAppState();
 }
 
-class _PosAppState extends State<PosApp> {
+class _PosAppState extends State<_PosApp> {
   late final GoRouter _router;
   final _customerDisplay = CustomerDisplayService();
   StreamSubscription<void>? _productsSyncSub;

@@ -6,11 +6,13 @@ class OnScreenKeyboardSheet extends StatelessWidget {
     required this.controllerGetter,
     required this.onEnter,
     required this.onClose,
+    this.appendOnFullSelection = false,
   });
 
   final TextEditingController Function() controllerGetter;
   final VoidCallback onEnter;
   final VoidCallback onClose;
+  final bool appendOnFullSelection;
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +53,7 @@ class OnScreenKeyboardSheet extends StatelessWidget {
               _Keyboard(
                 controllerGetter: controllerGetter,
                 onEnter: onEnter,
+                appendOnFullSelection: appendOnFullSelection,
               ),
             ],
           ),
@@ -80,10 +83,12 @@ class _Keyboard extends StatefulWidget {
   const _Keyboard({
     required this.controllerGetter,
     required this.onEnter,
+    required this.appendOnFullSelection,
   });
 
   final TextEditingController Function() controllerGetter;
   final VoidCallback onEnter;
+  final bool appendOnFullSelection;
 
   @override
   State<_Keyboard> createState() => _KeyboardState();
@@ -170,8 +175,14 @@ class _KeyboardState extends State<_Keyboard> {
     final value = ctrl.value;
     final selection = value.selection;
 
-    final start = selection.start < 0 ? value.text.length : selection.start;
-    final end = selection.end < 0 ? value.text.length : selection.end;
+    var start = selection.start < 0 ? value.text.length : selection.start;
+    var end = selection.end < 0 ? value.text.length : selection.end;
+    final fullSelection =
+        start == 0 && end == value.text.length && value.text.isNotEmpty;
+    if (widget.appendOnFullSelection && fullSelection) {
+      start = value.text.length;
+      end = value.text.length;
+    }
 
     final newText = value.text.replaceRange(start, end, text);
     final newOffset = start + text.length;

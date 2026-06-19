@@ -50,6 +50,7 @@ class _SearchBarState extends State<SearchBar> {
   Timer? _typingDebounce;
   OverlayEntry? _chooserEntry;
   Timer? _routeFocusRestoreTimer;
+  bool _showClearSearchButton = false;
   List<ProductModel> _chooserProducts = const [];
   int _chooserSelectedIndex = 0;
   final _chooserScrollController = ScrollController();
@@ -139,7 +140,12 @@ class _SearchBarState extends State<SearchBar> {
     if (q.isEmpty) {
       _typingDebounce?.cancel();
       _removeChooser();
+      _setShowClearSearchButton(false);
       return;
+    }
+
+    if (_showClearSearchButton) {
+      _setShowClearSearchButton(false);
     }
 
     // если похоже на штрихкод — делаем быстрый автосабмит
@@ -396,6 +402,25 @@ class _SearchBarState extends State<SearchBar> {
     );
   }
 
+  void _setShowClearSearchButton(bool value) {
+    if (_showClearSearchButton == value) return;
+    if (!mounted) {
+      _showClearSearchButton = value;
+      return;
+    }
+    setState(() => _showClearSearchButton = value);
+  }
+
+  void _clearSearchField() {
+    _scanDebounce?.cancel();
+    _typingDebounce?.cancel();
+    _resetHardwareScanState();
+    _controller.clear();
+    _removeChooser();
+    _setShowClearSearchButton(false);
+    _restoreSearchFocus();
+  }
+
   void _scheduleHardwareScanReset() {
     _hardwareScanResetTimer?.cancel();
     _hardwareScanResetTimer = Timer(
@@ -612,6 +637,7 @@ class _SearchBarState extends State<SearchBar> {
     final query = _controller.text.trim();
     if (query.isEmpty) {
       _removeChooser();
+      _setShowClearSearchButton(false);
       return;
     }
 
@@ -627,6 +653,7 @@ class _SearchBarState extends State<SearchBar> {
 
     final all = state.products;
     final q = query.toLowerCase();
+    final isBarcodeLike = RegExp(r'^\d{8,}$').hasMatch(query);
 
     final matches = all.where((p) {
       if (p.isUniversal) return false;
@@ -635,8 +662,6 @@ class _SearchBarState extends State<SearchBar> {
       final localCodeStr = (p.localBarcode?.toString() ?? '').toLowerCase();
 
       // ✅ если похоже на штрихкод — лучше искать точным совпадением
-      final isBarcodeLike = RegExp(r'^\d{8,}$').hasMatch(query);
-
       if (isBarcodeLike) {
         if (barcodeStr == q) return true;
         if (localCodeStr == q) return true;
@@ -655,8 +680,11 @@ class _SearchBarState extends State<SearchBar> {
       //   SnackBar(content: Text('Товар не найден: "$query"')),
       // );
       _removeChooser();
+      _setShowClearSearchButton(isBarcodeLike);
       return;
     }
+
+    _setShowClearSearchButton(false);
 
     // ✅ если найден 1 товар — сразу добавляем в продажу
     if (matches.length == 1) {
@@ -984,6 +1012,45 @@ class _SearchBarState extends State<SearchBar> {
           ),
         ),
         const SizedBox(width: 8),
+        if (_showClearSearchButton) ...[
+          SizedBox(
+            height: topControlHeight,
+            child: TextButton.icon(
+              onPressed: _clearSearchField,
+              style: TextButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF111827),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(7),
+                  side: const BorderSide(
+                    color: Color(0x33000000),
+                    width: 1,
+                  ),
+                ),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              icon: const Icon(
+                Icons.close_rounded,
+                size: 18,
+                color: Color(0xFFD15850),
+              ),
+              label: Text(
+                '\u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black,
+                  height: 1,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
         SizedBox(
           height: topControlHeight,
           child: Container(

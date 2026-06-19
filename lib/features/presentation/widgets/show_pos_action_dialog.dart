@@ -11,15 +11,18 @@ import 'package:pdf/pdf.dart';
 import 'package:leemon_app/core/models/app_update_response.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/print/print_service.dart';
+import 'package:leemon_app/core/service/device_window_mode_service.dart';
 import 'package:printing/printing.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
+import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/datasources/app_update_remote_datasource.dart';
-import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
+import 'package:leemon_app/features/data/datasources/payment_remote_datasource.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
+import 'package:leemon_app/features/domain/repositories/auth_repository.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/widgets/deposit_to_cash_sheel.dart';
@@ -102,13 +105,9 @@ Future<void> showPosActionsDialog(BuildContext context) {
         builder: (_) => const _UpdateCheckDialog(),
       );
     }),
-    _PosAction('ВЗНОС В КАССУ', () async {
+    _PosAction('ПРИХОД / РАСХОД', () async {
       Navigator.of(context, rootNavigator: true).pop();
-      await showDepositToCashSheet(context, true);
-    }),
-    _PosAction('РАСХОД', () async {
-      Navigator.of(context, rootNavigator: true).pop();
-      await showDepositToCashSheet(context, false);
+      await _showCashOperationsDialog(context);
     }),
     _PosAction('СДАТЬ СМЕНУ', () async {
       Navigator.of(context, rootNavigator: true)
@@ -121,6 +120,10 @@ Future<void> showPosActionsDialog(BuildContext context) {
     _PosAction('ПРИНТЕР', () async {
       Navigator.of(context, rootNavigator: true).pop();
       await _pickPrinterSettings(context);
+    }),
+    _PosAction('РЕЖИМ\nЭКРАНА', () async {
+      Navigator.of(context, rootNavigator: true).pop();
+      await _showScreenModeDialog(context);
     }),
   ];
 
@@ -189,6 +192,625 @@ Future<void> showPosActionsDialog(BuildContext context) {
       );
     },
   );
+}
+
+Future<void> _showScreenModeDialog(BuildContext context) async {
+  if (kIsWeb || !(Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+    return;
+  }
+
+  final currentMode = await DeviceWindowModeService.load();
+  if (!context.mounted) return;
+
+  final selectedMode = await showDialog<DeviceWindowMode>(
+    context: context,
+    barrierDismissible: true,
+    builder: (_) => _ScreenModeDialog(currentMode: currentMode),
+  );
+  if (selectedMode == null) return;
+
+  await DeviceWindowModeService.save(selectedMode);
+  await DeviceWindowModeService.apply(selectedMode);
+}
+
+class _ScreenModeDialog extends StatelessWidget {
+  const _ScreenModeDialog({required this.currentMode});
+
+  final DeviceWindowMode? currentMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Режим экрана',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF111827),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Выберите режим окна для этого устройства.',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(height: 18),
+              _ScreenModeOption(
+                icon: Icons.desktop_windows_rounded,
+                title: 'Моноблок',
+                subtitle: 'Всегда открывать на весь экран.',
+                selected: currentMode == DeviceWindowMode.monoblock,
+                onTap: () =>
+                    Navigator.of(context).pop(DeviceWindowMode.monoblock),
+              ),
+              const SizedBox(height: 10),
+              _ScreenModeOption(
+                icon: Icons.laptop_windows_rounded,
+                title: 'Ноутбук',
+                subtitle:
+                    'Можно менять размер, уменьшать и разворачивать окно.',
+                selected: currentMode == DeviceWindowMode.laptop,
+                onTap: () => Navigator.of(context).pop(DeviceWindowMode.laptop),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScreenModeOption extends StatelessWidget {
+  const _ScreenModeOption({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor =
+        selected ? const Color(0xFF33CC99) : const Color(0xFFE2E8F0);
+    return Material(
+      color: selected ? const Color(0xFFEAF7F1) : const Color(0xFFF8FAFC),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: borderColor, width: selected ? 1.5 : 1),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: const Color(0xFF456B5A)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                selected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.chevron_right_rounded,
+                color: selected
+                    ? const Color(0xFF16A34A)
+                    : const Color(0xFF94A3B8),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _showCashOperationsDialog(BuildContext context) async {
+  bool? selectedExpense;
+  var initialized = false;
+  var loading = false;
+  var error = '';
+  var payments = <PaymentOperationModel>[];
+
+  Future<void> load(
+      BuildContext ctx, void Function(void Function()) setState) async {
+    final key = ctx.read<AuthTokenProvider>().posKey?.trim() ?? '';
+    if (key.isEmpty) {
+      setState(() => error = 'POS key не найден');
+      return;
+    }
+
+    setState(() {
+      initialized = true;
+      loading = true;
+      error = '';
+    });
+
+    try {
+      final page = await sl<PaymentsRemoteDataSource>().fetchPayments(
+        key: key,
+        isExpense: selectedExpense,
+        page: 1,
+        perPage: 25,
+      );
+      if (!ctx.mounted) return;
+      setState(() {
+        payments = page.items;
+      });
+    } catch (e) {
+      if (!ctx.mounted) return;
+      setState(() => error = e.toString());
+    } finally {
+      if (ctx.mounted) {
+        setState(() => loading = false);
+      }
+    }
+  }
+
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (ctx, setState) {
+          if (!initialized && !loading) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (ctx.mounted) load(ctx, setState);
+            });
+          }
+
+          final incomeTotal = payments
+              .where((payment) => !payment.isExpense)
+              .fold<num>(0, (sum, payment) => sum + payment.amount);
+          final expenseTotal = payments
+              .where((payment) => payment.isExpense)
+              .fold<num>(0, (sum, payment) => sum + payment.amount);
+
+          Future<void> createOperation(bool isIncome) async {
+            final changed = await showDepositToCashSheet(ctx, isIncome);
+            if (changed == true && ctx.mounted) {
+              await load(ctx, setState);
+            }
+          }
+
+          return Dialog(
+            backgroundColor: Colors.white,
+            insetPadding: const EdgeInsets.all(20),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 900, maxHeight: 640),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEAF1ED),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.account_balance_wallet_outlined,
+                            color: Color(0xFF456B5A),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            'Приходы и расходы',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF111827),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Обновить',
+                          onPressed: loading ? null : () => load(ctx, setState),
+                          icon: const Icon(Icons.refresh_rounded),
+                        ),
+                        IconButton(
+                          tooltip: 'Закрыть',
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        _CashOpsStat(
+                          label: 'Приход',
+                          value: money(incomeTotal),
+                          color: const Color(0xFF16A34A),
+                        ),
+                        const SizedBox(width: 10),
+                        _CashOpsStat(
+                          label: 'Расход',
+                          value: money(expenseTotal),
+                          color: const Color(0xFFDC2626),
+                        ),
+                        const Spacer(),
+                        FilledButton.icon(
+                          onPressed: () => createOperation(true),
+                          icon: const Icon(Icons.add_rounded),
+                          label: const Text('Приход'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF16A34A),
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size(128, 44),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        FilledButton.icon(
+                          onPressed: () => createOperation(false),
+                          icon: const Icon(Icons.remove_rounded),
+                          label: const Text('Расход'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFDC2626),
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size(128, 44),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        _CashOpsFilterChip(
+                          label: 'Все',
+                          selected: selectedExpense == null,
+                          onTap: () {
+                            setState(() => selectedExpense = null);
+                            load(ctx, setState);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        _CashOpsFilterChip(
+                          label: 'Приход',
+                          selected: selectedExpense == false,
+                          onTap: () {
+                            setState(() => selectedExpense = false);
+                            load(ctx, setState);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        _CashOpsFilterChip(
+                          label: 'Расход',
+                          selected: selectedExpense == true,
+                          onTap: () {
+                            setState(() => selectedExpense = true);
+                            load(ctx, setState);
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: loading
+                            ? const Center(child: CircularProgressIndicator())
+                            : error.isNotEmpty
+                                ? Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(18),
+                                      child: Text(
+                                        error,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Color(0xFFB91C1C),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : payments.isEmpty
+                                    ? const Center(
+                                        child: Text(
+                                          'Операций пока нет',
+                                          style: TextStyle(
+                                            color: Color(0xFF64748B),
+                                          ),
+                                        ),
+                                      )
+                                    : ListView.separated(
+                                        padding: const EdgeInsets.all(10),
+                                        itemCount: payments.length,
+                                        separatorBuilder: (_, __) =>
+                                            const SizedBox(height: 8),
+                                        itemBuilder: (_, index) {
+                                          return _CashOperationTile(
+                                            payment: payments[index],
+                                          );
+                                        },
+                                      ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+class _CashOpsStat extends StatelessWidget {
+  const _CashOpsStat({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 170,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF111827),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CashOpsFilterChip extends StatelessWidget {
+  const _CashOpsFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? const Color(0xFF456B5A) : Colors.white,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color:
+                  selected ? const Color(0xFF456B5A) : const Color(0xFFD7DED9),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: selected ? Colors.white : const Color(0xFF475569),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CashOperationTile extends StatelessWidget {
+  const _CashOperationTile({required this.payment});
+
+  final PaymentOperationModel payment;
+
+  @override
+  Widget build(BuildContext context) {
+    final color =
+        payment.isExpense ? const Color(0xFFDC2626) : const Color(0xFF16A34A);
+    final title = payment.isExpense ? 'Расход' : 'Приход';
+    final number = payment.number.trim().isEmpty ? payment.id : payment.number;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              payment.isExpense
+                  ? Icons.arrow_downward_rounded
+                  : Icons.arrow_upward_rounded,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        color: color,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '#$number',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  payment.comment.trim().isEmpty ? '-' : payment.comment.trim(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF475569),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _formatCashOperationDate(payment.date),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 140,
+            child: Text(
+              money(payment.amount),
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF111827),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatCashOperationDate(DateTime? date) {
+  if (date == null) return '-';
+  final d = date.toLocal();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${two(d.day)}.${two(d.month)}.${d.year} ${two(d.hour)}:${two(d.minute)}';
 }
 
 Future<void> _showServicesQueueDialog(BuildContext context) async {
@@ -986,6 +1608,16 @@ Future<void> _runSyncWithProgress(BuildContext context) async {
     );
 
     if (!context.mounted || stopRequested.value) return;
+    stage.value = 'Обновляем данные кассы...';
+    progress.value = 0.995;
+    final refreshedProvision = await sl<AuthRepository>().provisionPos(
+      key: key,
+      deviceId: deviceId,
+    );
+    if (!context.mounted || stopRequested.value) return;
+    await context.read<AuthTokenProvider>().setProvisioned(refreshedProvision);
+
+    if (!context.mounted || stopRequested.value) return;
     await context.read<ProductsCubit>().loadFirstPage(
           key: key,
           forceRefresh: false,
@@ -1010,14 +1642,7 @@ Future<void> _runSyncWithProgress(BuildContext context) async {
 }
 
 Future<void> _printLastSaleReceipt(BuildContext context) async {
-  final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
   final pageFormat = _receiptPageFormat(context);
-  if (key.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Нет posKey')),
-    );
-    return;
-  }
 
   showDialog<void>(
     context: context,
@@ -1026,8 +1651,7 @@ Future<void> _printLastSaleReceipt(BuildContext context) async {
   );
 
   try {
-    final remote = sl<SaleRemoteDataSource>();
-    final sale = await remote.getLastSale(key: key);
+    final sale = await _loadLastLocalSale();
 
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
@@ -1068,9 +1692,7 @@ Future<void> _printLastSaleReceipt(BuildContext context) async {
           items: sale.items
               .map(
                 (it) => ReceiptPdfItem(
-                  name: (it.product?.name ?? '').trim().isEmpty
-                      ? 'Товар ${it.productId}'
-                      : it.product!.name,
+                  name: it.displayProductName,
                   quantity: it.quantity,
                   unitPrice: it.price,
                   lineTotal: it.totalPrice,
@@ -1079,15 +1701,24 @@ Future<void> _printLastSaleReceipt(BuildContext context) async {
               .toList(),
           total: sale.totalAmount,
           discountSum: 0,
-          paymentMethodLabel: switch (sale.paymentMethod.toLowerCase()) {
+          paymentMethodLabel: switch (sale.paymentMethod.trim().toLowerCase()) {
             'cash' => 'Наличные',
             'card' => 'Безналичный',
+            'mixed' => 'Смешанная',
             'credit' => 'В долг',
             'debt' => 'В долг',
             'partial_debt' => 'В долг',
-            _ => sale.paymentMethod,
+            _ => sale.paymentMethod.trim().isEmpty
+                ? '-'
+                : sale.paymentMethod.trim(),
           },
-          isCashPayment: sale.paymentMethod.toLowerCase() == 'cash',
+          isCashPayment: sale.paymentMethod.trim().toLowerCase() == 'cash',
+          paidNow: sale.paymentMethod.trim().toLowerCase() == 'cash'
+              ? null
+              : sale.paidAmount > 0
+                  ? sale.paidAmount
+                  : null,
+          debtAmount: sale.debtAmount > 0 ? sale.debtAmount : null,
         ),
       ),
       printerName: auth.receiptPrinterName,
@@ -1111,6 +1742,21 @@ Future<void> _printLastSaleReceipt(BuildContext context) async {
       );
     }
   }
+}
+
+Future<SaleModel?> _loadLastLocalSale() async {
+  final sync = sl<PosSyncService>();
+  await sync.initialize();
+  final history = await sync.loadAllSalesHistory();
+  final pending = await sync.loadPendingSales();
+  final sales = <SaleModel>[
+    ...history,
+    ...pending,
+  ];
+  if (sales.isEmpty) return null;
+
+  sales.sort((a, b) => b.date.compareTo(a.date));
+  return sales.first;
 }
 
 PdfPageFormat _receiptPageFormat(BuildContext context) {

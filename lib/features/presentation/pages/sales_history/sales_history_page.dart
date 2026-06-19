@@ -9,12 +9,14 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pdf/pdf.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/core/models/refund_model.dart';
 import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/data/datasources/refunds_remote_datasource.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart'
-    show LocalAccount, QueueSendResult;
+    show LocalAccount, LocalSession, QueueSendResult;
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
@@ -24,6 +26,7 @@ import 'package:leemon_app/features/presentation/pages/sales_history/widgets/ref
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sales_history_controller.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sales_search_bar.dart';
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
+import 'package:leemon_app/features/presentation/widgets/refund_reason_selector.dart';
 
 import 'state/sales_cubit.dart';
 import 'state/sales_state.dart';
@@ -47,6 +50,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   static const Duration _printCooldownDuration = Duration(seconds: 5);
 
   String? _expandedSaleId;
+  String? _expandedRefundId;
 
   final ScrollController _scrollController = ScrollController();
   late final SalesHistoryCubit _cubit;
@@ -118,7 +122,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     _selectedDate = _dateOnly(DateTime.now());
 
     final sync = GetIt.I<PosSyncService>();
-    _cubit = SalesHistoryCubit(sync);
+    _cubit = SalesHistoryCubit(sync, GetIt.I<RefundsRemoteDatasource>());
     _historyChangedSub = sync.onSalesHistoryChanged.listen((_) {
       _scheduleHistoryRefresh();
     });
@@ -131,6 +135,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         setState(() {
           _saleQuery = _saleSearchCtrl.text.trim();
           _expandedSaleId = null;
+          _expandedRefundId = null;
         });
       });
     });
@@ -227,6 +232,55 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     if (number.isNotEmpty) return 'number:$number';
 
     return 'sale:${sale.date.microsecondsSinceEpoch}:${sale.totalAmount}';
+  }
+
+  String _sessionKeyForSale(SaleModel sale, List<LocalSession> sessions) {
+    final saleSessionId = (sale.posSessionId ?? '').trim();
+    if (saleSessionId.isNotEmpty) {
+      final session = _sessionForSale(sale, sessions);
+      return session?.clientSessionId ?? saleSessionId;
+    }
+    return '__without_session';
+  }
+
+  LocalSession? _sessionForSale(SaleModel sale, List<LocalSession> sessions) {
+    final saleSessionId = (sale.posSessionId ?? '').trim();
+    if (saleSessionId.isEmpty) return null;
+    for (final session in sessions) {
+      if (session.matches(saleSessionId)) return session;
+    }
+    return null;
+  }
+
+  List<_SalesHistoryListEntry> _buildSaleListEntries(
+    List<SaleModel> sales,
+    List<LocalSession> sessions,
+  ) {
+    if (sales.isEmpty) return const [];
+
+    final summaries = <String, _SessionSalesSummary>{};
+    for (final sale in sales) {
+      final key = _sessionKeyForSale(sale, sessions);
+      final current = summaries[key] ?? const _SessionSalesSummary();
+      summaries[key] = current.add(sale.totalAmount);
+    }
+
+    final entries = <_SalesHistoryListEntry>[];
+    String? lastKey;
+    for (final sale in sales) {
+      final key = _sessionKeyForSale(sale, sessions);
+      if (key != lastKey) {
+        entries.add(
+          _SessionHeaderEntry(
+            session: _sessionForSale(sale, sessions),
+            summary: summaries[key] ?? const _SessionSalesSummary(),
+          ),
+        );
+        lastKey = key;
+      }
+      entries.add(_SaleEntry(sale));
+    }
+    return entries;
   }
 
   void _notifyPrintStateChanged() {
@@ -621,6 +675,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       setState(() {
         _selectedDate = _dateOnly(picked);
         _expandedSaleId = null;
+        _expandedRefundId = null;
       });
     }
   }
@@ -629,6 +684,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     setState(() {
       _saleQuery = _saleSearchCtrl.text.trim();
       _expandedSaleId = null;
+      _expandedRefundId = null;
     });
   }
 
@@ -697,7 +753,11 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     });
   }
 
-  Future<bool> _submitRefund(BuildContext context, SaleModel sale) async {
+  Future<bool> _submitRefund(
+    BuildContext context,
+    SaleModel sale, {
+    String? reasonCode,
+  }) async {
     final auth = context.read<AuthTokenProvider>();
 
     final key = auth.posKey?.trim() ?? '';
@@ -853,7 +913,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       print('   Saved return_access_keys count: ${savedKeys.length}');
       if (savedKeys.isNotEmpty) {
         for (var i = 0; i < savedKeys.length; i++) {
-          print('   Key[$i]: ${savedKeys[i].substring(0, min(10, savedKeys[i].length))}...${savedKeys[i].length > 10 ? ' (length: ${savedKeys[i].length})' : ''}');
+          print(
+              '   Key[$i]: ${savedKeys[i].substring(0, min(10, savedKeys[i].length))}...${savedKeys[i].length > 10 ? ' (length: ${savedKeys[i].length})' : ''}');
         }
       } else {
         print('   ⚠️ No active return_access_keys found');
@@ -873,7 +934,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
               if (accessKey.isEmpty) return false;
 
               try {
-                print('🔐 [REFUND] Sending refund with accessKey: ${accessKey.substring(0, min(10, accessKey.length))}...${accessKey.length > 10 ? ' (length: ${accessKey.length})' : ''}');
+                print(
+                    '🔐 [REFUND] Sending refund with accessKey: ${accessKey.substring(0, min(10, accessKey.length))}...${accessKey.length > 10 ? ' (length: ${accessKey.length})' : ''}');
                 final result = await sync.createRefund(
                   key: key,
                   deviceId: deviceId,
@@ -886,8 +948,10 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                   items: items,
                   date: DateTime.now(),
                   returnAccessKey: accessKey,
+                  reasonCode: reasonCode,
                 );
-                print('✅ [REFUND] Success! Result: ${result.result}, ClientId: ${result.clientId}');
+                print(
+                    '✅ [REFUND] Success! Result: ${result.result}, ClientId: ${result.clientId}');
                 if (result.result == QueueSendResult.manual) {
                   throw Exception(
                     result.errorMessage ?? 'Возврат требует ручной обработки',
@@ -898,7 +962,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
               } catch (e) {
                 // 401 — доступ нет, диалог покажет ошибку и попросит перескан
                 if (_statusCodeOf(e) == 401) {
-                  print('❌ [REFUND] Access denied (401) for key: ${accessKey.substring(0, min(10, accessKey.length))}...');
+                  print(
+                      '❌ [REFUND] Access denied (401) for key: ${accessKey.substring(0, min(10, accessKey.length))}...');
                   return false;
                 }
                 print('❌ [REFUND] Error: $e');
@@ -922,7 +987,6 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
           sale: sale,
           picks: picks,
           totalAmount: totalAmount,
-          refundId: effectiveRefundId,
           paymentMethod: refundPaymentMethod,
         );
       } catch (e) {
@@ -966,6 +1030,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     _cancelHistoryIdleTimer();
 
     try {
+      String? selectedReasonCode;
       await _runWithDialogFocus(() {
         return showDialog<void>(
           context: context,
@@ -989,7 +1054,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                   backgroundColor: Colors.transparent,
                   child: ConstrainedBox(
                     constraints:
-                        const BoxConstraints(maxWidth: 1180, maxHeight: 420),
+                        const BoxConstraints(maxWidth: 1180, maxHeight: 560),
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: const Color(0xFFE5E5E5),
@@ -1006,27 +1071,42 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                             const SizedBox(height: 10),
                             Expanded(
                               child: SingleChildScrollView(
-                                child: SaleItemsBox(
-                                  items: sale.items,
-                                  picks: _controller.salePickMap(saleId),
-                                  onToggleItem: (item, checked) {
-                                    _controller.toggleItem(
-                                      saleId: saleId,
-                                      item: item,
-                                      checked: checked,
-                                      notify: refresh,
-                                    );
-                                  },
-                                  onQtyChanged: (item, q) {
-                                    _controller.changeQty(
-                                      saleId: saleId,
-                                      item: item,
-                                      newQty: q,
-                                      notify: refresh,
-                                    );
-                                  },
-                                  refundedQtyOf: _controller.refundedQtyOf,
-                                  availableQtyOf: _controller.availableQtyOf,
+                                child: Column(
+                                  children: [
+                                    SaleItemsBox(
+                                      items: sale.items,
+                                      picks: _controller.salePickMap(saleId),
+                                      onToggleItem: (item, checked) {
+                                        _controller.toggleItem(
+                                          saleId: saleId,
+                                          item: item,
+                                          checked: checked,
+                                          notify: refresh,
+                                        );
+                                      },
+                                      onQtyChanged: (item, q) {
+                                        _controller.changeQty(
+                                          saleId: saleId,
+                                          item: item,
+                                          newQty: q,
+                                          notify: refresh,
+                                        );
+                                      },
+                                      refundedQtyOf: _controller.refundedQtyOf,
+                                      availableQtyOf:
+                                          _controller.availableQtyOf,
+                                    ),
+                                    const SizedBox(height: 10),
+                                    RefundReasonSelector(
+                                      selectedCode: selectedReasonCode,
+                                      compact: true,
+                                      onChanged: (code) {
+                                        setDialogState(() {
+                                          selectedReasonCode = code;
+                                        });
+                                      },
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -1083,6 +1163,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                                                     await _submitRefund(
                                                   dialogContext,
                                                   sale,
+                                                  reasonCode:
+                                                      selectedReasonCode,
                                                 );
                                                 if (!dialogContext.mounted) {
                                                   return;
@@ -1144,7 +1226,6 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     required SaleModel sale,
     required List<RefundPick> picks,
     required num totalAmount,
-    required String refundId,
     required String paymentMethod,
   }) async {
     final auth = context.read<AuthTokenProvider>();
@@ -1183,11 +1264,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
           pageFormat: pageFormat,
           money: money,
           receiptDate: DateTime.now(),
-          receiptNumber: formatPosReceiptNumber(
-            posNumber: auth.posNumber ?? '',
-            saleNumber: refundId,
-            fallback: sale.localId,
-          ),
+          receiptNumber: '',
           cashierName: cashierName,
           storeName: _storeName(auth),
           items: refundItems,
@@ -1224,19 +1301,45 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
           value: _cubit,
           child: BlocBuilder<SalesHistoryCubit, SalesHistoryState>(
             builder: (context, state) {
+              final showingRefunds =
+                  _statusFilter == SalesStatusFilter.refunded;
               final visibleSales = filterSales(
                 state.sales,
                 _saleQuery,
                 date: _selectedDate,
                 status: _statusFilter,
               );
+              final visibleRefunds = showingRefunds
+                  ? (filterRefunds(
+                      state.refunds,
+                      _saleQuery,
+                      date: _selectedDate,
+                    )..sort((a, b) {
+                      final ad =
+                          a.date ?? DateTime.fromMillisecondsSinceEpoch(0);
+                      final bd =
+                          b.date ?? DateTime.fromMillisecondsSinceEpoch(0);
+                      return bd.compareTo(ad);
+                    }))
+                  : const <RefundModel>[];
               final savedCashierName =
                   context.read<AuthTokenProvider>().activeUserName ?? '';
-              final visibleTotalAmount = visibleSales.fold<num>(
-                0,
-                (sum, sale) => sum + sale.totalAmount,
-              );
-              final visibleChecksCount = visibleSales.length;
+              final visibleTotalAmount = showingRefunds
+                  ? visibleRefunds.fold<num>(
+                      0,
+                      (sum, refund) => sum + (refund.totalAmount ?? 0),
+                    )
+                  : visibleSales.fold<num>(
+                      0,
+                      (sum, sale) => sum + sale.totalAmount,
+                    );
+              final visibleChecksCount =
+                  showingRefunds ? visibleRefunds.length : visibleSales.length;
+              final saleListEntries =
+                  _buildSaleListEntries(visibleSales, state.sessions);
+              final showRefundReason = visibleRefunds.any((refund) =>
+                  (refund.reason ?? refund.note ?? '').trim().isNotEmpty ||
+                  refundReasonLabel(refund.reasonCode).isNotEmpty);
 
               return Column(
                 children: [
@@ -1246,7 +1349,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                     foundCount: (_saleQuery.isNotEmpty ||
                             _selectedDate != null ||
                             _statusFilter != SalesStatusFilter.all)
-                        ? visibleSales.length
+                        ? visibleChecksCount
                         : null,
                     statusFilter: _statusFilter,
                     onStatusFilterChanged: (filter) {
@@ -1254,6 +1357,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                       setState(() {
                         _statusFilter = filter;
                         _expandedSaleId = null;
+                        _expandedRefundId = null;
                       });
                     },
                     onSubmit: () {
@@ -1267,7 +1371,10 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                     onClear: () {
                       _trackUserActivity();
                       _saleSearchCtrl.clear();
-                      setState(() => _expandedSaleId = null);
+                      setState(() {
+                        _expandedSaleId = null;
+                        _expandedRefundId = null;
+                      });
                       _applySaleSearch();
                     },
                     selectedDate: _selectedDate,
@@ -1280,6 +1387,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                       setState(() {
                         _selectedDate = null;
                         _expandedSaleId = null;
+                        _expandedRefundId = null;
                       });
                     },
                   ),
@@ -1288,9 +1396,13 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                       color: const Color(0xFFF1F1F1),
                       child: Column(
                         children: [
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 16),
-                            child: SalesHistoryHeader(),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: showingRefunds
+                                ? _RefundsHistoryHeader(
+                                    showReason: showRefundReason,
+                                  )
+                                : const SalesHistoryHeader(),
                           ),
                           Expanded(
                             child: state.loading
@@ -1321,99 +1433,177 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                                           interactive: true,
                                           thickness: 10,
                                           radius: const Radius.circular(12),
-                                          child: ListView.separated(
-                                            controller: _scrollController,
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 16, vertical: 0),
-                                            itemCount: visibleSales.length,
-                                            separatorBuilder: (_, __) =>
-                                                const SizedBox(height: 14),
-                                            itemBuilder: (_, index) {
-                                              final sale = visibleSales[index];
-                                              final expanded =
-                                                  _expandedSaleId ==
-                                                      sale.localId;
-                                              final saleId = sale.localId;
-                                              final printKey =
-                                                  _salePrintKey(sale);
+                                          child: showingRefunds
+                                              ? ListView.separated(
+                                                  controller: _scrollController,
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                    horizontal: 16,
+                                                    vertical: 0,
+                                                  ),
+                                                  itemCount:
+                                                      visibleRefunds.length,
+                                                  separatorBuilder: (_, __) =>
+                                                      const SizedBox(
+                                                          height: 14),
+                                                  itemBuilder: (_, index) {
+                                                    final refund =
+                                                        visibleRefunds[index];
+                                                    return _RefundHistoryCard(
+                                                      refund: refund,
+                                                      showReason:
+                                                          showRefundReason,
+                                                      expanded:
+                                                          _expandedRefundId ==
+                                                              refund.id,
+                                                      onTap: () {
+                                                        _trackUserActivity();
+                                                        setState(() {
+                                                          _expandedRefundId =
+                                                              _expandedRefundId ==
+                                                                      refund.id
+                                                                  ? null
+                                                                  : refund.id;
+                                                          _expandedSaleId =
+                                                              null;
+                                                        });
+                                                      },
+                                                    );
+                                                  },
+                                                )
+                                              : ListView.separated(
+                                                  controller: _scrollController,
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 16,
+                                                      vertical: 0),
+                                                  itemCount:
+                                                      saleListEntries.length,
+                                                  separatorBuilder: (_, index) {
+                                                    final current =
+                                                        saleListEntries[index];
+                                                    final next =
+                                                        saleListEntries[
+                                                            index + 1];
+                                                    final nearSession = current
+                                                            is _SessionHeaderEntry ||
+                                                        next
+                                                            is _SessionHeaderEntry;
+                                                    return SizedBox(
+                                                      height:
+                                                          nearSession ? 6 : 14,
+                                                    );
+                                                  },
+                                                  itemBuilder: (_, index) {
+                                                    final entry =
+                                                        saleListEntries[index];
+                                                    if (entry
+                                                        is _SessionHeaderEntry) {
+                                                      return _MinimalSessionDivider(
+                                                        session: entry.session,
+                                                        summary: entry.summary,
+                                                      );
+                                                    }
 
-                                              return SaleCard(
-                                                sale: sale,
-                                                cashierName: savedCashierName,
-                                                expanded: expanded,
-                                                refundLoading: _controller
-                                                    .isRefundLoading(saleId),
-                                                receiptPrintLoading: _controller
-                                                    .isReceiptPrintLoading(
-                                                        printKey),
-                                                receiptPrintDisabled:
-                                                    _controller
-                                                        .isReceiptPrintDisabled(
-                                                            printKey),
-                                                invoicePrintLoading: _controller
-                                                    .isInvoicePrintLoading(
-                                                        printKey),
-                                                invoicePrintDisabled:
-                                                    _controller
-                                                        .isInvoicePrintDisabled(
-                                                            printKey),
-                                                selectedCount: _controller
-                                                    .selectedItemsCount(saleId),
-                                                selectedTotal: _controller
-                                                    .selectedTotal(saleId),
-                                                onSubmitRefund: () {
-                                                  _trackUserActivity();
-                                                  _openRefundPickDialog(
-                                                      context, sale);
-                                                },
-                                                onPrintReceipt: () {
-                                                  _trackUserActivity();
-                                                  _printSaleReceipt(sale);
-                                                },
-                                                onPrintInvoice: () {
-                                                  _trackUserActivity();
-                                                  _printInvoice(sale);
-                                                },
-                                                onToggle: () {
-                                                  _trackUserActivity();
-                                                  if (!expanded) {
-                                                    _logOpenedSale(sale);
-                                                  }
-                                                  setState(() {
-                                                    _expandedSaleId = expanded
-                                                        ? null
-                                                        : sale.localId;
-                                                  });
-                                                },
-                                                picks: _controller
-                                                    .salePickMap(saleId),
-                                                onToggleItem: (item, checked) =>
-                                                    setState(() {
-                                                  _trackUserActivity();
-                                                  _controller.toggleItem(
-                                                    saleId: saleId,
-                                                    item: item,
-                                                    checked: checked,
-                                                    notify: () {},
-                                                  );
-                                                }),
-                                                onQtyChanged: (item, q) =>
-                                                    setState(() {
-                                                  _trackUserActivity();
-                                                  _controller.changeQty(
-                                                    saleId: saleId,
-                                                    item: item,
-                                                    newQty: q,
-                                                    notify: () {},
-                                                  );
-                                                }),
-                                                refundedQtyOf:
-                                                    _controller.refundedQtyOf,
-                                                availableQtyOf:
-                                                    _controller.availableQtyOf,
-                                              );
-                                            },
-                                          ),
+                                                    final sale =
+                                                        (entry as _SaleEntry)
+                                                            .sale;
+                                                    final expanded =
+                                                        _expandedSaleId ==
+                                                            sale.localId;
+                                                    final saleId = sale.localId;
+                                                    final printKey =
+                                                        _salePrintKey(sale);
+
+                                                    return SaleCard(
+                                                      sale: sale,
+                                                      cashierName:
+                                                          savedCashierName,
+                                                      expanded: expanded,
+                                                      refundLoading: _controller
+                                                          .isRefundLoading(
+                                                              saleId),
+                                                      receiptPrintLoading:
+                                                          _controller
+                                                              .isReceiptPrintLoading(
+                                                                  printKey),
+                                                      receiptPrintDisabled:
+                                                          _controller
+                                                              .isReceiptPrintDisabled(
+                                                                  printKey),
+                                                      invoicePrintLoading:
+                                                          _controller
+                                                              .isInvoicePrintLoading(
+                                                                  printKey),
+                                                      invoicePrintDisabled:
+                                                          _controller
+                                                              .isInvoicePrintDisabled(
+                                                                  printKey),
+                                                      selectedCount: _controller
+                                                          .selectedItemsCount(
+                                                              saleId),
+                                                      selectedTotal: _controller
+                                                          .selectedTotal(
+                                                              saleId),
+                                                      onSubmitRefund: () {
+                                                        _trackUserActivity();
+                                                        _openRefundPickDialog(
+                                                            context, sale);
+                                                      },
+                                                      onPrintReceipt: () {
+                                                        _trackUserActivity();
+                                                        _printSaleReceipt(sale);
+                                                      },
+                                                      onPrintInvoice: () {
+                                                        _trackUserActivity();
+                                                        _printInvoice(sale);
+                                                      },
+                                                      onToggle: () {
+                                                        _trackUserActivity();
+                                                        if (!expanded) {
+                                                          _logOpenedSale(sale);
+                                                        }
+                                                        setState(() {
+                                                          _expandedSaleId =
+                                                              expanded
+                                                                  ? null
+                                                                  : sale
+                                                                      .localId;
+                                                          _expandedRefundId =
+                                                              null;
+                                                        });
+                                                      },
+                                                      picks: _controller
+                                                          .salePickMap(saleId),
+                                                      onToggleItem:
+                                                          (item, checked) =>
+                                                              setState(() {
+                                                        _trackUserActivity();
+                                                        _controller.toggleItem(
+                                                          saleId: saleId,
+                                                          item: item,
+                                                          checked: checked,
+                                                          notify: () {},
+                                                        );
+                                                      }),
+                                                      onQtyChanged: (item, q) =>
+                                                          setState(() {
+                                                        _trackUserActivity();
+                                                        _controller.changeQty(
+                                                          saleId: saleId,
+                                                          item: item,
+                                                          newQty: q,
+                                                          notify: () {},
+                                                        );
+                                                      }),
+                                                      refundedQtyOf: _controller
+                                                          .refundedQtyOf,
+                                                      availableQtyOf:
+                                                          _controller
+                                                              .availableQtyOf,
+                                                    );
+                                                  },
+                                                ),
                                         ),
                                       ),
                           ),
@@ -1424,12 +1614,325 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                   _SalesHistoryTotalsBar(
                     checksCount: visibleChecksCount,
                     totalAmount: visibleTotalAmount,
+                    countLabel: showingRefunds
+                        ? 'Количество возвратов'
+                        : 'Количество чеков',
                   ),
                 ],
               );
             },
           ),
         ),
+      ),
+    );
+  }
+}
+
+abstract class _SalesHistoryListEntry {
+  const _SalesHistoryListEntry();
+}
+
+class _SessionHeaderEntry extends _SalesHistoryListEntry {
+  const _SessionHeaderEntry({
+    required this.session,
+    required this.summary,
+  });
+
+  final LocalSession? session;
+  final _SessionSalesSummary summary;
+}
+
+class _SaleEntry extends _SalesHistoryListEntry {
+  const _SaleEntry(this.sale);
+
+  final SaleModel sale;
+}
+
+class _SessionSalesSummary {
+  const _SessionSalesSummary({
+    this.count = 0,
+    this.total = 0,
+  });
+
+  final int count;
+  final num total;
+
+  _SessionSalesSummary add(num amount) {
+    return _SessionSalesSummary(
+      count: count + 1,
+      total: total + amount,
+    );
+  }
+}
+
+class _MinimalSessionDivider extends StatelessWidget {
+  const _MinimalSessionDivider({
+    required this.session,
+    required this.summary,
+  });
+
+  final LocalSession? session;
+  final _SessionSalesSummary summary;
+
+  String _time(DateTime? value) {
+    if (value == null) return '-';
+    final local = value.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(local.day)}.${two(local.month)}.${local.year} ${two(local.hour)}:${two(local.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isOpen = session?.isOpened == true && session?.closedAt == null;
+    final sessionLabel = session == null
+        ? 'Продажи без смены'
+        : isOpen
+            ? 'Открытие смены'
+            : 'Закрытие смены';
+    final sessionDate = session == null
+        ? '-'
+        : isOpen
+            ? _time(session?.openedAt)
+            : _time(session?.closedAt);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 4, 2, 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Flexible(
+            fit: FlexFit.loose,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              widthFactor: 1,
+              child: _SessionTimeLine(
+                label: sessionLabel,
+                value: sessionDate,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          _SessionMetric(label: 'Чеков', value: '${summary.count}'),
+          const SizedBox(width: 6),
+          _SessionMetric(label: 'Сумма', value: money2(summary.total)),
+        ],
+      ),
+    );
+  }
+}
+
+class _SessionTimeLine extends StatelessWidget {
+  const _SessionTimeLine({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return RichText(
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      text: TextSpan(
+        style: GoogleFonts.inter(
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          color: const Color(0xFF334155),
+          height: 1.05,
+        ),
+        children: [
+          TextSpan(
+            text: '$label: ',
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF111827),
+            ),
+          ),
+          TextSpan(text: value),
+        ],
+      ),
+    );
+  }
+}
+
+// ignore: unused_element
+class _SessionHistoryHeaderCard extends StatelessWidget {
+  const _SessionHistoryHeaderCard({
+    required this.session,
+    required this.summary,
+  });
+
+  final LocalSession? session;
+  final _SessionSalesSummary summary;
+
+  String _time(DateTime? value) {
+    if (value == null) return '-';
+    final local = value.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(local.day)}.${two(local.month)}.${local.year} ${two(local.hour)}:${two(local.minute)}';
+  }
+
+  String get _title {
+    if (session == null) return 'Продажи без смены';
+    final id = session!.serverSessionId?.trim().isNotEmpty == true
+        ? session!.serverSessionId!.trim()
+        : session!.clientSessionId.trim();
+    final shortId = id.length > 8 ? id.substring(id.length - 8) : id;
+    return 'Смена $shortId';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isOpen = session?.isOpened == true && session?.closedAt == null;
+    final statusText = session == null
+        ? 'Не указана'
+        : isOpen
+            ? 'Открыта'
+            : 'Закрыта';
+    final statusColor = session == null
+        ? const Color(0xFF64748B)
+        : isOpen
+            ? const Color(0xFF15803D)
+            : const Color(0xFF334155);
+    final statusBg = session == null
+        ? const Color(0xFFE2E8F0)
+        : isOpen
+            ? const Color(0xFFDCFCE7)
+            : const Color(0xFFE2E8F0);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD8DEE8)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE9F0EB),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.point_of_sale_rounded,
+              size: 21,
+              color: Color(0xFF334155),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 26,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        _title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: const Color(0xFF111827),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusBg,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        statusText,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: statusColor,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Открытие: ${_time(session?.openedAt)}   Закрытие: ${_time(session?.closedAt)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          _SessionMetric(label: 'Чеков', value: '${summary.count}'),
+          const SizedBox(width: 10),
+          _SessionMetric(label: 'Сумма', value: money2(summary.total)),
+        ],
+      ),
+    );
+  }
+}
+
+class _SessionMetric extends StatelessWidget {
+  const _SessionMetric({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            '$label: ',
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF64748B),
+              height: 1,
+            ),
+          ),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              color: const Color(0xFF111827),
+              height: 1,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1884,14 +2387,318 @@ class _ReceiptPreviewDivider extends StatelessWidget {
   }
 }
 
+class _RefundsHistoryHeader extends StatelessWidget {
+  const _RefundsHistoryHeader({required this.showReason});
+
+  final bool showReason;
+
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(
+      fontSize: 14,
+      height: 1.4,
+      fontWeight: FontWeight.w700,
+      color: Color(0xFF5F6772),
+    );
+
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 22),
+      alignment: Alignment.center,
+      child: Row(
+        children: [
+          const Expanded(flex: 14, child: Text('Номер', style: style)),
+          const Expanded(flex: 24, child: Text('Дата', style: style)),
+          const Expanded(flex: 16, child: Text('Тип', style: style)),
+          if (showReason)
+            const Expanded(flex: 20, child: Text('Причина', style: style)),
+          const Expanded(
+            flex: 14,
+            child: Text('Сумма', textAlign: TextAlign.right, style: style),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RefundHistoryCard extends StatelessWidget {
+  const _RefundHistoryCard({
+    required this.refund,
+    required this.showReason,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  final RefundModel refund;
+  final bool showReason;
+  final bool expanded;
+  final VoidCallback onTap;
+
+  String get _typeLabel {
+    final saleId = (refund.saleId ?? '').trim();
+    return saleId.isEmpty ? 'Без чека' : 'С чеком';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final date = refund.date;
+    final reason = (refund.reason ?? refund.note ?? '').trim().isNotEmpty
+        ? (refund.reason ?? refund.note ?? '').trim()
+        : refundReasonLabel(refund.reasonCode);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: Column(
+          children: [
+            InkWell(
+              onTap: onTap,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 14,
+                      child: Text(
+                        refundNumber(refund),
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 24,
+                      child: Text(
+                        date == null ? '-' : fmtSaleDate(date),
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 18),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 16,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _RefundChip(
+                          label: _typeLabel,
+                          background: const Color(0xFFFFEDD5),
+                          foreground: const Color(0xFF9A3412),
+                        ),
+                      ),
+                    ),
+                    if (showReason)
+                      Expanded(
+                        flex: 20,
+                        child: Text(
+                          reason,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 18),
+                        ),
+                      ),
+                    Expanded(
+                      flex: 14,
+                      child: Text(
+                        money2(refund.totalAmount ?? 0),
+                        textAlign: TextAlign.right,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (expanded) _RefundDetailsPanel(refund: refund),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RefundDetailsPanel extends StatelessWidget {
+  const _RefundDetailsPanel({required this.refund});
+
+  final RefundModel refund;
+
+  @override
+  Widget build(BuildContext context) {
+    final note = (refund.note ?? '').trim();
+    final reason = (refund.reason ?? '').trim().isNotEmpty
+        ? (refund.reason ?? '').trim()
+        : refundReasonLabel(refund.reasonCode);
+    final items = refund.items.map(_toSaleItem).toList(growable: false);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(22, 0, 22, 18),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF8FAFC),
+        border: Border(top: BorderSide(color: Color(0xFFE5E7EB))),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              if (reason.isNotEmpty)
+                _RefundInfoPill(label: 'Причина', value: reason),
+              if (note.isNotEmpty)
+                _RefundInfoPill(label: 'Заметка', value: note),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'Товары',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (items.isEmpty)
+            const Text(
+              'Позиции не указаны',
+              style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+            )
+          else
+            SaleItemsBox(
+              items: items,
+              picks: const {},
+              selectable: false,
+              onToggleItem: (_, __) {},
+              onQtyChanged: (_, __) {},
+              refundedQtyOf: (_) => 0,
+              availableQtyOf: (item) => item.quantity.round(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  SaleItemModel _toSaleItem(RefundItemModel item) {
+    final qty = item.quantity.toDouble();
+    final price = item.price.toDouble();
+    return SaleItemModel(
+      id: item.saleItemId.trim().isNotEmpty ? item.saleItemId : item.id,
+      saleId: refund.saleId ?? '',
+      productId: item.productId,
+      product: item.product,
+      quantity: qty,
+      price: price,
+      totalPrice: qty * price,
+    );
+  }
+}
+
+class _RefundInfoPill extends StatelessWidget {
+  const _RefundInfoPill({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$label: ',
+            style: const TextStyle(
+              fontSize: 13,
+              color: Color(0xFF64748B),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: Text(
+              value,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Color(0xFF0F172A),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RefundChip extends StatelessWidget {
+  const _RefundChip({
+    required this.label,
+    required this.background,
+    required this.foreground,
+  });
+
+  final String label;
+  final Color background;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+        ),
+      ),
+    );
+  }
+}
+
 class _SalesHistoryTotalsBar extends StatelessWidget {
   const _SalesHistoryTotalsBar({
     required this.checksCount,
     required this.totalAmount,
+    this.countLabel = 'Количество чеков',
   });
 
   final int checksCount;
   final num totalAmount;
+  final String countLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1917,7 +2724,7 @@ class _SalesHistoryTotalsBar extends StatelessWidget {
           children: [
             Expanded(
               child: _TotalsTile(
-                label: 'Количество чеков',
+                label: countLabel,
                 value: '$checksCount',
               ),
             ),

@@ -26,6 +26,64 @@ class CashiersPage extends StatefulWidget {
 }
 
 class _CashiersPageState extends State<CashiersPage> {
+  bool _resolvingShiftOwner = false;
+  bool _shiftOwnerLookupFinished = false;
+  String? _resolvedShiftUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _resolveShiftOwner();
+    });
+  }
+
+  Future<void> _resolveShiftOwner() async {
+    if (!mounted || _resolvingShiftOwner) return;
+
+    final provider = context.read<AuthTokenProvider>();
+    final shiftId = provider.shiftId?.trim() ?? '';
+    if (shiftId.isEmpty) {
+      _shiftOwnerLookupFinished = true;
+      return;
+    }
+
+    final savedUserId = (provider.shiftUserId?.trim().isNotEmpty == true)
+        ? provider.shiftUserId!.trim()
+        : (provider.activeUserId ?? '').trim();
+    if (savedUserId.isNotEmpty) {
+      _resolvedShiftUserId = savedUserId;
+      await provider.setShiftUserId(savedUserId);
+      _shiftOwnerLookupFinished = true;
+      if (mounted) setState(() {});
+      return;
+    }
+
+    setState(() => _resolvingShiftOwner = true);
+    try {
+      final sessions = await sl<PosSyncService>().loadSessions();
+      String restoredUserId = '';
+      for (final session in sessions) {
+        if (session.matches(shiftId)) {
+          restoredUserId = session.userId.trim();
+          break;
+        }
+      }
+
+      if (restoredUserId.isNotEmpty) {
+        await provider.setShiftUserId(restoredUserId);
+        _resolvedShiftUserId = restoredUserId;
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _resolvingShiftOwner = false;
+          _shiftOwnerLookupFinished = true;
+        });
+      }
+    }
+  }
+
   PosProvisionResponse _filterProvisionForOpenShift(
     AuthTokenProvider provider,
     PosProvisionResponse provision,
@@ -34,7 +92,9 @@ class _CashiersPageState extends State<CashiersPage> {
 
     final shiftUserId = (provider.shiftUserId?.trim().isNotEmpty == true)
         ? provider.shiftUserId!.trim()
-        : (provider.activeUserId ?? '').trim();
+        : (_resolvedShiftUserId?.trim().isNotEmpty == true)
+            ? _resolvedShiftUserId!.trim()
+            : (provider.activeUserId ?? '').trim();
     if (shiftUserId.isEmpty) return provision;
 
     final users =
@@ -142,9 +202,28 @@ class _CashiersPageState extends State<CashiersPage> {
             );
           }
 
+          final hasShift = provider.hasShiftId;
+          final knownShiftUserId =
+              (provider.shiftUserId?.trim().isNotEmpty == true)
+                  ? provider.shiftUserId!.trim()
+                  : (_resolvedShiftUserId?.trim().isNotEmpty == true)
+                      ? _resolvedShiftUserId!.trim()
+                      : (provider.activeUserId ?? '').trim();
+          if (hasShift &&
+              knownShiftUserId.isEmpty &&
+              (_resolvingShiftOwner || !_shiftOwnerLookupFinished)) {
+            return LoadingStep(
+              theme: Theme.of(context),
+              title: 'Подготавливаем кассира',
+              subtitle: 'Восстанавливаем кассира открытой смены...',
+            );
+          }
+
           final provision =
               _filterProvisionForOpenShift(provider, rawProvision);
-          final selectedUser = authState is AuthPinStep ? authState.user : null;
+          final selectedUser = authState is AuthPinStep
+              ? authState.user
+              : _selectedCachedUser(provider, provision);
           final errorText =
               authState is AuthPinStep ? authState.errorText : null;
 
@@ -165,5 +244,18 @@ class _CashiersPageState extends State<CashiersPage> {
         },
       ),
     );
+  }
+
+  PosUser? _selectedCachedUser(
+    AuthTokenProvider provider,
+    PosProvisionResponse provision,
+  ) {
+    final activeUserId = (provider.activeUserId ?? '').trim();
+    if (activeUserId.isEmpty) return null;
+
+    for (final user in provision.users) {
+      if (user.id == activeUserId) return user;
+    }
+    return null;
   }
 }

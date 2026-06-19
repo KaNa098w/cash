@@ -30,21 +30,30 @@ class SessionRepositoryImpl implements SessionRepository {
     required String sessionId,
     required String userId,
     required num closingCashAmount,
+    String? comment,
   }) async {
     final closedAt = DateTime.now();
-    final resolvedSessionId =
-        await _syncService.resolveServerSessionId(sessionId);
+    final remoteSessionId = await _syncService.resolveServerSessionId(
+      sessionId,
+    );
+    if (remoteSessionId.startsWith('session_')) {
+      throw Exception(
+        'closeSession: server session id is missing for $sessionId',
+      );
+    }
 
     await _remoteDataSource.closeSession(
       key: key,
-      sessionId: resolvedSessionId,
+      sessionId: remoteSessionId,
       userId: userId,
       deviceId: deviceId,
       closingCashAmount: closingCashAmount,
+      comment: comment,
+      closedAt: closedAt,
     );
 
     await _syncService.registerClosedSession(
-      sessionId: resolvedSessionId,
+      sessionId: sessionId,
       closingCashAmount: closingCashAmount.toDouble(),
       closedAt: closedAt,
     );

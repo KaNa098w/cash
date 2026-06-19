@@ -27,6 +27,7 @@ class SaleModel {
   final String? customerId;
 
   final List<SaleItemModel> items;
+  final List<SalePaymentModel> payments;
 
   /// ✅ Возврат по этому чеку (если был)
   final RefundModel? refund;
@@ -51,6 +52,7 @@ class SaleModel {
     required this.accountId,
     this.posSessionId,
     required this.items,
+    this.payments = const <SalePaymentModel>[],
     this.customerId,
     this.refund,
   });
@@ -76,6 +78,7 @@ class SaleModel {
     String? posSessionId,
     String? customerId,
     List<SaleItemModel>? items,
+    List<SalePaymentModel>? payments,
     RefundModel? refund,
   }) {
     return SaleModel(
@@ -99,6 +102,7 @@ class SaleModel {
       posSessionId: posSessionId ?? this.posSessionId,
       customerId: customerId ?? this.customerId,
       items: items ?? this.items,
+      payments: payments ?? this.payments,
       refund: refund ?? this.refund,
     );
   }
@@ -142,6 +146,7 @@ class SaleModel {
             .toList()
         : <SaleItemModel>[];
 
+    final payments = _parsePayments(json["payments"]);
     final accountId = (json["account_id"] ?? "").toString();
     final userId = (json["user_id"] ?? accountId).toString();
 
@@ -173,6 +178,7 @@ class SaleModel {
       userId: userId,
       posSessionId: json["pos_session_id"]?.toString(),
       items: enrichedItems,
+      payments: payments,
       refund: refund,
     );
   }
@@ -200,6 +206,7 @@ class SaleModel {
       "storeId": storeId,
       "customerId": customerId,
       "items": items.map((e) => e.toJson()).toList(),
+      "payments": payments.map((e) => e.toJson()).toList(),
       "refund": refund?.toJson(),
     };
   }
@@ -213,6 +220,7 @@ class SaleModel {
             .toList()
         : <SaleItemModel>[];
 
+    final payments = _parsePayments(json["payments"]);
     final refundRaw = json["refund"];
     final refund = (refundRaw is Map)
         ? RefundModel.fromJson(Map<String, dynamic>.from(refundRaw))
@@ -242,6 +250,7 @@ class SaleModel {
       storeId: (json["storeId"] ?? "").toString(),
       customerId: (json["customerId"] as String?),
       items: enrichedItems,
+      payments: payments,
       refund: refund,
     );
   }
@@ -279,6 +288,14 @@ class SaleModel {
   }
 
   static int _toIntMoney(dynamic v) => _toInt(v);
+
+  static List<SalePaymentModel> _parsePayments(dynamic raw) {
+    if (raw is! List) return const <SalePaymentModel>[];
+    return raw
+        .whereType<Map>()
+        .map((e) => SalePaymentModel.fromJson(Map<String, dynamic>.from(e)))
+        .toList(growable: false);
+  }
 
   static List<SaleItemModel> _applyRefundQty(
     List<SaleItemModel> items,
@@ -332,6 +349,81 @@ class SaleModel {
 
   static String _formatIsoDate(DateTime d) {
     return '${d.year}-${_two(d.month)}-${_two(d.day)}';
+  }
+}
+
+class SalePaymentAccountModel {
+  const SalePaymentAccountModel({
+    required this.id,
+    required this.name,
+    this.type,
+  });
+
+  final String id;
+  final String name;
+  final String? type;
+
+  factory SalePaymentAccountModel.fromJson(Map<String, dynamic> json) {
+    return SalePaymentAccountModel(
+      id: (json['id'] ?? '').toString(),
+      name: (json['name'] ?? '').toString(),
+      type: json['type']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'type': type,
+    };
+  }
+}
+
+class SalePaymentModel {
+  const SalePaymentModel({
+    required this.accountId,
+    required this.amount,
+    this.account,
+    this.clientPaymentId,
+  });
+
+  final String accountId;
+  final num amount;
+  final SalePaymentAccountModel? account;
+  final String? clientPaymentId;
+
+  String get accountName {
+    final name = (account?.name ?? '').trim();
+    return name.isEmpty ? 'Счет не указан' : name;
+  }
+
+  factory SalePaymentModel.fromJson(Map<String, dynamic> json) {
+    final accountRaw = json['account'];
+    return SalePaymentModel(
+      accountId: (json['account_id'] ?? '').toString(),
+      amount: _numFromJson(json['amount']),
+      account: accountRaw is Map
+          ? SalePaymentAccountModel.fromJson(
+              Map<String, dynamic>.from(accountRaw),
+            )
+          : null,
+      clientPaymentId: json['client_payment_id']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'account_id': accountId,
+      'amount': amount,
+      if (clientPaymentId != null) 'client_payment_id': clientPaymentId,
+      'account': account?.toJson(),
+    };
+  }
+
+  static num _numFromJson(dynamic value) {
+    if (value is num) return value;
+    return num.tryParse((value ?? '').toString().replaceAll(',', '.')) ?? 0;
   }
 }
 

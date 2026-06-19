@@ -43,7 +43,10 @@ class CartItem extends Equatable {
 
   double get effectiveDiscountPercent {
     if (product.isUniversal) return 0;
-    if (customUnitPrice != null) return 0;
+    final custom = customUnitPrice;
+    if (custom != null && product.price > 0 && custom < product.price) {
+      return ((product.price - custom) / product.price) * 100;
+    }
     if (discountApplied && product.discountPercent > 0) {
       return product.discountPercent;
     }

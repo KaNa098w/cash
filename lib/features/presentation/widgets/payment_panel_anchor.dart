@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 class PaymentPanelAnchor extends StatefulWidget {
   const PaymentPanelAnchor({
     super.key,
-    required this.child,          // твоя _PayBtn
-    required this.panelBuilder,   // что показываем
+    required this.child, // твоя _PayBtn
+    required this.panelBuilder, // что показываем
     this.panelWidth = 420,
     this.gap = 12,
   });
@@ -41,7 +41,6 @@ class _PaymentPanelAnchorState extends State<PaymentPanelAnchor> {
     }
 
     final overlay = Overlay.of(context);
-    if (overlay == null) return;
 
     final box = _anchorKey.currentContext?.findRenderObject() as RenderBox?;
     final size = box?.size ?? const Size(290, 71);
@@ -78,11 +77,11 @@ class _PaymentPanelAnchorState extends State<PaymentPanelAnchor> {
                   ),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Colors.transparent,
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.18),
+                          color: Colors.black.withValues(alpha: 0.18),
                           blurRadius: 24,
                           offset: const Offset(0, 10),
                         ),

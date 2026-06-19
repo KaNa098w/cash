@@ -7,6 +7,8 @@ import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
+import 'package:leemon_app/features/presentation/utils/comment_text_controller.dart';
+import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 
 /// type: true = ВЗНОС, false = РАСХОД
 Future<bool> showDepositToCashSheet(BuildContext context, bool type) async {
@@ -55,6 +57,7 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
   final _noteCtrl = TextEditingController();
   final _amountFocus = FocusNode();
   final _noteFocus = FocusNode();
+  OverlayEntry? _keyboardEntry;
   String _text = '';
   bool _loading = false;
 
@@ -75,6 +78,7 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
   void initState() {
     super.initState();
     _amountCtrl.addListener(_handleAmountChanged);
+    _noteCtrl.addListener(_capitalizeNote);
 
     // Если это расход — заранее подгружаем типы расходов
     if (_isExpense) {
@@ -89,12 +93,56 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
 
   @override
   void dispose() {
+    _hideKeyboard();
     _amountCtrl.removeListener(_handleAmountChanged);
+    _noteCtrl.removeListener(_capitalizeNote);
     _amountCtrl.dispose();
     _noteCtrl.dispose();
     _amountFocus.dispose();
     _noteFocus.dispose();
     super.dispose();
+  }
+
+  void _capitalizeNote() {
+    capitalizeFirstLetterInController(_noteCtrl);
+  }
+
+  void _ensureNoteSelection() {
+    final selection = _noteCtrl.selection;
+    if (selection.isValid) return;
+
+    _noteCtrl.selection =
+        TextSelection.collapsed(offset: _noteCtrl.text.length);
+  }
+
+  void _showKeyboard() {
+    if (_loading) return;
+    _noteFocus.requestFocus();
+    _ensureNoteSelection();
+    if (_keyboardEntry != null) return;
+
+    _keyboardEntry = OverlayEntry(
+      builder: (_) => Positioned(
+        left: 0,
+        right: 0,
+        bottom: 0,
+        child: Material(
+          color: Colors.transparent,
+          child: OnScreenKeyboardSheet(
+            controllerGetter: () => _noteCtrl,
+            onEnter: _hideKeyboard,
+            onClose: _hideKeyboard,
+          ),
+        ),
+      ),
+    );
+
+    Overlay.of(context, rootOverlay: true).insert(_keyboardEntry!);
+  }
+
+  void _hideKeyboard() {
+    _keyboardEntry?.remove();
+    _keyboardEntry = null;
   }
 
   Future<void> _loadExpenseTypes() async {
@@ -370,6 +418,7 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
       }
 
       if (!mounted) return;
+      _hideKeyboard();
       Navigator.of(context).pop(true);
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -462,7 +511,7 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
     final typeText = _isExpense
         ? (_expenseTypeTitle ??
             (_loadingTypes ? 'Загрузка типов...' : 'Тип расхода'))
-        : 'Тип взноса';
+        : 'Взнос в кассу';
 
     return SizedBox(
       width: 527,
@@ -528,16 +577,6 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
               left: 247.627,
               top: 68.5,
               width: 258,
-              height: 47,
-              child: _ExpenseSelectBox(
-                text: 'Наличный счет',
-                onTap: () {},
-              ),
-            ),
-            Positioned(
-              left: 247.627,
-              top: 132.5,
-              width: 258,
               height: 42,
               child: _ExpenseSelectBox(
                 text: typeText,
@@ -547,12 +586,13 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
             ),
             Positioned(
               left: 247.627,
-              top: 191.5,
+              top: 132.5,
               width: 258,
-              height: 139,
+              height: 198,
               child: _ExpenseCommentBox(
                 controller: _noteCtrl,
                 focusNode: _noteFocus,
+                onOpenKeyboard: _showKeyboard,
               ),
             ),
             _ExpenseKeyButton(
@@ -770,10 +810,12 @@ class _ExpenseCommentBox extends StatelessWidget {
   const _ExpenseCommentBox({
     required this.controller,
     required this.focusNode,
+    required this.onOpenKeyboard,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
+  final VoidCallback onOpenKeyboard;
 
   @override
   Widget build(BuildContext context) {
@@ -807,13 +849,19 @@ class _ExpenseCommentBox extends StatelessWidget {
               color: Colors.black,
             ),
           ),
-          const Positioned(
+          Positioned(
             right: 12,
             top: 12,
-            child: Icon(
-              Icons.keyboard_alt_outlined,
-              color: Color(0xFF999999),
-              size: 30,
+            child: IconButton(
+              tooltip: 'Клавиатура',
+              onPressed: onOpenKeyboard,
+              icon: const Icon(
+                Icons.keyboard_alt_outlined,
+                color: Color(0xFF999999),
+                size: 30,
+              ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
             ),
           ),
         ],

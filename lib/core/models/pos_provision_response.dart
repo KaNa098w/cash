@@ -6,6 +6,7 @@ class PosProvisionResponse {
   final String accountId;
   final String storeId;
   final String storeName;
+  final bool isTest;
   final bool allowCustomSalePrices;
   final bool allowBelowCostSalePrices;
   final bool allowRefundsWithoutSale;
@@ -24,6 +25,7 @@ class PosProvisionResponse {
     required this.accountId,
     required this.storeId,
     required this.storeName,
+    this.isTest = false,
     this.allowCustomSalePrices = false,
     this.allowBelowCostSalePrices = false,
     this.allowRefundsWithoutSale = false,
@@ -45,6 +47,7 @@ class PosProvisionResponse {
     final key = (data['key'] ?? '').toString();
     final accountId = (data['account_id'] ?? '').toString();
     final storeId = (data['store_id'] ?? '').toString();
+    final isTest = _asBool(data['is_test']);
     String storeName =
         (data['store_name'] ?? data['storeName'] ?? '').toString();
     final store = data['store'];
@@ -101,6 +104,7 @@ class PosProvisionResponse {
       accountId: accountId,
       storeId: storeId,
       storeName: storeName,
+      isTest: isTest,
       allowCustomSalePrices: allowCustomSalePrices,
       allowBelowCostSalePrices: allowBelowCostSalePrices,
       allowRefundsWithoutSale: allowRefundsWithoutSale,
@@ -140,6 +144,7 @@ class PosUser {
   final String? pinHash;
 
   final String? avatar;
+  final List<String> roles;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -151,6 +156,7 @@ class PosUser {
     required this.pinCode,
     this.pinHash,
     this.avatar,
+    this.roles = const [],
     this.createdAt,
     this.updatedAt,
   });
@@ -172,6 +178,13 @@ class PosUser {
     final pinCode = (json['pin_code'] ?? json['pinCode'] ?? '').toString();
     final pinHash = (json['pin_hash'] ?? '').toString();
     final avatar = (json['avatar'] ?? '')?.toString();
+    final rolesRaw = json['roles'];
+    final roles = rolesRaw is List
+        ? rolesRaw
+            .map((role) => role.toString().trim())
+            .where((role) => role.isNotEmpty)
+            .toList(growable: false)
+        : const <String>[];
 
     DateTime? parseDt(dynamic v) {
       if (v is Map<String, dynamic>) {
@@ -198,12 +211,14 @@ class PosUser {
       pinCode: pinCode,
       pinHash: pinHash.isEmpty ? null : pinHash,
       avatar: (avatar != null && avatar.isNotEmpty) ? avatar : null,
+      roles: roles,
       createdAt: parseDt(json['created']),
       updatedAt: parseDt(json['updated']),
     );
   }
 
-  PosUser copyWith({String? pinHash, String? pinCode}) => PosUser(
+  PosUser copyWith({String? pinHash, String? pinCode, List<String>? roles}) =>
+      PosUser(
         id: id,
         name: name,
         emailAddress: emailAddress,
@@ -211,6 +226,7 @@ class PosUser {
         pinCode: pinCode ?? this.pinCode,
         pinHash: pinHash ?? this.pinHash,
         avatar: avatar,
+        roles: roles ?? this.roles,
         createdAt: createdAt,
         updatedAt: updatedAt,
       );
@@ -225,6 +241,7 @@ class PosUser {
         // ВАЖНО: pin_code не кладём в кэш
         'pin_hash': pinHash,
         'avatar': avatar,
+        'roles': roles,
         'created': createdAt?.toIso8601String(),
         'updated': updatedAt?.toIso8601String(),
       };

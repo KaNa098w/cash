@@ -1,13 +1,22 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/core/models/pos_provision_response.dart';
 import 'package:leemon_app/core/models/product_response.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/data/datasources/product_remote_datasource.dart';
 import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/domain/entities/cart_item.dart';
+import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/sales_history/widgets/refund_access_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 import 'package:leemon_app/features/presentation/widgets/footer_status.dart'
     show TouchDeleteDialog;
@@ -113,6 +122,205 @@ class _CartListState extends State<CartList> {
       case _DiscountActionType.clearCustomPrice:
         cubit.clearCustomPrice(index);
     }
+  }
+
+  Future<bool> _hasInternet() async {
+    try {
+      final result = await InternetAddress.lookup('example.com')
+          .timeout(const Duration(milliseconds: 900));
+      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  PosUser? _activeUser(AuthTokenProvider auth) {
+    final userId = (auth.activeUserId ?? '').trim();
+    if (userId.isEmpty) return null;
+    for (final user in auth.users) {
+      if (user.id == userId) return user;
+    }
+    return null;
+  }
+
+  void _showSnack(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _showPriceChangedDialog(
+    BuildContext context, {
+    required ProductModel product,
+  }) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.16),
+                  blurRadius: 30,
+                  offset: const Offset(0, 16),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF7F1),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.check_rounded,
+                        color: Color(0xFF179D72),
+                        size: 30,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Text(
+                        'Цена успешно изменилась',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF111827),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  product.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    height: 1.35,
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _PriceInfoPill(
+                  label: 'Новая цена',
+                  value: money(product.sellingPrice),
+                  accent: true,
+                ),
+                const SizedBox(height: 18),
+                FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    backgroundColor: const Color(0xFF33CC99),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'OK',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openServerPriceDialog(
+    BuildContext context, {
+    required int index,
+    required CartItem item,
+  }) async {
+    context.read<PosCubit>().selectItem(index);
+
+    if (item.product.isUniversal) return;
+
+    final productId = item.product.id.trim();
+    if (productId.isEmpty) {
+      _showSnack(context, 'Не найден ID товара');
+      return;
+    }
+
+    final online = await _hasInternet();
+    if (!context.mounted) return;
+    if (!online) {
+      _showSnack(
+        context,
+        'Изменить цену без интернета нельзя. Подключите интернет и попробуйте снова.',
+      );
+      return;
+    }
+
+    final auth = context.read<AuthTokenProvider>();
+    final key = (auth.posKey ?? '').trim();
+    final deviceId = (auth.deviceId ?? '').trim();
+    final user = _activeUser(auth);
+    final userId = (user?.id ?? auth.activeUserId ?? '').trim();
+    final isDirector =
+        user?.roles.any((role) => role.toLowerCase() == 'director') ?? false;
+
+    if (key.isEmpty || deviceId.isEmpty || userId.isEmpty) {
+      _showSnack(context, 'Не найдены данные кассы или кассира');
+      return;
+    }
+
+    final updated = await showDialog<ProductModel>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ServerPriceDialog(
+        item: item,
+        isDirector: isDirector,
+        onSubmit: ({
+          required double sellingPrice,
+          required String? refundAccessKey,
+        }) async {
+          final stillOnline = await _hasInternet();
+          if (!stillOnline) {
+            throw const _PriceChangeException(
+              'Изменить цену без интернета нельзя. Подключите интернет и попробуйте снова.',
+            );
+          }
+          return sl<ProductRemoteDataSource>().updateProductPrice(
+            key: key,
+            productId: productId,
+            userId: userId,
+            deviceId: deviceId,
+            sellingPrice: sellingPrice,
+            refundAccessKey: refundAccessKey,
+          );
+        },
+      ),
+    );
+
+    if (!context.mounted || updated == null) return;
+    context.read<ProductsCubit>().updateProduct(updated);
+    context.read<PosCubit>().updateProductPriceFromModel(index, updated);
+    await _showPriceChangedDialog(context, product: updated);
   }
 
   void _scrollSelectedItemIntoView(PosState state) {
@@ -258,7 +466,7 @@ class _CartListState extends State<CartList> {
                                     // Цена
                                     SizedBox(
                                       width: 130,
-                                      child: InkWell(
+                                      child: _PriceHoldTarget(
                                         onTap: it.product.isUniversal
                                             ? () async {
                                                 context
@@ -279,10 +487,13 @@ class _CartListState extends State<CartList> {
                                                     .setPrice(i, price);
                                               }
                                             : null,
-                                        splashFactory: NoSplash.splashFactory,
-                                        overlayColor:
-                                            const WidgetStatePropertyAll(
-                                                Colors.transparent),
+                                        onHoldComplete: it.product.isUniversal
+                                            ? null
+                                            : () => _openServerPriceDialog(
+                                                  context,
+                                                  index: i,
+                                                  item: it,
+                                                ),
                                         child: _PriceCell(it),
                                       ),
                                     ),
@@ -609,10 +820,9 @@ class _PriceCell extends StatelessWidget {
         textAlign: TextAlign.right,
         style: GoogleFonts.inter(
           fontSize: 18,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
           height: 1.4,
           letterSpacing: 0.27,
-          color: const Color(0xFF16A34A),
         ),
       );
     }
@@ -653,6 +863,62 @@ class _PriceCell extends StatelessWidget {
   }
 }
 
+class _PriceHoldTarget extends StatefulWidget {
+  const _PriceHoldTarget({
+    required this.child,
+    this.onTap,
+    this.onHoldComplete,
+  });
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final VoidCallback? onHoldComplete;
+
+  @override
+  State<_PriceHoldTarget> createState() => _PriceHoldTargetState();
+}
+
+class _PriceHoldTargetState extends State<_PriceHoldTarget> {
+  Timer? _timer;
+  bool _completed = false;
+
+  void _startHold() {
+    _timer?.cancel();
+    _completed = false;
+    if (widget.onHoldComplete == null) return;
+    _timer = Timer(const Duration(seconds: 2), () {
+      _completed = true;
+      widget.onHoldComplete?.call();
+    });
+  }
+
+  void _cancelHold() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  @override
+  void dispose() {
+    _cancelHold();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _startHold(),
+      onTapUp: (_) => _cancelHold(),
+      onTapCancel: _cancelHold,
+      onTap: () {
+        if (_completed) return;
+        widget.onTap?.call();
+      },
+      child: widget.child,
+    );
+  }
+}
+
 class _DiscountCell extends StatelessWidget {
   final CartItem item;
   final VoidCallback? onTap;
@@ -671,9 +937,10 @@ class _DiscountCell extends StatelessWidget {
         : pct.toStringAsFixed(1);
 
     if (item.customUnitPrice != null) {
+      final manualPct = _formatPercent(item.effectiveDiscountPercent);
       return GestureDetector(
         onTap: onTap,
-        child: _singleChip('ручн', filled: true, active: true),
+        child: _singleChip('$manualPct%', filled: true, active: true),
       );
     }
 
@@ -721,6 +988,14 @@ class _DiscountCell extends StatelessWidget {
         item.product.priceAfterDiscount < item.product.price;
   }
 
+  String _formatPercent(double value) {
+    if (value <= 0) return '0';
+    final rounded = double.parse(value.toStringAsFixed(1));
+    return rounded == rounded.roundToDouble()
+        ? rounded.toInt().toString()
+        : rounded.toStringAsFixed(1);
+  }
+
   Widget _singleChip(
     String text, {
     required bool filled,
@@ -753,16 +1028,27 @@ class _DiscountCell extends StatelessWidget {
       ),
       child: Text(
         text,
+        maxLines: 1,
+        overflow: TextOverflow.visible,
+        softWrap: false,
+        textScaler: TextScaler.noScaling,
         style: GoogleFonts.inter(
-          fontSize: 16,
+          fontSize: _chipFontSize(text),
           color: fg,
           fontWeight: FontWeight.w600,
           height: 1.4,
-          letterSpacing: 0.34,
+          letterSpacing: text.length > 4 ? 0 : 0.34,
         ),
         textAlign: TextAlign.center,
       ),
     );
+  }
+
+  double _chipFontSize(String text) {
+    if (text.length <= 4) return 16;
+    if (text.length <= 5) return 14;
+    if (text.length <= 6) return 12;
+    return 10;
   }
 }
 
@@ -931,6 +1217,415 @@ enum _DiscountActionType {
   clearCustomPrice,
 }
 
+class _PriceChangeException implements Exception {
+  const _PriceChangeException(this.message);
+
+  final String message;
+}
+
+typedef _ServerPriceSubmit = Future<ProductModel> Function({
+  required double sellingPrice,
+  required String? refundAccessKey,
+});
+
+class _ServerPriceDialog extends StatefulWidget {
+  const _ServerPriceDialog({
+    required this.item,
+    required this.isDirector,
+    required this.onSubmit,
+  });
+
+  final CartItem item;
+  final bool isDirector;
+  final _ServerPriceSubmit onSubmit;
+
+  @override
+  State<_ServerPriceDialog> createState() => _ServerPriceDialogState();
+}
+
+class _ServerPriceDialogState extends State<_ServerPriceDialog> {
+  late String _priceText;
+  bool _submitting = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _priceText = '0';
+  }
+
+  double get _price =>
+      double.tryParse(_priceText.replaceAll(',', '.').trim()) ?? 0;
+
+  bool get _canSubmit {
+    if (_submitting || _price <= 0) return false;
+    return true;
+  }
+
+  String get _productName {
+    final name = widget.item.product.name.trim();
+    return name.isEmpty ? widget.item.product.id : name;
+  }
+
+  String _errorMessage(Object error) {
+    if (error is _PriceChangeException) return error.message;
+    if (error is DioException) {
+      final status = error.response?.statusCode;
+      return switch (status) {
+        401 => 'Неверный или неактивный ключ доступа',
+        404 => 'Товар не принадлежит организации POS',
+        422 => 'Некорректная цена или обязательные поля не заполнены',
+        _ => 'Не удалось изменить цену. Проверьте интернет и попробуйте снова.',
+      };
+    }
+    return 'Не удалось изменить цену. Попробуйте снова.';
+  }
+
+  Future<void> _submit() async {
+    if (!_canSubmit) return;
+
+    if (!widget.isDirector) {
+      await _scanAccessAndSubmit();
+      return;
+    }
+
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+
+    try {
+      final updated = await widget.onSubmit(
+        sellingPrice: double.parse(_price.toStringAsFixed(2)),
+        refundAccessKey: null,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(updated);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = _errorMessage(e);
+      });
+    }
+  }
+
+  Future<void> _scanAccessAndSubmit() async {
+    ProductModel? updatedProduct;
+
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+
+    try {
+      final granted = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => RefundAccessDialog(
+          title: 'Доступ к изменению цены',
+          scanTitle: 'Сканируй штрих-код доступа менеджера',
+          onScanned: (barcode) async {
+            final accessKey = barcode.trim();
+            if (accessKey.isEmpty) return false;
+
+            try {
+              updatedProduct = await widget.onSubmit(
+                sellingPrice: double.parse(_price.toStringAsFixed(2)),
+                refundAccessKey: accessKey,
+              );
+              return true;
+            } catch (e) {
+              if (e is DioException && e.response?.statusCode == 401) {
+                return false;
+              }
+              rethrow;
+            }
+          },
+        ),
+      );
+
+      if (!mounted) return;
+      if (granted == true && updatedProduct != null) {
+        Navigator.of(context).pop(updatedProduct);
+        return;
+      }
+
+      setState(() {
+        _submitting = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = _errorMessage(e);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentPrice = widget.item.effectiveUnitPrice;
+    final roleText = widget.isDirector
+        ? 'Доступ подтвержден: директор'
+        : 'Для кассира нужен штрих-код доступа менеджера';
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      backgroundColor: Colors.transparent,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 34,
+                  offset: const Offset(0, 18),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF7F1),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.price_change_rounded,
+                        color: Color(0xFF179D72),
+                        size: 27,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Text(
+                        'Изменение цены',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF111827),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _submitting
+                          ? null
+                          : () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  _productName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    height: 1.35,
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _PriceInfoPill(
+                        label: 'Текущая',
+                        value: money(currentPrice),
+                        accent: false,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _PriceInfoPill(
+                        label: 'Новая',
+                        value: money(_price),
+                        accent: true,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  height: 58,
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFF33CC99)),
+                  ),
+                  child: Text(
+                    _priceText.isEmpty ? '0' : _priceText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 31,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                AmountKeypad(
+                  text: _priceText,
+                  showQuickRows: false,
+                  onChanged: _submitting
+                      ? (_) {}
+                      : (value) {
+                          setState(() {
+                            _priceText = value;
+                            _error = null;
+                          });
+                        },
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: widget.isDirector
+                        ? const Color(0xFFEAF7F1)
+                        : const Color(0xFFFFF7E6),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: widget.isDirector
+                          ? const Color(0xFFBCE7D0)
+                          : const Color(0xFFF3D19E),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        widget.isDirector
+                            ? Icons.verified_user_rounded
+                            : Icons.key_rounded,
+                        color: widget.isDirector
+                            ? const Color(0xFF179D72)
+                            : const Color(0xFFB7791F),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          roleText,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF374151),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFECEA),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFD15850)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.error_outline_rounded,
+                          color: Color(0xFFD15850),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _error!,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFFD15850),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _submitting
+                            ? null
+                            : () => Navigator.of(context).pop(),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                          side: const BorderSide(color: Color(0xFFD1D5DB)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(13),
+                          ),
+                        ),
+                        child: const Text(
+                          'Отмена',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _canSubmit ? _submit : null,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                          backgroundColor: const Color(0xFF33CC99),
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: const Color(0xFFA8DABD),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(13),
+                          ),
+                        ),
+                        child: _submitting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text(
+                                widget.isDirector
+                                    ? 'Сохранить'
+                                    : 'Сканировать ключ',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DiscountAction {
   const _DiscountAction(this.type, {this.price});
 
@@ -972,12 +1667,7 @@ class _DiscountPriceDialogState extends State<_DiscountPriceDialog> {
   @override
   void initState() {
     super.initState();
-    final initial = widget.item.customUnitPrice ??
-        (widget.item.discountApplied &&
-                widget.item.product.priceAfterDiscount > 0
-            ? widget.item.product.priceAfterDiscount
-            : widget.item.product.price);
-    _text = _formatInput(initial);
+    _text = '0';
   }
 
   double get _price => double.tryParse(_text.replaceAll(',', '.')) ?? 0;
@@ -987,15 +1677,9 @@ class _DiscountPriceDialogState extends State<_DiscountPriceDialog> {
     return name.isEmpty ? widget.item.product.id : name;
   }
 
-  String _formatInput(double value) {
-    final fixed = value.toStringAsFixed(2);
-    return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
-  }
-
   String get _manualPriceError {
     if (!widget.canCustomPrice) return 'Ручная цена выключена для магазина';
     if (_price <= 0) return 'Введите цену';
-    if (_price > widget.item.product.price) return 'Нельзя выше базовой цены';
     return '';
   }
 

@@ -5,6 +5,7 @@ import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:leemon_app/core/models/product_response.dart';
+import 'package:leemon_app/core/models/refund_model.dart';
 import 'package:leemon_app/core/models/sale_model.dart' show SaleModel;
 import 'package:leemon_app/features/data/sync/pos_sync_local_store.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
@@ -127,8 +128,38 @@ class PosSyncService {
     return _localStore.loadAccounts();
   }
 
+  Future<List<LocalAccount>> loadAccountsFromBackend({
+    required String key,
+  }) async {
+    final accounts = await _remote.fetchAllAccounts(key: key);
+    return accounts
+        .map(
+          (account) => LocalAccount(
+            id: _stringFromMap(account, 'id'),
+            name: _stringFromMap(account, 'name'),
+            type: _stringFromMap(account, 'type'),
+            logoUrl: _nullableStringFromMap(account, 'logo_url') ??
+                _nullableStringFromMap(account, 'logoUrl'),
+            visibleToPos: _boolFromMap(
+              account,
+              'visible_to_pos',
+              fallback: true,
+            ),
+          ),
+        )
+        .where((account) => account.id.trim().isNotEmpty)
+        .toList(growable: false);
+  }
+
   Future<List<LocalCustomer>> loadCustomers() {
     return _localStore.loadCustomers();
+  }
+
+  Future<Map<String, dynamic>> refreshPosInfo({required String key}) async {
+    await initialize();
+    final posInfo = await _remote.fetchPosInfo(key: key);
+    await _localStore.upsertPosInfo(posInfo);
+    return posInfo;
   }
 
   Future<void> upsertCustomersRaw(List<Map<String, dynamic>> customers) async {
@@ -207,6 +238,14 @@ class PosSyncService {
     return _localStore.loadAllSalesHistory();
   }
 
+  Future<List<RefundModel>> loadAllRefundsHistory() {
+    return _localStore.loadAllRefundsHistory();
+  }
+
+  Future<List<LocalSession>> loadSessions() {
+    return _localStore.loadSessions();
+  }
+
   Future<({List<SaleModel> items, int total})> loadSalesHistoryPage({
     int page = 1,
     int perPage = 15,
@@ -221,12 +260,21 @@ class PosSyncService {
   Future<ShiftReportData?> loadShiftReportFromBackend({
     required String key,
     required String sessionId,
+    String? deviceId,
     bool includeProducts = true,
   }) async {
     await initialize();
     final serverSessionId = await _resolveReportSessionId(sessionId);
+    final cleanDeviceId = (deviceId ?? '').trim();
+    if (includeProducts && cleanDeviceId.isEmpty) {
+      throw Exception('x-report: deviceId is required');
+    }
     final data = includeProducts
-        ? await _remote.fetchXReport(key: key, sessionId: serverSessionId)
+        ? await _remote.fetchXReport(
+            key: key,
+            sessionId: serverSessionId,
+            deviceId: cleanDeviceId,
+          )
         : await _remote.fetchZReport(key: key, sessionId: serverSessionId);
     return _mapRemoteShiftReport(
       data,
@@ -243,12 +291,18 @@ class PosSyncService {
   Future<ShiftClosureSummaryData?> loadShiftClosureSummaryFromBackend({
     required String key,
     required String sessionId,
+    required String deviceId,
   }) async {
     await initialize();
     final serverSessionId = await _resolveReportSessionId(sessionId);
-    final data = await _remote.fetchZReport(
+    final cleanDeviceId = deviceId.trim();
+    if (cleanDeviceId.isEmpty) {
+      throw Exception('x-report: deviceId is required');
+    }
+    final data = await _remote.fetchXReport(
       key: key,
       sessionId: serverSessionId,
+      deviceId: cleanDeviceId,
     );
     return _mapRemoteShiftClosureSummary(
       data,
@@ -326,6 +380,11 @@ class PosSyncService {
             .map((e) => Map<String, dynamic>.from(e))
             .toList() ??
         <Map<String, dynamic>>[];
+    final rawRefunds = (snapshotFile['refunds'] as List?)
+            ?.whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList() ??
+        <Map<String, dynamic>>[];
 
     onProgress?.call(
       SyncProgress(
@@ -363,6 +422,7 @@ class PosSyncService {
       posInfo: posInfo,
       products: rawProducts,
       sales: rawSales,
+      refunds: rawRefunds,
       accounts: accounts,
       expenseTypes: expenseTypes,
       customers: customers,
@@ -380,6 +440,7 @@ class PosSyncService {
       'saved_counts': {
         'products': rawProducts.length,
         'sales': rawSales.length,
+        'refunds': rawRefunds.length,
         'accounts': accounts.length,
         'expense_types': expenseTypes.length,
         'customers': customers.length,
@@ -394,6 +455,7 @@ class PosSyncService {
       key: key,
       deviceId: deviceId,
       initialCursor: snapshotCursor,
+      refreshPosInfoAfterPull: false,
       onProgress: (progress) {
         final normalized = 0.82 + (progress.progress * 0.17);
         onProgress?.call(
@@ -405,6 +467,11 @@ class PosSyncService {
         );
       },
     );
+
+    onProgress?.call(
+      const SyncProgress(progress: 0.995, stage: 'Обновляем данные кассы...'),
+    );
+    await refreshPosInfo(key: key);
 
     onProgress?.call(
         const SyncProgress(progress: 1, stage: 'Синхронизация завершена'));
@@ -422,12 +489,14 @@ class PosSyncService {
     required String key,
     required String deviceId,
     int? initialCursor,
+    bool refreshPosInfoAfterPull = true,
     void Function(SyncProgress progress)? onProgress,
   }) {
     return _pullFuture ??= _runPullOnce(
       key: key,
       deviceId: deviceId,
       initialCursor: initialCursor,
+      refreshPosInfoAfterPull: refreshPosInfoAfterPull,
       onProgress: onProgress,
     ).whenComplete(() => _pullFuture = null);
   }
@@ -436,6 +505,7 @@ class PosSyncService {
     required String key,
     required String deviceId,
     int? initialCursor,
+    bool refreshPosInfoAfterPull = true,
     void Function(SyncProgress progress)? onProgress,
   }) async {
     await initialize();
@@ -502,6 +572,16 @@ class PosSyncService {
       if (!batch.hasMore) {
         break;
       }
+    }
+
+    if (refreshPosInfoAfterPull) {
+      onProgress?.call(
+        const SyncProgress(
+          progress: 0.98,
+          stage: 'Обновляем данные кассы',
+        ),
+      );
+      await refreshPosInfo(key: key);
     }
   }
 
@@ -625,7 +705,13 @@ class PosSyncService {
           .fold(0.0, (sum, item) => sum + item.totalPrice)
           .toStringAsFixed(2),
     );
-    final nonZeroPayments = _withoutZeroAmountPayments(payments);
+    final normalizedPaymentMethod = sale.paymentMethod.trim().toLowerCase();
+    final normalizedPayments = _normalizedSalePayments(
+      paymentMethod: normalizedPaymentMethod,
+      posAccountId: sale.accountId,
+      totalAmount: exactTotal,
+      payments: payments,
+    );
     final payload = <String, dynamic>{
       'device_id': deviceId,
       'app_version': AppBuildInfo.appVersion,
@@ -634,7 +720,8 @@ class PosSyncService {
       if (localPosSessionId.isNotEmpty) 'pos_session_id': localPosSessionId,
       'date': _formatDate(sale.date),
       'total_amount': exactTotal,
-      'payment_method': sale.paymentMethod,
+      'payment_method':
+          normalizedPaymentMethod == 'cash' ? 'cash' : sale.paymentMethod,
       if ((sale.paymentType ?? '').trim().isNotEmpty)
         'payment_type': sale.paymentType,
       if (sale.paidAmount > 0) 'paid_amount': sale.paidAmount,
@@ -665,7 +752,7 @@ class PosSyncService {
             },
           )
           .toList(growable: false),
-      'payments': nonZeroPayments,
+      'payments': normalizedPayments,
     };
 
     await _localStore.insertSaleLocal(
@@ -736,6 +823,8 @@ class PosSyncService {
     final payload = <String, dynamic>{
       'device_id': deviceId,
       'app_version': AppBuildInfo.appVersion,
+      'client_session_id': clientSessionId,
+      'opened_at': _formatDate(effectiveOpenedAt),
       'user_id': userId,
     };
 
@@ -825,10 +914,15 @@ class PosSyncService {
     required DateTime date,
     required List<Map<String, dynamic>> items,
     String? returnAccessKey,
+    String? reasonCode,
+    String? note,
   }) async {
     final localPosSessionId = posSessionId.trim();
     final clientId = 'refund_${_uuid.v7()}';
-    final isOffline = saleId.isEmpty;
+    final cleanSaleId = saleId.trim();
+    final cleanClientSaleId = (clientSaleId ?? '').trim();
+    final hasLinkedSale =
+        cleanSaleId.isNotEmpty || cleanClientSaleId.isNotEmpty;
     final nonZeroPayments = _withoutZeroAmountPayments(payments);
     final payload = <String, dynamic>{
       'device_id': deviceId,
@@ -836,16 +930,19 @@ class PosSyncService {
       'client_refund_id': clientId,
       'pos_session_id': localPosSessionId,
       'date': _formatDate(date),
-      if (!isOffline)
-        'sale_id': saleId
-      else if ((clientSaleId ?? '').isNotEmpty)
-        'client_sale_id': clientSaleId!,
+      if (cleanSaleId.isNotEmpty) 'sale_id': cleanSaleId,
+      if (cleanSaleId.isEmpty && cleanClientSaleId.isNotEmpty)
+        'client_sale_id': cleanClientSaleId,
       if ((posId ?? '').trim().isNotEmpty) 'pos_id': posId!.trim(),
       if ((storeId ?? '').trim().isNotEmpty) 'store_id': storeId!.trim(),
-      if ((accountId ?? '').trim().isNotEmpty) 'account_id': accountId!.trim(),
+      if (!hasLinkedSale && (accountId ?? '').trim().isNotEmpty)
+        'account_id': accountId!.trim(),
       'total_amount': totalAmount,
-      'payment_method': paymentMethod,
-      'payments': nonZeroPayments,
+      if (!hasLinkedSale) 'payment_method': paymentMethod,
+      if ((reasonCode ?? '').trim().isNotEmpty)
+        'reason_code': reasonCode!.trim(),
+      if ((note ?? '').trim().isNotEmpty) 'note': note!.trim(),
+      if (!hasLinkedSale) 'payments': nonZeroPayments,
       'items': items,
       if ((returnAccessKey ?? '').trim().isNotEmpty)
         'return_access_key': returnAccessKey!.trim(),
@@ -872,6 +969,60 @@ class PosSyncService {
       final parsed = num.tryParse((amount ?? '').toString().trim());
       return parsed != null && parsed > 0;
     }).toList(growable: false);
+  }
+
+  List<Map<String, dynamic>> _normalizedSalePayments({
+    required String paymentMethod,
+    required String posAccountId,
+    required num totalAmount,
+    required List<Map<String, dynamic>> payments,
+  }) {
+    final nonZeroPayments = _withoutZeroAmountPayments(payments);
+
+    if (paymentMethod == 'cash') {
+      final cleanPosAccountId = posAccountId.trim();
+      if (cleanPosAccountId.isEmpty) {
+        throw Exception('POS account_id is empty for cash sale');
+      }
+
+      final existingClientPaymentId =
+          _firstClientPaymentId(nonZeroPayments).trim();
+
+      return [
+        {
+          'account_id': cleanPosAccountId,
+          'amount': totalAmount,
+          'client_payment_id': existingClientPaymentId.isNotEmpty
+              ? existingClientPaymentId
+              : _uuid.v4(),
+        },
+      ];
+    }
+
+    return nonZeroPayments
+        .map((payment) => _salePaymentApiJson(payment))
+        .toList(growable: false);
+  }
+
+  Map<String, dynamic> _salePaymentApiJson(Map<String, dynamic> payment) {
+    final accountId = (payment['account_id'] ?? '').toString().trim();
+    final clientPaymentId =
+        (payment['client_payment_id'] ?? '').toString().trim();
+    return {
+      'account_id': accountId,
+      'amount': payment['amount'],
+      if (clientPaymentId.isNotEmpty) 'client_payment_id': clientPaymentId,
+      if ((payment['comment'] ?? '').toString().trim().isNotEmpty)
+        'comment': payment['comment'].toString().trim(),
+    };
+  }
+
+  String _firstClientPaymentId(List<Map<String, dynamic>> payments) {
+    for (final payment in payments) {
+      final value = (payment['client_payment_id'] ?? '').toString().trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
   }
 
   Future<QueueOperationResult> _queueAndTrySend({
@@ -1005,6 +1156,7 @@ class PosSyncService {
     final cashTotal = _numFromMap(summary, 'sales_cash_total');
     final cardTotal = _numFromMap(summary, 'sales_card_total');
     final grandTotal = _numFromMap(summary, 'sales_total');
+    final debtTotal = _numFromMap(summary, 'debt_total');
 
     return ShiftReportData(
       sessionId:
@@ -1017,7 +1169,7 @@ class PosSyncService {
       cashTotal: cashTotal,
       cardTotal: cardTotal,
       transferTotal: 0,
-      creditTotal: grandTotal - cashTotal - cardTotal,
+      creditTotal: debtTotal,
       grandTotal: grandTotal,
       refundsTotal: _numFromMap(summary, 'refunds_total'),
       incomeTotal: _numFromMap(summary, 'income_total'),
@@ -1035,6 +1187,10 @@ class PosSyncService {
     final cashTotal = _numFromMap(summary, 'sales_cash_total');
     final cardTotal = _numFromMap(summary, 'sales_card_total');
     final salesTotal = _numFromMap(summary, 'sales_total');
+    final debtTotal = _numFromMap(summary, 'debt_total');
+    final cashlessAccounts = _asListOfMaps(data['cashless_accounts'])
+        .map(_mapCashlessAccountReport)
+        .toList(growable: false);
 
     return ShiftClosureSummaryData(
       sessionId:
@@ -1043,12 +1199,25 @@ class PosSyncService {
       cashSalesTotal: cashTotal,
       cardSalesTotal: cardTotal,
       transferSalesTotal: 0,
-      creditSalesTotal: salesTotal - cashTotal - cardTotal,
+      creditSalesTotal: debtTotal,
       refundsTotal: _numFromMap(summary, 'refunds_total'),
       incomeTotal: _numFromMap(summary, 'income_total'),
       expenseTotal: _numFromMap(summary, 'expense_total'),
       expectedCashAmount: _numFromMap(summary, 'expected_cash_amount'),
       totalSalesAmount: salesTotal,
+      cashlessAccounts: cashlessAccounts,
+    );
+  }
+
+  CashlessAccountReport _mapCashlessAccountReport(Map<String, dynamic> json) {
+    return CashlessAccountReport(
+      accountId: _stringFromMap(json, 'account_id'),
+      accountName: _stringFromMap(json, 'account_name'),
+      salesTotal: _numFromMap(json, 'sales_total').toDouble(),
+      refundsTotal: _numFromMap(json, 'refunds_total').toDouble(),
+      incomeTotal: _numFromMap(json, 'income_total').toDouble(),
+      expenseTotal: _numFromMap(json, 'expense_total').toDouble(),
+      netTotal: _numFromMap(json, 'net_total').toDouble(),
     );
   }
 
@@ -1072,6 +1241,20 @@ class PosSyncService {
     return num.tryParse((value ?? '').toString().trim()) ?? 0;
   }
 
+  bool _boolFromMap(
+    Map<String, dynamic> map,
+    String key, {
+    bool fallback = false,
+  }) {
+    final value = map[key];
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final normalized = (value ?? '').toString().trim().toLowerCase();
+    if (normalized == 'true' || normalized == '1') return true;
+    if (normalized == 'false' || normalized == '0') return false;
+    return fallback;
+  }
+
   String _stringFromMap(
     Map<String, dynamic> map,
     String key, {
@@ -1079,6 +1262,11 @@ class PosSyncService {
   }) {
     final value = (map[key] ?? '').toString().trim();
     return value.isEmpty ? fallback : value;
+  }
+
+  String? _nullableStringFromMap(Map<String, dynamic> map, String key) {
+    final value = (map[key] ?? '').toString().trim();
+    return value.isEmpty ? null : value;
   }
 
   DateTime? _parseRemoteDate(dynamic value) {
@@ -1133,16 +1321,20 @@ class PosSyncService {
       final errorMessage = _remote.extractErrorMessage(error);
       final errorDetails = _remote.extractErrorDetails(error);
 
-      // Duplicate key: the operation already exists on the server — treat as success.
       if (errorCode == 'IDEMPOTENCY_CONFLICT') {
-        await _localStore.markOperationAcked(record.id);
-        _markDedicatedTableSynced(record);
+        await _localStore.markOperationManual(
+          operationId: record.id,
+          errorCode: errorCode,
+          errorMessage: errorMessage,
+          payload: payloadForSend,
+        );
         return QueueOperationResult(
           operationId: record.id,
-          result: QueueSendResult.sent,
+          result: QueueSendResult.manual,
           type: record.type,
           clientId: record.clientId,
-          payload: record.payload,
+          payload: payloadForSend,
+          errorMessage: errorMessage,
         );
       }
 

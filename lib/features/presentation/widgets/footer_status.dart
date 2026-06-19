@@ -57,6 +57,9 @@ class _FooterDesktop extends StatelessWidget {
         final footerHeight = baseFooterHeight + bottomInset;
         final infoHeight = footerHeight - (infoPad * 2);
         final posName = (auth.posName ?? '').trim();
+        final posLabel = auth.posIsTest
+            ? '${posName.isEmpty ? 'Касса-1' : posName} · TEST'
+            : (posName.isEmpty ? 'Касса-1' : posName);
         final storeName = (auth.storeName ?? '').trim();
 
         return SizedBox(
@@ -143,19 +146,17 @@ class _FooterDesktop extends StatelessWidget {
                                 child: FittedBox(
                                   alignment: Alignment.centerLeft,
                                   fit: BoxFit.scaleDown,
-                                  child: 
-                                      Text(
-                                        posName.isEmpty ? 'Касса-1' : posName,
-                                        maxLines: 1,
-                                        style: GoogleFonts.inter(
-                                          color: Colors.white,
-                                          fontSize: 13.4,
-                                          fontWeight: FontWeight.w400,
-                                          height: 1,
-                                          letterSpacing: 0,
-                                        ),
-                                      ),
-                                    
+                                  child: Text(
+                                    posLabel,
+                                    maxLines: 1,
+                                    style: GoogleFonts.inter(
+                                      color: Colors.white,
+                                      fontSize: 13.4,
+                                      fontWeight: FontWeight.w400,
+                                      height: 1,
+                                      letterSpacing: 0,
+                                    ),
+                                  ),
                                 ),
                               ),
                               Positioned(
@@ -352,7 +353,7 @@ class _FooterDesktop extends StatelessWidget {
                     width: panelWidth,
                     margin: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Colors.transparent,
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(

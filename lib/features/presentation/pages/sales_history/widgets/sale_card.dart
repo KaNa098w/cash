@@ -113,6 +113,29 @@ class SaleCard extends StatelessWidget {
   Color get actionBlueMuted => const Color(0xFF33B5CC);
   Color get actionDarkMuted => const Color(0xFF6F7671);
 
+  List<SalePaymentModel> get paymentDetails {
+    final method = sale.paymentMethod.trim().toLowerCase();
+    if (method != 'card' && method != 'mixed') {
+      return const <SalePaymentModel>[];
+    }
+
+    final payments = sale.payments
+        .where((payment) => payment.amount > 0)
+        .toList(growable: false);
+    if (payments.isNotEmpty) return payments;
+
+    if (method == 'card') {
+      return [
+        SalePaymentModel(
+          accountId: sale.accountId,
+          amount: sale.totalAmount,
+        ),
+      ];
+    }
+
+    return const <SalePaymentModel>[];
+  }
+
   String get cashierDisplayName {
     final name = cashierName.trim();
     if (name.isNotEmpty) return name;
@@ -291,6 +314,10 @@ class SaleCard extends StatelessWidget {
                           availableQtyOf: availableQtyOf,
                           selectable: false,
                         ),
+                        if (paymentDetails.isNotEmpty) ...[
+                          const SizedBox(height: 14),
+                          _PaymentDetailsPanel(payments: paymentDetails),
+                        ],
                         const SizedBox(height: 14),
                         if (compact) ...[
                           BottomActionButton(
@@ -410,6 +437,82 @@ class _AmountText extends StatelessWidget {
           color: Colors.black,
         ),
       ),
+    );
+  }
+}
+
+class _PaymentDetailsPanel extends StatelessWidget {
+  const _PaymentDetailsPanel({required this.payments});
+
+  final List<SalePaymentModel> payments;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Детали оплаты',
+            style: TextStyle(
+              fontSize: 14,
+              height: 1.2,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF334155),
+            ),
+          ),
+          const SizedBox(height: 5),
+          for (final payment in payments) ...[
+            _PaymentDetailRow(payment: payment),
+            if (payment != payments.last) const SizedBox(height: 6),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PaymentDetailRow extends StatelessWidget {
+  const _PaymentDetailRow({required this.payment});
+
+  final SalePaymentModel payment;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            payment.accountName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 15,
+              height: 1.25,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          money2(payment.amount),
+          textAlign: TextAlign.right,
+          style: const TextStyle(
+            fontSize: 15,
+            height: 1.25,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF0F172A),
+          ),
+        ),
+      ],
     );
   }
 }

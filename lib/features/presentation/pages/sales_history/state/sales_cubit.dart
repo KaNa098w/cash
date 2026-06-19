@@ -2,13 +2,16 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:leemon_app/core/models/refund_model.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
+import 'package:leemon_app/features/data/datasources/refunds_remote_datasource.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/state/sales_state.dart';
 
 class SalesHistoryCubit extends Cubit<SalesHistoryState> {
-  SalesHistoryCubit(this._sync) : super(SalesHistoryState.initial());
+  SalesHistoryCubit(this._sync, this._refundsRemote)
+      : super(SalesHistoryState.initial());
 
   final PosSyncService _sync;
+  final RefundsRemoteDatasource _refundsRemote;
 
   void _safeEmit(SalesHistoryState s) {
     if (isClosed) return;
@@ -61,7 +64,9 @@ class SalesHistoryCubit extends Cubit<SalesHistoryState> {
       final preferredId = preferred.localId.trim();
       final preferredNumber = preferred.number.trim();
       if (preferredId.isNotEmpty) idIndex[preferredId] = existingIndex;
-      if (preferredNumber.isNotEmpty) numberIndex[preferredNumber] = existingIndex;
+      if (preferredNumber.isNotEmpty) {
+        numberIndex[preferredNumber] = existingIndex;
+      }
     }
 
     merged.sort((a, b) => b.date.compareTo(a.date));
@@ -78,9 +83,8 @@ class SalesHistoryCubit extends Cubit<SalesHistoryState> {
       if (sale.refund != null) total += 4;
       total += sale.items.length;
       total += sale.items.where((item) => item.id.trim().isNotEmpty).length * 2;
-      total += sale.items
-          .where((item) => (item.refund_quantity ?? 0) > 0)
-          .length;
+      total +=
+          sale.items.where((item) => (item.refund_quantity ?? 0) > 0).length;
       return total;
     }
 
@@ -95,10 +99,23 @@ class SalesHistoryCubit extends Cubit<SalesHistoryState> {
   Future<void> loadFirst({String? key}) async {
     final history = await _sync.loadAllSalesHistory();
     final pending = await _sync.loadPendingSales();
+    final sessions = await _sync.loadSessions();
+    var refunds = await _sync.loadAllRefundsHistory();
+    final safeKey = key?.trim() ?? '';
+
+    if (safeKey.isNotEmpty) {
+      try {
+        refunds = await _refundsRemote.fetchAllRefunds(key: safeKey);
+      } catch (_) {
+        // Keep the locally loaded snapshot/pull refunds.
+      }
+    }
 
     _safeEmit(SalesHistoryState.initial().copyWith(
       loading: false,
       sales: _mergeWithPending(history, pending),
+      refunds: refunds,
+      sessions: sessions,
       page: 1,
       lastPage: 1,
       error: null,

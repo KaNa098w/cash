@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:intl/intl.dart';
 
 class SessionRemoteDataSource {
   final Dio _dio;
@@ -43,17 +44,31 @@ class SessionRemoteDataSource {
     required String userId,
     required String deviceId,
     required num closingCashAmount,
+    String? comment,
+    DateTime? closedAt,
   }) async {
     final safeKey = key.trim();
+    final cleanSessionId = sessionId.trim();
+    final isClientSession = cleanSessionId.startsWith('session_');
+    final cleanComment = (comment ?? '').trim();
+    final data = <String, dynamic>{
+      if (isClientSession) ...{
+        'client_session_id': cleanSessionId,
+        'closed_at': DateFormat('yyyy-MM-dd HH:mm:ss')
+            .format(closedAt ?? DateTime.now()),
+      } else
+        'session_id': cleanSessionId,
+      'user_id': userId,
+      'device_id': deviceId,
+      'closing_cash_amount': double.parse(
+        closingCashAmount.toStringAsFixed(2),
+      ),
+      if (cleanComment.isNotEmpty) 'comment': cleanComment,
+    };
 
     await _dio.put(
       '/organizations/pos/$safeKey/close-session',
-      data: {
-        'session_id': sessionId, // ✅ сохранённый
-        'user_id': userId,
-        'device_id': deviceId,
-        'closing_cash_amount': double.parse(closingCashAmount.toStringAsFixed(2)),
-      },
+      data: data,
     );
   }
 }

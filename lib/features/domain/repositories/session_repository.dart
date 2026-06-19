@@ -13,5 +13,6 @@ abstract class SessionRepository {
     required String sessionId,
     required String userId,
     required num closingCashAmount,
+    String? comment,
   });
 }

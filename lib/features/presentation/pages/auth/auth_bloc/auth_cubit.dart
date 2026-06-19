@@ -45,14 +45,16 @@ class AuthCubit extends Cubit<AuthState> {
 
   static AuthState _resolveInitialState(AuthTokenProvider tokenProvider) {
     final cached = tokenProvider.cachedProvision;
-    if (cached != null) return AuthProvisioned(cached);
+    if (cached != null) {
+      return AuthProvisioned(tokenProvider.provisionForOpenShift(cached));
+    }
     return const AuthInitial();
   }
 
   void bootstrapFromCache() {
     final cached = _tokenProvider.cachedProvision;
     if (cached == null) return;
-    emit(AuthProvisioned(cached));
+    emit(AuthProvisioned(_tokenProvider.provisionForOpenShift(cached)));
   }
 
   Future<void> lockToCashiers() async {
@@ -68,29 +70,8 @@ class AuthCubit extends Cubit<AuthState> {
     await _tokenProvider.clearActiveUserId();
 
     if (cached != null) {
-      final lockedUsers = shiftUserId.isEmpty
-          ? cached.users
-          : cached.users.where((user) => user.id == shiftUserId).toList();
-
       emit(
-        AuthProvisioned(
-          PosProvisionResponse(
-            id: cached.id,
-            name: cached.name,
-            number: cached.number,
-            key: cached.key,
-            accountId: cached.accountId,
-            storeId: cached.storeId,
-            storeName: cached.storeName,
-            allowCustomSalePrices: cached.allowCustomSalePrices,
-            allowBelowCostSalePrices: cached.allowBelowCostSalePrices,
-            allowRefundsWithoutSale: cached.allowRefundsWithoutSale,
-            organizationId: cached.organizationId,
-            users: lockedUsers.isNotEmpty ? lockedUsers : cached.users,
-            createdAt: cached.createdAt,
-            updatedAt: cached.updatedAt,
-          ),
-        ),
+        AuthProvisioned(_tokenProvider.provisionForOpenShift(cached)),
       );
     } else {
       emit(const AuthInitial());
@@ -120,7 +101,7 @@ class AuthCubit extends Cubit<AuthState> {
       );
 
       await _tokenProvider.setProvisioned(resp);
-      emit(AuthProvisioned(resp));
+      emit(AuthProvisioned(_tokenProvider.provisionForOpenShift(resp)));
     } on DioException catch (e) {
       emit(AuthFailure('Dio ${e.response?.statusCode}: ${e.response?.data}'));
       emit(const AuthInitial());
@@ -149,7 +130,7 @@ class AuthCubit extends Cubit<AuthState> {
         AuthPinStep(
           provision: provision,
           user: user,
-          errorText: 'Введите PIN',
+          errorText: 'Неверный PIN-код',
         ),
       );
       return;
@@ -170,7 +151,7 @@ class AuthCubit extends Cubit<AuthState> {
         AuthPinStep(
           provision: provision,
           user: user,
-          errorText: 'Неверный PIN',
+          errorText: 'Неверный PIN-код',
         ),
       );
       return;
@@ -181,6 +162,17 @@ class AuthCubit extends Cubit<AuthState> {
     await sl<PosSyncService>().ensureLocalSaleCounterSynced();
 
     if (_tokenProvider.hasShiftId) {
+      final shiftUserId = _tokenProvider.shiftUserId?.trim() ?? '';
+      if (shiftUserId.isNotEmpty && shiftUserId != user.id) {
+        emit(
+          AuthPinStep(
+            provision: provision,
+            user: user,
+            errorText: 'Этот кассир не открывал текущую смену',
+          ),
+        );
+        return;
+      }
       emit(AuthUnlocked(provision: provision, user: user));
       return;
     }
@@ -221,6 +213,7 @@ class AuthCubit extends Cubit<AuthState> {
       await _tokenProvider.setShiftId(sessionId);
       await _tokenProvider.setShiftUserId(user.id);
       await _tokenProvider.setActiveUserId(user.id);
+      await _tokenProvider.setActiveUserName(user.name);
 
       emit(const AuthSuccess());
     } on DioException catch (e) {
@@ -238,6 +231,7 @@ class AuthCubit extends Cubit<AuthState> {
 
   Future<void> closeSessionWithCash({
     required num closingCashAmount,
+    String? comment,
   }) async {
     try {
       final hasInternet = await _hasInternet();
@@ -286,6 +280,7 @@ class AuthCubit extends Cubit<AuthState> {
         sessionId: sessionId,
         userId: userId,
         closingCashAmount: closingCashAmount,
+        comment: comment,
       );
 
       if (closeResult == QueueSendResult.sent) {
@@ -370,7 +365,8 @@ class AuthCubit extends Cubit<AuthState> {
       );
 
       await _tokenProvider.clearShiftId();
-      await _tokenProvider.clearActiveUserId();
+      await _tokenProvider.setActiveUserId(userId);
+      await _tokenProvider.setActiveUserName(cashierName);
 
       emit(const AuthShiftClosed());
 
@@ -380,11 +376,13 @@ class AuthCubit extends Cubit<AuthState> {
           deviceId: deviceId,
         );
         await _tokenProvider.setProvisioned(refreshedProvision);
-        emit(AuthProvisioned(refreshedProvision));
+        emit(AuthProvisioned(
+          _tokenProvider.provisionForOpenShift(refreshedProvision),
+        ));
       } catch (_) {
         final cached = _tokenProvider.cachedProvision;
         if (cached != null) {
-          emit(AuthProvisioned(cached));
+          emit(AuthProvisioned(_tokenProvider.provisionForOpenShift(cached)));
         } else {
           emit(const AuthInitial());
         }
