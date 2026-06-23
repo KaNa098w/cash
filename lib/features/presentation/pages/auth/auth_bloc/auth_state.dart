@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:leemon_app/core/models/pos_pricing_plan_status.dart';
 import 'package:leemon_app/core/models/pos_provision_response.dart';
 
 abstract class AuthState extends Equatable {
@@ -71,6 +72,21 @@ class AuthOpeningSession extends AuthState {
 
   @override
   List<Object?> get props => [provision, user];
+}
+
+class AuthPricingBlocked extends AuthState {
+  final PosProvisionResponse provision;
+  final PosUser user;
+  final PosPricingPlanStatus status;
+
+  const AuthPricingBlocked({
+    required this.provision,
+    required this.user,
+    required this.status,
+  });
+
+  @override
+  List<Object?> get props => [provision, user, status];
 }
 
 /// ✅ Смена уже открыта, просто разблокировали кассира (без открытия смены)

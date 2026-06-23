@@ -32,6 +32,8 @@ class AuthCubit extends Cubit<AuthState> {
   final SessionRepository _sessionRepository;
   final AuthTokenProvider _tokenProvider;
 
+  static bool _sessionOpenInProgress = false;
+
   Future<bool> _hasInternet() async {
     if (kIsWeb) return true;
     try {
@@ -157,6 +159,12 @@ class AuthCubit extends Cubit<AuthState> {
       return;
     }
 
+    final pricingPlanAllowsAccess = await _ensurePricingPlanAllowsAccess(
+      provision: provision,
+      user: user,
+    );
+    if (!pricingPlanAllowsAccess) return;
+
     await _tokenProvider.setActiveUserId(user.id);
     await _tokenProvider.setActiveUserName(user.name);
     await sl<PosSyncService>().ensureLocalSaleCounterSynced();
@@ -183,10 +191,50 @@ class AuthCubit extends Cubit<AuthState> {
     );
   }
 
+  Future<bool> _ensurePricingPlanAllowsAccess({
+    required PosProvisionResponse provision,
+    required PosUser user,
+  }) async {
+    final key = _tokenProvider.posKey?.trim() ?? '';
+    var status = _tokenProvider.pricingPlanStatus;
+
+    if (key.isNotEmpty) {
+      try {
+        status = await sl<PosSyncService>().loadPricingPlan(key: key);
+        await _tokenProvider.setPricingPlanStatus(status);
+      } catch (error) {
+        debugPrint('[AuthCubit] pricing-plan check failed: $error');
+      }
+    }
+
+    if (status == null || !status.isAccessBlocked()) return true;
+
+    emit(
+      AuthPricingBlocked(
+        provision: provision,
+        user: user,
+        status: status,
+      ),
+    );
+    return false;
+  }
+
   Future<void> openSessionWithCash({
     required PosProvisionResponse provision,
     required PosUser user,
   }) async {
+    if (_sessionOpenInProgress) {
+      debugPrint(
+        '[AuthCubit] openSession skipped: another open-session request is already in progress',
+      );
+      return;
+    }
+
+    if (await _unlockIfShiftAlreadyOpen(provision: provision, user: user)) {
+      return;
+    }
+
+    _sessionOpenInProgress = true;
     try {
       emit(
         AuthOpeningSession(
@@ -200,6 +248,10 @@ class AuthCubit extends Cubit<AuthState> {
 
       final deviceId = _tokenProvider.deviceId?.trim() ?? '';
       if (deviceId.isEmpty) throw Exception('deviceId отсутствует');
+
+      if (await _unlockIfShiftAlreadyOpen(provision: provision, user: user)) {
+        return;
+      }
 
       final sessionId = await _sessionRepository.openSession(
         key: key,
@@ -226,7 +278,41 @@ class AuthCubit extends Cubit<AuthState> {
     } catch (e) {
       emit(AuthFailure('Не удалось открыть смену: $e'));
       emit(AuthPinStep(provision: provision, user: user));
+    } finally {
+      _sessionOpenInProgress = false;
     }
+  }
+
+  Future<bool> _unlockIfShiftAlreadyOpen({
+    required PosProvisionResponse provision,
+    required PosUser user,
+  }) async {
+    final shiftId = _tokenProvider.shiftId?.trim() ?? '';
+    if (shiftId.isEmpty) return false;
+
+    final shiftUserId = _tokenProvider.shiftUserId?.trim() ?? '';
+    if (shiftUserId.isNotEmpty && shiftUserId != user.id) {
+      emit(
+        AuthPinStep(
+          provision: provision,
+          user: user,
+          errorText: 'Этот кассир не открывал текущую смену',
+        ),
+      );
+      return true;
+    }
+
+    if (shiftUserId.isEmpty) {
+      await _tokenProvider.setShiftUserId(user.id);
+    }
+    await _tokenProvider.setActiveUserId(user.id);
+    await _tokenProvider.setActiveUserName(user.name);
+
+    debugPrint(
+      '[AuthCubit] openSession skipped: active shift already exists shiftId=$shiftId userId=${user.id}',
+    );
+    emit(AuthUnlocked(provision: provision, user: user));
+    return true;
   }
 
   Future<void> closeSessionWithCash({
@@ -269,6 +355,23 @@ class AuthCubit extends Cubit<AuthState> {
       emit(
         AuthClosingSession(
           closingCashAmount: closingCashAmount,
+          title: 'Синхронизируем очередь',
+          message: 'Отправляем продажи, возвраты и операции кассы.',
+        ),
+      );
+
+      final sync = sl<PosSyncService>();
+      await sync.pushPending(key: key, deviceId: deviceId, limit: 1000);
+      final queueItems = await sync.loadQueueItems();
+      if (queueItems.isNotEmpty) {
+        throw Exception(
+          'В очереди осталось ${queueItems.length} операций. Выполните синхронизацию и попробуйте снова.',
+        );
+      }
+
+      emit(
+        AuthClosingSession(
+          closingCashAmount: closingCashAmount,
           title: 'Закрываем смену',
           message: 'Отправляем данные и фиксируем итог по кассе.',
         ),
@@ -291,7 +394,6 @@ class AuthCubit extends Cubit<AuthState> {
             message: 'Собираем продажи смены и считаем итоговые суммы.',
           ),
         );
-        final sync = sl<PosSyncService>();
         ShiftReportData? report;
         try {
           report = await sync.loadShiftReportFromBackend(
@@ -367,6 +469,7 @@ class AuthCubit extends Cubit<AuthState> {
       await _tokenProvider.clearShiftId();
       await _tokenProvider.setActiveUserId(userId);
       await _tokenProvider.setActiveUserName(cashierName);
+      sync.stopBackgroundLoops();
 
       emit(const AuthShiftClosed());
 
@@ -393,6 +496,7 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> resetAll() async {
+    sl<PosSyncService>().stopBackgroundLoops();
     await _tokenProvider.clearPosKey();
     emit(const AuthInitial());
   }

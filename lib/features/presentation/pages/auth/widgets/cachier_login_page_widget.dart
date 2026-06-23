@@ -731,7 +731,7 @@ class _LoginCard extends StatelessWidget {
             height: 42,
             child: _BlueFieldShell(
               child: DropdownButtonFormField<PosUser>(
-                initialValue: safeSelected,
+                value: safeSelected,
                 isExpanded: true,
                 items: safeUsers
                     .map(

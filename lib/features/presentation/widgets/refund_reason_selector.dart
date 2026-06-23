@@ -58,7 +58,7 @@ class RefundReasonSelector extends StatelessWidget {
         refundReasonOptions.any((o) => o.code == selected) ? selected : null;
 
     return DropdownButtonFormField<String>(
-      initialValue: selectedValue,
+      value: selectedValue,
       isExpanded: true,
       borderRadius: BorderRadius.circular(12),
       decoration: InputDecoration(

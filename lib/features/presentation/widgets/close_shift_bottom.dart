@@ -56,8 +56,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
     final deviceId = auth.deviceId?.trim() ?? '';
     final sync = GetIt.I<PosSyncService>();
     if (key.isEmpty) {
-      throw Exception(
-          'posKey отсутствует: невозможно загрузить итоги с бэка');
+      throw Exception('posKey отсутствует: невозможно загрузить итоги с бэка');
     }
     if (deviceId.isEmpty) {
       throw Exception(
@@ -94,8 +93,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
   Future<List<LocalAccount>> loadBankAccounts() async {
     final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
     if (key.isEmpty) {
-      throw Exception(
-          'posKey отсутствует: невозможно загрузить счета с бэка');
+      throw Exception('posKey отсутствует: невозможно загрузить счета с бэка');
     }
     final accounts = await GetIt.I<PosSyncService>().loadAccountsFromBackend(
       key: key,
@@ -236,9 +234,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
     final amount = _parseAmount(_ctrl.text);
     if (amount == null || amount < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                'Введите корректную сумму')),
+        const SnackBar(content: Text('Введите корректную сумму')),
       );
       return;
     }
@@ -250,8 +246,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-              'Не удалось загрузить итоги смены с бэка: $error'),
+          content: Text('Не удалось загрузить итоги смены с бэка: $error'),
         ),
       );
       return;
@@ -333,10 +328,8 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
             expenseTotal: report.expenseTotal,
             expectedCashAmount: report.expectedCashAmount,
             reportTitle: 'Z-ОТЧЁТ',
-            reportSubtitle:
-                'Данные для закрытия смены',
-            footerText:
-                'Подтверждение закрытия',
+            reportSubtitle: 'Данные для закрытия смены',
+            footerText: 'Подтверждение закрытия',
             items: report.items
                 .map(
                   (item) => ReceiptPdfItem(
@@ -363,9 +356,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
     final amount = _parseAmount(_ctrl.text);
     if (amount == null || amount < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                'Введите корректную сумму')),
+        const SnackBar(content: Text('Введите корректную сумму')),
       );
       return;
     }
@@ -437,8 +428,11 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
               children: [
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final isPhone = constraints.maxWidth < 920;
-                    final horizontalPadding = isPhone ? 18.0 : 32.0;
+                    final isStackedLayout = constraints.maxWidth < 700;
+                    final isCompactLayout = constraints.maxWidth < 920;
+                    final horizontalPadding = isCompactLayout ? 18.0 : 32.0;
+                    final contentGap = isCompactLayout ? 18.0 : 46.0;
+                    final titleBottomGap = isCompactLayout ? 40.0 : 72.0;
                     return Container(
                       width: double.infinity,
                       margin: EdgeInsets.zero,
@@ -485,9 +479,9 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 72),
+                                  SizedBox(height: titleBottomGap),
                                   Expanded(
-                                    child: isPhone
+                                    child: isStackedLayout
                                         ? Column(
                                             children: [
                                               Expanded(
@@ -510,15 +504,18 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                                                 CrossAxisAlignment.start,
                                             children: [
                                               Expanded(
-                                                flex: 12,
+                                                flex: isCompactLayout ? 11 : 12,
                                                 child:
                                                     _buildLeftBlock(hasShift),
                                               ),
-                                              const SizedBox(width: 46),
+                                              SizedBox(width: contentGap),
                                               Expanded(
-                                                flex: 5,
+                                                flex: isCompactLayout ? 4 : 5,
                                                 child: Transform.translate(
-                                                  offset: const Offset(0, -54),
+                                                  offset: Offset(
+                                                    0,
+                                                    isCompactLayout ? -30 : -54,
+                                                  ),
                                                   child: _buildRightBlock(
                                                     isClosingFlow ||
                                                         _printingReport,
@@ -545,7 +542,8 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                               children: [
                                 const Spacer(),
                                 SizedBox(
-                                  width: isPhone ? double.infinity : 164,
+                                  width:
+                                      isStackedLayout ? double.infinity : 164,
                                   height: 48,
                                   child: ElevatedButton(
                                     onPressed: isClosingFlow || _printingReport
@@ -593,334 +591,347 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                             duration: const Duration(milliseconds: 180),
                             curve: Curves.easeOutCubic,
                             padding: EdgeInsets.only(
-                              bottom:
-                                  _shortageCommentKeyboardOpen ? 340 : 0,
+                              bottom: _shortageCommentKeyboardOpen ? 340 : 0,
                             ),
                             child: FutureBuilder<ShiftClosureSummaryData?>(
                               future: _summaryFuture,
                               builder: (context, snapshot) {
-                              final summary = snapshot.data;
-                              final enteredAmount =
-                                  _parseAmount(_ctrl.text) ?? 0;
-                              final hasShortage = summary != null &&
-                                  enteredAmount < summary.expectedCashAmount;
-                              final difference = summary == null
-                                  ? 0
-                                  : enteredAmount -
-                                      summary.expectedCashAmount;
-                              final screenWidth =
-                                  MediaQuery.of(context).size.width;
-                              final dialogWidth =
-                                  screenWidth < 920 ? screenWidth - 24 : 620.0;
+                                final summary = snapshot.data;
+                                final enteredAmount =
+                                    _parseAmount(_ctrl.text) ?? 0;
+                                final hasShortage = summary != null &&
+                                    enteredAmount < summary.expectedCashAmount;
+                                final difference = summary == null
+                                    ? 0
+                                    : enteredAmount -
+                                        summary.expectedCashAmount;
+                                final screenWidth =
+                                    MediaQuery.of(context).size.width;
+                                final dialogWidth = screenWidth < 920
+                                    ? screenWidth - 24
+                                    : 620.0;
                                 return Container(
-                                width: dialogWidth,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(14),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color:
-                                          Colors.black.withValues(alpha: 0.22),
-                                      blurRadius: 18,
-                                      offset: const Offset(0, 8),
-                                    ),
-                                  ],
-                                ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      height: 64,
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFF3B424C),
-                                        borderRadius: BorderRadius.only(
-                                          topLeft: Radius.circular(14),
-                                          topRight: Radius.circular(14),
+                                  width: dialogWidth,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(14),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black
+                                            .withValues(alpha: 0.22),
+                                        blurRadius: 18,
+                                        offset: const Offset(0, 8),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        height: 64,
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFF3B424C),
+                                          borderRadius: BorderRadius.only(
+                                            topLeft: Radius.circular(14),
+                                            topRight: Radius.circular(14),
+                                          ),
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: const Text(
+                                          'Данные для закрытия',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.white,
+                                          ),
                                         ),
                                       ),
-                                      alignment: Alignment.center,
-                                      child: const Text(
-                                        'Данные для закрытия',
-                                        style: TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.white,
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          22,
+                                          20,
+                                          22,
+                                          18,
                                         ),
-                                      ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        22,
-                                        20,
-                                        22,
-                                        18,
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          _ModalRow(
-                                            label:
-                                                'Фактическая сумма',
-                                            value: money(enteredAmount),
-                                            strong: true,
-                                          ),
-                                          const SizedBox(height: 10),
-                                          _ModalRow(
-                                            label:
-                                                'Ожидается в кассе',
-                                            value: summary == null
-                                                ? '-'
-                                                : money(
-                                                    summary.expectedCashAmount),
-                                          ),
-                                          const SizedBox(height: 10),
-                                          _ModalRow(
-                                            label:
-                                                'Продажи за смену',
-                                            value: summary == null
-                                                ? '-'
-                                                : money(
-                                                    summary.totalSalesAmount),
-                                          ),
-                                          const SizedBox(height: 10),
-                                          _ModalRow(
-                                            label: 'Взнос',
-                                            value: summary == null
-                                                ? '-'
-                                                : money(summary.incomeTotal),
-                                          ),
-                                          const SizedBox(height: 10),
-                                          _ModalRow(
-                                            label: 'Расход',
-                                            value: summary == null
-                                                ? '-'
-                                                : money(summary.expenseTotal),
-                                          ),
-                                          if (summary != null) ...[
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            _ModalRow(
+                                              label: 'Фактическая сумма',
+                                              value: money(enteredAmount),
+                                              strong: true,
+                                            ),
                                             const SizedBox(height: 10),
                                             _ModalRow(
-                                              label:
-                                                  'Разница',
-                                              value: money(difference),
-                                              valueColor: difference < 0
-                                                  ? const Color(0xFFD15850)
-                                                  : difference > 0
-                                                      ? const Color(0xFF047857)
-                                                      : const Color(0xFF111827),
+                                              label: 'Ожидается в кассе',
+                                              value: summary == null
+                                                  ? '-'
+                                                  : money(summary
+                                                      .expectedCashAmount),
                                             ),
-                                          ],
-                                          if (hasShortage) ...[
-                                            const SizedBox(height: 14),
-                                            TextField(
-                                              controller: _shortageCommentCtrl,
-                                              focusNode:
-                                                  _shortageCommentFocusNode,
-                                              autofocus: true,
-                                              minLines: 2,
-                                              maxLines: 4,
-                                              maxLength: 1000,
-                                              textInputAction:
-                                                  TextInputAction.newline,
-                                              onChanged: (_) {
-                                                if (_shortageCommentError ==
-                                                    null) {
-                                                  return;
-                                                }
-                                                setState(() =>
-                                                    _shortageCommentError =
-                                                        null);
-                                              },
-                                              style: const TextStyle(
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.w700,
-                                                color: Color(0xFF111827),
+                                            const SizedBox(height: 10),
+                                            _ModalRow(
+                                              label: 'Продажи за смену',
+                                              value: summary == null
+                                                  ? '-'
+                                                  : money(
+                                                      summary.totalSalesAmount),
+                                            ),
+                                            const SizedBox(height: 10),
+                                            _ModalRow(
+                                              label: 'Взнос',
+                                              value: summary == null
+                                                  ? '-'
+                                                  : money(summary.incomeTotal),
+                                            ),
+                                            const SizedBox(height: 10),
+                                            _ModalRow(
+                                              label: 'Расход',
+                                              value: summary == null
+                                                  ? '-'
+                                                  : money(summary.expenseTotal),
+                                            ),
+                                            if (summary != null) ...[
+                                              const SizedBox(height: 10),
+                                              _ModalRow(
+                                                label: 'Разница',
+                                                value: money(difference),
+                                                valueColor: difference < 0
+                                                    ? const Color(0xFFD15850)
+                                                    : difference > 0
+                                                        ? const Color(
+                                                            0xFF047857)
+                                                        : const Color(
+                                                            0xFF111827),
                                               ),
-                                              decoration: InputDecoration(
-                                                labelText: 'Комментарий',
-                                                labelStyle: const TextStyle(
-                                                  color: Color(0xFF4B5563),
+                                            ],
+                                            if (hasShortage) ...[
+                                              const SizedBox(height: 14),
+                                              TextField(
+                                                controller:
+                                                    _shortageCommentCtrl,
+                                                focusNode:
+                                                    _shortageCommentFocusNode,
+                                                autofocus: true,
+                                                minLines: 2,
+                                                maxLines: 4,
+                                                maxLength: 1000,
+                                                textInputAction:
+                                                    TextInputAction.newline,
+                                                onChanged: (_) {
+                                                  if (_shortageCommentError ==
+                                                      null) {
+                                                    return;
+                                                  }
+                                                  setState(() =>
+                                                      _shortageCommentError =
+                                                          null);
+                                                },
+                                                style: const TextStyle(
+                                                  fontSize: 15,
                                                   fontWeight: FontWeight.w700,
+                                                  color: Color(0xFF111827),
                                                 ),
-                                                floatingLabelStyle:
-                                                    const TextStyle(
-                                                  color: Color(0xFF4B5563),
-                                                  fontWeight: FontWeight.w800,
-                                                ),
-                                                hintText:
-                                                    'Напишите причину недостача',
-                                                errorText:
-                                                    _shortageCommentError,
-                                                suffixIcon: IconButton(
-                                                  tooltip: 'Клавиатура',
-                                                  onPressed:
-                                                      _showShortageCommentKeyboard,
-                                                  icon: const Icon(
-                                                    Icons
-                                                        .keyboard_alt_outlined,
-                                                    color: Color(0xFF111827),
+                                                decoration: InputDecoration(
+                                                  labelText: 'Комментарий',
+                                                  labelStyle: const TextStyle(
+                                                    color: Color(0xFF4B5563),
+                                                    fontWeight: FontWeight.w700,
                                                   ),
-                                                ),
-                                                filled: true,
-                                                fillColor:
-                                                    const Color(0xFFF7F7F8),
-                                                counterStyle: const TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                                border: OutlineInputBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(10),
-                                                  borderSide:
-                                                      const BorderSide(
-                                                    color: Color(0xFFE0E0E0),
-                                                  ),
-                                                ),
-                                                enabledBorder:
-                                                    OutlineInputBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(10),
-                                                  borderSide:
-                                                      const BorderSide(
-                                                    color: Color(0xFFE0E0E0),
-                                                  ),
-                                                ),
-                                                focusedBorder:
-                                                    OutlineInputBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(10),
-                                                  borderSide:
-                                                      const BorderSide(
-                                                    color: Color(0xFF33CC99),
-                                                    width: 2,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        14,
-                                        0,
-                                        14,
-                                        14,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: SizedBox(
-                                              height: 54,
-                                              child: ElevatedButton(
-                                                onPressed: () => setState(
-                                                  () {
-                                                    _hideShortageCommentKeyboard();
-                                                    _showConfirmDialog = false;
-                                                  },
-                                                ),
-                                                style: ElevatedButton.styleFrom(
-                                                  elevation: 0,
-                                                  backgroundColor:
-                                                      const Color(0xFFD95C55),
-                                                  foregroundColor: Colors.white,
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8),
-                                                  ),
-                                                ),
-                                                child: const Text(
-                                                  'ОТМЕНА',
-                                                  style: TextStyle(
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w900,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: SizedBox(
-                                              height: 54,
-                                              child: ElevatedButton(
-                                                onPressed: _printingReport
-                                                    ? null
-                                                    : _printReport,
-                                                style: ElevatedButton.styleFrom(
-                                                  elevation: 0,
-                                                  backgroundColor:
-                                                      const Color(0xFFD7D7D7),
-                                                  foregroundColor:
-                                                      const Color(0xFF111827),
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8),
-                                                  ),
-                                                ),
-                                                child: _printingReport
-                                                    ? const SizedBox(
-                                                        width: 18,
-                                                        height: 18,
-                                                        child:
-                                                            CircularProgressIndicator(
-                                                          strokeWidth: 2,
-                                                          color:
-                                                              Color(0xFF111827),
-                                                        ),
-                                                      )
-                                                    : const Text(
-                                                        'Распечатать\nZ-отчет',
-                                                        textAlign:
-                                                            TextAlign.center,
-                                                        style: TextStyle(
-                                                          fontSize: 15,
-                                                          fontWeight:
-                                                              FontWeight.w800,
-                                                          height: 1.1,
-                                                        ),
-                                                      ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            flex: 2,
-                                            child: SizedBox(
-                                              height: 54,
-                                              child: ElevatedButton(
-                                                onPressed: _submitting
-                                                    ? null
-                                                    : _submit,
-                                                style: ElevatedButton.styleFrom(
-                                                  elevation: 0,
-                                                  backgroundColor:
-                                                      const Color(0xFF33CC99),
-                                                  foregroundColor: Colors.white,
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8),
-                                                  ),
-                                                ),
-                                                child: const Text(
-                                                  'СДАТЬ СМЕНУ',
-                                                  style: TextStyle(
-                                                    fontSize: 14,
+                                                  floatingLabelStyle:
+                                                      const TextStyle(
+                                                    color: Color(0xFF4B5563),
                                                     fontWeight: FontWeight.w800,
                                                   ),
+                                                  hintText:
+                                                      'Напишите причину недостача',
+                                                  errorText:
+                                                      _shortageCommentError,
+                                                  suffixIcon: IconButton(
+                                                    tooltip: 'Клавиатура',
+                                                    onPressed:
+                                                        _showShortageCommentKeyboard,
+                                                    icon: const Icon(
+                                                      Icons
+                                                          .keyboard_alt_outlined,
+                                                      color: Color(0xFF111827),
+                                                    ),
+                                                  ),
+                                                  filled: true,
+                                                  fillColor:
+                                                      const Color(0xFFF7F7F8),
+                                                  counterStyle: const TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                  border: OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            10),
+                                                    borderSide:
+                                                        const BorderSide(
+                                                      color: Color(0xFFE0E0E0),
+                                                    ),
+                                                  ),
+                                                  enabledBorder:
+                                                      OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            10),
+                                                    borderSide:
+                                                        const BorderSide(
+                                                      color: Color(0xFFE0E0E0),
+                                                    ),
+                                                  ),
+                                                  focusedBorder:
+                                                      OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            10),
+                                                    borderSide:
+                                                        const BorderSide(
+                                                      color: Color(0xFF33CC99),
+                                                      width: 2,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          14,
+                                          0,
+                                          14,
+                                          14,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: SizedBox(
+                                                height: 54,
+                                                child: ElevatedButton(
+                                                  onPressed: () => setState(
+                                                    () {
+                                                      _hideShortageCommentKeyboard();
+                                                      _showConfirmDialog =
+                                                          false;
+                                                    },
+                                                  ),
+                                                  style:
+                                                      ElevatedButton.styleFrom(
+                                                    elevation: 0,
+                                                    backgroundColor:
+                                                        const Color(0xFFD95C55),
+                                                    foregroundColor:
+                                                        Colors.white,
+                                                    shape:
+                                                        RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              8),
+                                                    ),
+                                                  ),
+                                                  child: const Text(
+                                                    'ОТМЕНА',
+                                                    style: TextStyle(
+                                                      fontSize: 14,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                        ],
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: SizedBox(
+                                                height: 54,
+                                                child: ElevatedButton(
+                                                  onPressed: _printingReport
+                                                      ? null
+                                                      : _printReport,
+                                                  style:
+                                                      ElevatedButton.styleFrom(
+                                                    elevation: 0,
+                                                    backgroundColor:
+                                                        const Color(0xFFD7D7D7),
+                                                    foregroundColor:
+                                                        const Color(0xFF111827),
+                                                    shape:
+                                                        RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              8),
+                                                    ),
+                                                  ),
+                                                  child: _printingReport
+                                                      ? const SizedBox(
+                                                          width: 18,
+                                                          height: 18,
+                                                          child:
+                                                              CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                            color: Color(
+                                                                0xFF111827),
+                                                          ),
+                                                        )
+                                                      : const Text(
+                                                          'Распечатать\nZ-отчет',
+                                                          textAlign:
+                                                              TextAlign.center,
+                                                          style: TextStyle(
+                                                            fontSize: 15,
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                            height: 1.1,
+                                                          ),
+                                                        ),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              flex: 2,
+                                              child: SizedBox(
+                                                height: 54,
+                                                child: ElevatedButton(
+                                                  onPressed: _submitting
+                                                      ? null
+                                                      : _submit,
+                                                  style:
+                                                      ElevatedButton.styleFrom(
+                                                    elevation: 0,
+                                                    backgroundColor:
+                                                        const Color(0xFF33CC99),
+                                                    foregroundColor:
+                                                        Colors.white,
+                                                    shape:
+                                                        RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              8),
+                                                    ),
+                                                  ),
+                                                  child: const Text(
+                                                    'СДАТЬ СМЕНУ',
+                                                    style: TextStyle(
+                                                      fontSize: 14,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              );
+                                    ],
+                                  ),
+                                );
                               },
                             ),
                           ),
@@ -1066,7 +1077,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
         return SingleChildScrollView(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final compact = constraints.maxWidth < 650;
+              final compact = constraints.maxWidth < 430;
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1079,10 +1090,8 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                         _InfoTile(
                           minHeight: 98,
                           lines: [
-                            _InfoLine(
-                                'Начало', _formatDate(now)),
-                            _InfoLine(
-                                'Время', _formatTime(now)),
+                            _InfoLine('Начало', _formatDate(now)),
+                            _InfoLine('Время', _formatTime(now)),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -1110,8 +1119,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                         _InfoTile(
                           minHeight: 68,
                           lines: [
-                            _InfoLine('Касса',
-                                posName.isEmpty ? '-' : posName),
+                            _InfoLine('Касса', posName.isEmpty ? '-' : posName),
                           ],
                         ),
                       ],
@@ -1125,10 +1133,8 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                           child: _InfoTile(
                             minHeight: 98,
                             lines: [
-                              _InfoLine('Начало',
-                                  _formatDate(now)),
-                              _InfoLine(
-                                  'Время', _formatTime(now)),
+                              _InfoLine('Начало', _formatDate(now)),
+                              _InfoLine('Время', _formatTime(now)),
                             ],
                           ),
                         ),
@@ -1191,8 +1197,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                   const SizedBox(height: 12),
                   _SalesSummaryTiles(summary: summary),
                   const SizedBox(height: 34),
-                  const _SectionTitle(
-                      'Взнос и вынос'),
+                  const _SectionTitle('Взнос и вынос'),
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -1201,8 +1206,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                         child: _InfoTile(
                           background: const Color(0xFFDDEFC4),
                           lines: [
-                            _InfoLine('Взнос',
-                                money(summary.incomeTotal)),
+                            _InfoLine('Взнос', money(summary.incomeTotal)),
                           ],
                         ),
                       ),
@@ -1212,8 +1216,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                         child: _InfoTile(
                           background: const Color(0xFFEECFC9),
                           lines: [
-                            _InfoLine('Расход',
-                                money(summary.expenseTotal)),
+                            _InfoLine('Расход', money(summary.expenseTotal)),
                           ],
                         ),
                       ),
@@ -1222,8 +1225,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                         flex: 6,
                         child: _InfoTile(
                           lines: [
-                            _InfoLine('Возврат',
-                                money(summary.refundsTotal)),
+                            _InfoLine('Возврат', money(summary.refundsTotal)),
                           ],
                         ),
                       ),
@@ -1250,7 +1252,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
             opacity: isBusy ? 0.55 : 1,
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final panelWidth = constraints.maxWidth.clamp(178.0, 220.0);
+                final panelWidth = constraints.maxWidth.clamp(148.0, 220.0);
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -1818,7 +1820,7 @@ class _SalesSummaryTiles extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth >= 650) {
+        if (constraints.maxWidth >= 430) {
           return Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1858,7 +1860,7 @@ class _SalesSummaryTiles extends StatelessWidget {
           debtTile,
           ...cashlessTiles,
         ];
-        final columnCount = constraints.maxWidth < 650 ? 2 : 3;
+        final columnCount = constraints.maxWidth < 430 ? 2 : 3;
         final totalGap = 8 * (columnCount - 1);
         final tileWidth =
             ((constraints.maxWidth - totalGap) / columnCount).floorToDouble();

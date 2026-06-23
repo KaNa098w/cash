@@ -43,6 +43,17 @@ class PosSyncRemoteDataSource {
     return _nestedMap(body['data']) ?? body;
   }
 
+  Future<Map<String, dynamic>> fetchPricingPlan({
+    required String key,
+  }) async {
+    final response = await _dio.get(
+      '/organizations/pos/$key/pricing-plan',
+      options: _silentOptions,
+    );
+    final body = _asMap(response.data);
+    return _nestedMap(body['data']) ?? body;
+  }
+
   Future<Map<String, dynamic>> fetchXReport({
     required String key,
     required String sessionId,

@@ -1425,7 +1425,7 @@ class _BankAccountSelect extends StatelessWidget {
             )
           else
             DropdownButtonFormField<String>(
-              initialValue: value,
+              value: value,
               isExpanded: true,
               borderRadius: BorderRadius.circular(14),
               decoration: InputDecoration(

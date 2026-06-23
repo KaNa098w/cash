@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/core/models/pos_pricing_plan_status.dart';
 import 'package:leemon_app/core/models/pos_provision_response.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
@@ -202,6 +203,14 @@ class _CashiersPageState extends State<CashiersPage> {
             );
           }
 
+          if (authState is AuthPricingBlocked) {
+            return _CashierPricingBlockedView(
+              status: authState.status,
+              onBack: () =>
+                  context.read<AuthCubit>().backToUsers(authState.provision),
+            );
+          }
+
           final hasShift = provider.hasShiftId;
           final knownShiftUserId =
               (provider.shiftUserId?.trim().isNotEmpty == true)
@@ -257,5 +266,147 @@ class _CashiersPageState extends State<CashiersPage> {
       if (user.id == activeUserId) return user;
     }
     return null;
+  }
+}
+
+class _CashierPricingBlockedView extends StatelessWidget {
+  const _CashierPricingBlockedView({
+    required this.status,
+    required this.onBack,
+  });
+
+  final PosPricingPlanStatus status;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final planName = (status.pricingPlan?.name ?? '').toString().trim();
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Card(
+          elevation: 0,
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFECEC),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: const Icon(
+                    Icons.lock_clock_rounded,
+                    color: Color(0xFFD45F4F),
+                    size: 30,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Доступ к кассе заблокирован',
+                  style: theme.textTheme.headlineSmall!.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  planName.isEmpty
+                      ? 'Тариф не активен или срок оплаты закончился. Оплатите тариф, чтобы продолжить работу.'
+                      : 'Тариф "$planName" не активен или срок оплаты закончился. Оплатите тариф, чтобы продолжить работу.',
+                  style: theme.textTheme.bodyMedium!.copyWith(
+                    color: const Color(0xFF4B5563),
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF9FAFB),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                  ),
+                  child: const _CashierPricingBlockedInfoRow(
+                    label: 'Связаться с менеджером',
+                    value: '+7 775 205 11 00',
+                  ),
+                ),
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: FilledButton(
+                    onPressed: onBack,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFD45F4F),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      'Назад к кассирам',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CashierPricingBlockedInfoRow extends StatelessWidget {
+  const _CashierPricingBlockedInfoRow({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              color: Color(0xFF111827),
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

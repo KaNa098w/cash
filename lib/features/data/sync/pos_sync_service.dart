@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:leemon_app/core/service/app_build_info.dart';
+import 'package:leemon_app/core/models/pos_pricing_plan_status.dart';
 import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
 import 'package:uuid/uuid.dart';
 
@@ -28,6 +29,9 @@ class PosSyncService {
   Future<void>? _bootstrapFuture;
   Future<void>? _pullFuture;
   Future<void>? _pushFuture;
+  Future<QueueOperationResult>? _openSessionFuture;
+  bool _backgroundLoopsActive = false;
+  bool _syncCancelRequested = false;
 
   final _syncedController = StreamController<int>.broadcast();
   final _productsChangedController = StreamController<void>.broadcast();
@@ -69,6 +73,8 @@ class PosSyncService {
     required String key,
     required String deviceId,
   }) {
+    _backgroundLoopsActive = true;
+    _syncCancelRequested = false;
     _pullTimer ??= Timer.periodic(
       const Duration(seconds: 20),
       (_) => _runBackgroundPull(key: key, deviceId: deviceId),
@@ -80,10 +86,16 @@ class PosSyncService {
   }
 
   void stopBackgroundLoops() {
+    _backgroundLoopsActive = false;
     _pullTimer?.cancel();
     _pushTimer?.cancel();
     _pullTimer = null;
     _pushTimer = null;
+  }
+
+  void requestCancelSync() {
+    _syncCancelRequested = true;
+    stopBackgroundLoops();
   }
 
   Future<void> clearAllLocalData() {
@@ -160,6 +172,13 @@ class PosSyncService {
     final posInfo = await _remote.fetchPosInfo(key: key);
     await _localStore.upsertPosInfo(posInfo);
     return posInfo;
+  }
+
+  Future<PosPricingPlanStatus> loadPricingPlan({
+    required String key,
+  }) async {
+    final data = await _remote.fetchPricingPlan(key: key);
+    return PosPricingPlanStatus.fromDataJson(data);
   }
 
   Future<void> upsertCustomersRaw(List<Map<String, dynamic>> customers) async {
@@ -315,6 +334,8 @@ class PosSyncService {
     required String deviceId,
     void Function(SyncProgress progress)? onProgress,
   }) {
+    if (_bootstrapFuture != null) return _bootstrapFuture!;
+    _syncCancelRequested = false;
     return _bootstrapFuture ??= _runBootstrap(
       key: key,
       deviceId: deviceId,
@@ -329,11 +350,13 @@ class PosSyncService {
   }) async {
     await initialize();
     await _localStore.ensureSyncState(posKey: key, deviceId: deviceId);
+    _throwIfSyncCancelled();
 
     // Step 1 — Request snapshot
     onProgress?.call(
         const SyncProgress(progress: 0.05, stage: 'Запрашиваем снапшот...'));
     var snapshot = await _remote.requestSnapshot(key: key);
+    _throwIfSyncCancelled();
 
     // Step 2 — Poll until ready (retry POST if failed)
     var retryCount = 0;
@@ -351,9 +374,11 @@ class PosSyncService {
         continue;
       }
       await Future.delayed(const Duration(seconds: 3));
+      _throwIfSyncCancelled();
       onProgress?.call(const SyncProgress(
           progress: 0.08, stage: 'Ожидаем подготовку снапшота...'));
       snapshot = await _remote.pollSnapshotStatus(key: key);
+      _throwIfSyncCancelled();
     }
 
     final snapshotUrl = snapshot.url;
@@ -365,6 +390,7 @@ class PosSyncService {
     onProgress?.call(
         const SyncProgress(progress: 0.15, stage: 'Скачиваем снапшот...'));
     final snapshotFile = await _remote.downloadSnapshotFile(snapshotUrl);
+    _throwIfSyncCancelled();
     _diagnostics?.recordSnapshotFile(snapshotFile);
     final snapshotCursor = snapshot.cursor > 0
         ? snapshot.cursor
@@ -394,24 +420,28 @@ class PosSyncService {
       ),
     );
     final accounts = await _remote.fetchAllAccounts(key: key);
+    _throwIfSyncCancelled();
 
     onProgress?.call(SyncProgress(
         progress: 0.45,
         stage: 'Загружаем типы расходов...',
         detail: '${accounts.length} счетов'));
     final expenseTypes = await _remote.fetchAllExpenseTypes(key: key);
+    _throwIfSyncCancelled();
 
     onProgress?.call(SyncProgress(
         progress: 0.58,
         stage: 'Загружаем покупателей...',
         detail: '${expenseTypes.length} типов расходов'));
     final customers = await _remote.fetchAllCustomers(key: key);
+    _throwIfSyncCancelled();
 
     onProgress?.call(SyncProgress(
         progress: 0.68,
         stage: 'Подключаемся к серверу...',
         detail: '${customers.length} покупателей'));
     final posInfo = await _remote.fetchPosInfo(key: key);
+    _throwIfSyncCancelled();
 
     onProgress?.call(
         const SyncProgress(progress: 0.73, stage: 'Сохраняем данные...'));
@@ -427,6 +457,7 @@ class PosSyncService {
       expenseTypes: expenseTypes,
       customers: customers,
     );
+    _throwIfSyncCancelled();
     _diagnostics?.recordBootstrapSummary({
       'pos_key': key,
       'device_id': deviceId,
@@ -451,7 +482,7 @@ class PosSyncService {
 
     onProgress?.call(
         const SyncProgress(progress: 0.82, stage: 'Применяем обновления...'));
-    await pullOnce(
+    await _runPullOnce(
       key: key,
       deviceId: deviceId,
       initialCursor: snapshotCursor,
@@ -472,6 +503,7 @@ class PosSyncService {
       const SyncProgress(progress: 0.995, stage: 'Обновляем данные кассы...'),
     );
     await refreshPosInfo(key: key);
+    _throwIfSyncCancelled();
 
     onProgress?.call(
         const SyncProgress(progress: 1, stage: 'Синхронизация завершена'));
@@ -492,6 +524,8 @@ class PosSyncService {
     bool refreshPosInfoAfterPull = true,
     void Function(SyncProgress progress)? onProgress,
   }) {
+    if (_pullFuture != null) return _pullFuture!;
+    _syncCancelRequested = false;
     return _pullFuture ??= _runPullOnce(
       key: key,
       deviceId: deviceId,
@@ -510,11 +544,13 @@ class PosSyncService {
   }) async {
     await initialize();
     await _localStore.ensureSyncState(posKey: key, deviceId: deviceId);
+    _throwIfSyncCancelled();
     var cursor =
         initialCursor ?? (await _localStore.loadSyncState(key))?.cursor ?? 0;
     var batchIndex = 0;
 
     while (true) {
+      _throwIfSyncCancelled();
       batchIndex += 1;
       onProgress?.call(
         SyncProgress(
@@ -529,6 +565,7 @@ class PosSyncService {
         cursor: cursor,
         limit: 500,
       );
+      _throwIfSyncCancelled();
 
       if (batch.items.isNotEmpty) {
         onProgress?.call(
@@ -575,6 +612,7 @@ class PosSyncService {
     }
 
     if (refreshPosInfoAfterPull) {
+      _throwIfSyncCancelled();
       onProgress?.call(
         const SyncProgress(
           progress: 0.98,
@@ -582,6 +620,7 @@ class PosSyncService {
         ),
       );
       await refreshPosInfo(key: key);
+      _throwIfSyncCancelled();
     }
   }
 
@@ -591,6 +630,8 @@ class PosSyncService {
     int limit = 5,
     void Function(QueuePushEvent event)? onProgress,
   }) {
+    if (_pushFuture != null) return _pushFuture!;
+    _syncCancelRequested = false;
     return _pushFuture ??= _runPushPending(
       key: key,
       deviceId: deviceId,
@@ -607,12 +648,14 @@ class PosSyncService {
   }) async {
     await initialize();
     await _localStore.ensureSyncState(posKey: key, deviceId: deviceId);
+    _throwIfSyncCancelled();
 
     final records = await _localStore.claimPendingOperations(limit: limit);
     if (records.isEmpty) return;
 
     var ackedCount = 0;
     for (final record in records) {
+      _throwIfSyncCancelled();
       onProgress?.call(
         QueuePushEvent(
           operationId: record.id,
@@ -628,6 +671,7 @@ class PosSyncService {
         deviceId: deviceId,
         record: record,
       );
+      _throwIfSyncCancelled();
       onProgress?.call(
         QueuePushEvent(
           operationId: record.id,
@@ -809,6 +853,51 @@ class PosSyncService {
     required String userId,
     DateTime? openedAt,
   }) async {
+    final pending = _openSessionFuture;
+    if (pending != null) return pending;
+
+    final future = _openSessionLocked(
+      key: key,
+      deviceId: deviceId,
+      userId: userId,
+      openedAt: openedAt,
+    );
+    _openSessionFuture = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_openSessionFuture, future)) {
+        _openSessionFuture = null;
+      }
+    }
+  }
+
+  Future<QueueOperationResult> _openSessionLocked({
+    required String key,
+    required String deviceId,
+    required String userId,
+    DateTime? openedAt,
+  }) async {
+    final existingSession = await _findOpenSessionForDevice(deviceId);
+    if (existingSession != null) {
+      if (existingSession.userId.trim() != userId.trim()) {
+        throw Exception('Смена уже открыта другим кассиром');
+      }
+
+      return QueueOperationResult(
+        operationId: '',
+        result: QueueSendResult.queued,
+        type: OutboxOperationType.sessionOpen,
+        clientId: existingSession.clientSessionId,
+        payload: {
+          'device_id': existingSession.deviceId,
+          'client_session_id': existingSession.clientSessionId,
+          'opened_at': _formatDate(existingSession.openedAt),
+          'user_id': existingSession.userId,
+        },
+      );
+    }
+
     final clientSessionId = 'session_${_uuid.v7()}';
     final effectiveOpenedAt = openedAt ?? DateTime.now();
 
@@ -835,6 +924,21 @@ class PosSyncService {
       clientId: clientSessionId,
       payload: payload,
     );
+  }
+
+  Future<LocalSession?> _findOpenSessionForDevice(String deviceId) async {
+    final normalizedDeviceId = deviceId.trim();
+    if (normalizedDeviceId.isEmpty) return null;
+
+    final sessions = await _localStore.loadSessions();
+    for (final session in sessions) {
+      if (session.deviceId.trim() == normalizedDeviceId &&
+          session.isOpened &&
+          session.closedAt == null) {
+        return session;
+      }
+    }
+    return null;
   }
 
   Future<void> registerClosedSession({
@@ -1101,6 +1205,7 @@ class PosSyncService {
     required String deviceId,
     int limit = 5,
   }) {
+    if (!_backgroundLoopsActive) return Future<void>.value();
     return _ignoreBackgroundSyncErrors(
       pushPending(key: key, deviceId: deviceId, limit: limit),
     );
@@ -1110,6 +1215,7 @@ class PosSyncService {
     required String key,
     required String deviceId,
   }) {
+    if (!_backgroundLoopsActive) return Future<void>.value();
     return _ignoreBackgroundSyncErrors(
       pullOnce(key: key, deviceId: deviceId),
     );
@@ -1118,10 +1224,16 @@ class PosSyncService {
   Future<void> _ignoreBackgroundSyncErrors(Future<void> future) async {
     try {
       await future;
+    } on _SyncCancelledException {
+      // Cancellation is intentional.
     } catch (_) {
       // Background sync is best-effort. Pending operations stay queued and
       // will be retried by the next timer tick or when connectivity returns.
     }
+  }
+
+  void _throwIfSyncCancelled() {
+    if (_syncCancelRequested) throw const _SyncCancelledException();
   }
 
   Future<String> resolveServerSessionId(String sessionId) {
@@ -1477,6 +1589,10 @@ class PosSyncService {
       OutboxOperationType.sessionClose => 'Закрытие смены',
     };
   }
+}
+
+class _SyncCancelledException implements Exception {
+  const _SyncCancelledException();
 }
 
 class _WaitingForServerSessionId implements Exception {

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:leemon_app/core/models/pos_pricing_plan_status.dart';
 import 'package:leemon_app/core/models/pos_provision_response.dart';
 
 class AuthTokenProvider extends ChangeNotifier {
@@ -33,6 +34,7 @@ class AuthTokenProvider extends ChangeNotifier {
   static const _kReceiptPaperMm = 'receiptPaperMm';
   static const _kReceiptPrinterName = 'receiptPrinterName';
   static const _kInvoicePrinterName = 'invoicePrinterName';
+  static const _kPricingPlanStatus = 'pricingPlanStatus';
 
   // ✅ активный кассир
   static const _kActiveUserId = 'activeUserId';
@@ -109,6 +111,11 @@ class AuthTokenProvider extends ChangeNotifier {
   List<PosUser> get users => List.unmodifiable(_users);
   String? _activeUserName;
   String? get activeUserName => _activeUserName;
+  PosPricingPlanStatus? _pricingPlanStatus;
+  PosPricingPlanStatus? get pricingPlanStatus => _pricingPlanStatus;
+  bool get shouldShowTariffExpiryNotice =>
+      _pricingPlanStatus?.shouldShowExpiryNotice() ?? false;
+  int? get tariffDaysUntilExpiry => _pricingPlanStatus?.daysUntilExpiry();
 
   bool get isProvisioned =>
       hasPosKey &&
@@ -210,6 +217,17 @@ class AuthTokenProvider extends ChangeNotifier {
     _receiptPaperMm = (prefs.getInt(_kReceiptPaperMm) == 57) ? 57 : 80;
     _receiptPrinterName = prefs.getString(_kReceiptPrinterName);
     _invoicePrinterName = prefs.getString(_kInvoicePrinterName);
+    final pricingPlanStatusStr = prefs.getString(_kPricingPlanStatus);
+    if (pricingPlanStatusStr != null && pricingPlanStatusStr.isNotEmpty) {
+      try {
+        final decoded = dc.jsonDecode(pricingPlanStatusStr);
+        if (decoded is Map<String, dynamic>) {
+          _pricingPlanStatus = PosPricingPlanStatus.fromDataJson(decoded);
+        }
+      } catch (_) {
+        _pricingPlanStatus = null;
+      }
+    }
 
     if (_deviceId == null || _deviceId!.isEmpty) {
       _deviceId = const Uuid().v4();
@@ -327,6 +345,7 @@ class AuthTokenProvider extends ChangeNotifier {
     _activeUserId = null;
     _activeUserName = null;
     _receiptPaperMm = 80;
+    _pricingPlanStatus = null;
 
     if (!keepDeviceId) _deviceId = null;
 
@@ -349,6 +368,7 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.remove(_kActiveUserId);
     await prefs.remove(_kActiveUserName);
     await prefs.remove(_kReceiptPaperMm);
+    await prefs.remove(_kPricingPlanStatus);
 
     if (!keepDeviceId) {
       await prefs.remove(_kDeviceId);
@@ -444,6 +464,14 @@ class AuthTokenProvider extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kActiveUserName, v);
+  }
+
+  Future<void> setPricingPlanStatus(PosPricingPlanStatus status) async {
+    _pricingPlanStatus = status;
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kPricingPlanStatus, dc.jsonEncode(status.toJson()));
   }
 
   Future<void> clearActiveUserId() async {

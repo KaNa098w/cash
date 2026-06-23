@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/core/models/pos_pricing_plan_status.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
@@ -81,11 +83,15 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _wipeAllLocalData() async {
+    final posCubit = context.read<PosCubit>();
+    final productsCubit = context.read<ProductsCubit>();
+    final authCubit = context.read<AuthCubit>();
+
     await sl<PosSyncService>().clearAllLocalData();
 
-    await context.read<PosCubit>().resetAllLocalState();
-    await context.read<ProductsCubit>().reset();
-    await context.read<AuthCubit>().resetAll();
+    await posCubit.resetAllLocalState();
+    await productsCubit.reset();
+    await authCubit.resetAll();
 
     if (!mounted) return;
 
@@ -193,6 +199,21 @@ class _LoginPageState extends State<LoginPage> {
     context.go('/pos');
   }
 
+  Future<void> _refreshPricingPlanStatus() async {
+    final auth = context.read<AuthTokenProvider>();
+    final key = auth.posKey?.trim() ?? '';
+    if (key.isEmpty) return;
+
+    try {
+      final status = await sl<PosSyncService>().loadPricingPlan(key: key);
+      await auth.setPricingPlanStatus(status);
+    } catch (error) {
+      sl<PosDiagnosticsService>().recordError(
+        'pricing-plan refresh failed: $error',
+      );
+    }
+  }
+
   void _ensureProductsLoadedAndGoPos() {
     final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
     if (key.isEmpty) {
@@ -202,6 +223,8 @@ class _LoginPageState extends State<LoginPage> {
       );
       return;
     }
+
+    unawaited(_refreshPricingPlanStatus());
 
     final productsState = context.read<ProductsCubit>().state;
     if (productsState is ProductsLoaded) {
@@ -298,7 +321,7 @@ class _LoginPageState extends State<LoginPage> {
                       const BoxConstraints(maxWidth: 980, maxHeight: 750),
                   child: Card(
                     elevation: 0,
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha: 0.9),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(24),
                     ),
@@ -356,6 +379,16 @@ class _LoginPageState extends State<LoginPage> {
                                   );
                                 }
 
+                                if (authState is AuthPricingBlocked) {
+                                  return _PricingPlanBlockedStep(
+                                    theme: theme,
+                                    status: authState.status,
+                                    onBack: () => context
+                                        .read<AuthCubit>()
+                                        .backToUsers(authState.provision),
+                                  );
+                                }
+
                                 if (authState is AuthInitial ||
                                     authState is AuthLoading ||
                                     authState is AuthFailure) {
@@ -396,6 +429,157 @@ class _LoginPageState extends State<LoginPage> {
           },
         ),
       ),
+    );
+  }
+}
+
+class _PricingPlanBlockedStep extends StatelessWidget {
+  const _PricingPlanBlockedStep({
+    required this.theme,
+    required this.status,
+    required this.onBack,
+  });
+
+  final ThemeData theme;
+  final PosPricingPlanStatus status;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final planName = (status.pricingPlan?.name ?? '').trim();
+    final endsAt = status.endsAt;
+    final endedText = endsAt == null
+        ? null
+        : DateFormat('dd.MM.yyyy HH:mm').format(endsAt.toLocal());
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 58,
+          height: 58,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFECEC),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: const Icon(
+            Icons.lock_clock_rounded,
+            color: Color(0xFFD45F4F),
+            size: 30,
+          ),
+        ),
+        const SizedBox(height: 18),
+        Text(
+          'Доступ к кассе заблокирован',
+          style: theme.textTheme.headlineSmall!.copyWith(
+            color: const Color(0xFF111827),
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Тариф не активен или срок оплаты закончился. Оплатите тариф, чтобы продолжить работу с кассой.',
+          style: theme.textTheme.bodyMedium!.copyWith(
+            color: const Color(0xFF4B5563),
+            height: 1.45,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 18),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF9FAFB),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const _PricingBlockedInfoRow(
+                label: 'Связаться с менеджером',
+                value: '+7 775 205 11 00',
+              ),
+              if (planName.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                _PricingBlockedInfoRow(label: 'Тариф', value: planName),
+              ],
+              if (endedText != null) ...[
+                const SizedBox(height: 10),
+                _PricingBlockedInfoRow(
+                  label: 'Окончание',
+                  value: endedText,
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: FilledButton(
+            onPressed: onBack,
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFD45F4F),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: const Text(
+              'Назад к кассирам',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ),
+        const Spacer(),
+        Text(
+          '© ${DateTime.now().year} Leemon. Все права защищены.',
+          style: theme.textTheme.bodySmall!.copyWith(color: Colors.black54),
+        ),
+      ],
+    );
+  }
+}
+
+class _PricingBlockedInfoRow extends StatelessWidget {
+  const _PricingBlockedInfoRow({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              color: Color(0xFF111827),
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

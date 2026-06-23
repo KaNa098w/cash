@@ -1366,12 +1366,12 @@ Future<void> _runSyncWithProgress(BuildContext context) async {
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.10),
+                color: Colors.black.withValues(alpha: 0.10),
                 blurRadius: 24,
                 offset: const Offset(0, 10),
               ),
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -1402,7 +1402,7 @@ Future<void> _runSyncWithProgress(BuildContext context) async {
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: const Color(0xFF2563EB)
-                                        .withOpacity(0.10),
+                                        .withValues(alpha: 0.10),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: const Icon(
@@ -1500,6 +1500,8 @@ Future<void> _runSyncWithProgress(BuildContext context) async {
                                       onPressed: stopping
                                           ? null
                                           : () {
+                                              sl<PosSyncService>()
+                                                  .requestCancelSync();
                                               stopRequested.value = true;
                                               stage.value =
                                                   'Останавливаем синхронизацию...';
@@ -1546,6 +1548,8 @@ Future<void> _runSyncWithProgress(BuildContext context) async {
                                     height: 46,
                                     child: FilledButton.icon(
                                       onPressed: () {
+                                        sl<PosSyncService>()
+                                            .requestCancelSync();
                                         stopRequested.value = true;
                                         closeDialogSafe();
                                       },
