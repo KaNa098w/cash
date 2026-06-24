@@ -776,6 +776,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       _snack('Смена не открыта');
       return false;
     }
+    final cashAccountId = auth.accountId?.trim() ?? '';
 
     final saleId = sale.localId.trim();
     if (saleId.isEmpty) {
@@ -837,19 +838,15 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     final accounts = await sync.loadAccounts();
     final visibleAccounts =
         accounts.where((account) => account.visibleToPos).toList();
-    final cashAccount = visibleAccounts.cast<LocalAccount?>().firstWhere(
-          (a) => a?.isCash ?? false,
-          orElse: () => null,
-        );
     final cardAccount = visibleAccounts.cast<LocalAccount?>().firstWhere(
           (a) => a?.isBankOrPos ?? false,
           orElse: () => null,
         );
 
     if ((refundPaymentMethod == 'cash' || refundPaymentMethod == 'mixed') &&
-        (cashAccount?.id.trim().isEmpty ?? true)) {
+        cashAccountId.isEmpty) {
       showRefundError(
-        'Не найден счет наличных. Обновите синхронизацию POS или настройте счет CASH.',
+        'Не найден наличный счёт POS. Выполните вход заново.',
       );
       return false;
     }
@@ -867,7 +864,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       final half = totalAmount ~/ 2;
       refundPayments = [
         {
-          'account_id': cashAccount!.id,
+          'account_id': cashAccountId,
           'amount': half,
           'client_payment_id': '$refundClientId-cash',
         },
@@ -888,7 +885,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     } else {
       refundPayments = [
         {
-          'account_id': cashAccount!.id,
+          'account_id': cashAccountId,
           'amount': totalAmount,
           'client_payment_id': '$refundClientId-cash',
         },

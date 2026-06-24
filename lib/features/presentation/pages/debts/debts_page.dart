@@ -276,26 +276,22 @@ class _DebtsPageState extends State<DebtsPage> {
     final key = auth.posKey?.trim() ?? '';
     final userId = auth.activeUserId?.trim() ?? '';
     final deviceId = auth.deviceId?.trim() ?? 'pos';
+    final accountId = auth.accountId?.trim() ?? '';
     if (key.isEmpty || userId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Не найдены данные кассы или кассира')),
       );
       return;
     }
+    if (accountId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не найден наличный счёт POS')),
+      );
+      return;
+    }
 
     setState(() => _settling = true);
     try {
-      final accounts = await _sync.loadAccounts();
-      final realAccounts = accounts
-          .where((account) => account.type?.toLowerCase() != 'debt')
-          .toList(growable: false);
-      if (realAccounts.isEmpty) {
-        throw Exception('Нет доступного счета для погашения');
-      }
-      final account = realAccounts.firstWhere(
-        (account) => account.isCash,
-        orElse: () => realAccounts.first,
-      );
       final localSessionId = auth.shiftId?.trim() ?? '';
       final resolvedSessionId = localSessionId.isEmpty
           ? ''
@@ -306,7 +302,7 @@ class _DebtsPageState extends State<DebtsPage> {
       final settlement = await _customersDs.settleDebt(
         key: key,
         customerId: selected.id,
-        accountId: account.id,
+        accountId: accountId,
         amount: amount,
         date: DateTime.now(),
         userId: userId,

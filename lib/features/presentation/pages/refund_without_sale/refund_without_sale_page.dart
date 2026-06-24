@@ -137,13 +137,6 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
     }
   }
 
-  LocalAccount? get _cashAccount {
-    return _accounts.cast<LocalAccount?>().firstWhere(
-          (account) => account?.isCash ?? false,
-          orElse: () => null,
-        );
-  }
-
   List<LocalAccount> get _bankAccounts {
     return _accounts
         .where((account) => account.normalizedType == 'bank')
@@ -477,14 +470,16 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
       return;
     }
 
-    final account =
-        _paymentMethod == 'card' ? _selectedBankAccount : _cashAccount;
-    if ((account?.id.trim().isEmpty ?? true)) {
+    final cashAccountId = auth.accountId?.trim() ?? '';
+    final account = _paymentMethod == 'card' ? _selectedBankAccount : null;
+    final selectedAccountId =
+        _paymentMethod == 'card' ? account?.id.trim() ?? '' : cashAccountId;
+    if (selectedAccountId.isEmpty) {
       _logRefund('blocked: account not selected for method=$_paymentMethod');
       setState(() {
         _error = _paymentMethod == 'card'
             ? 'Выберите банковский счет для безналичного возврата.'
-            : 'Не найден счет наличных. Обновите синхронизацию POS.';
+            : 'Не найден наличный счёт POS. Выполните вход заново.';
       });
       return;
     }
@@ -509,14 +504,14 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
         .toList(growable: false);
     final payments = [
       {
-        'account_id': account!.id,
+        'account_id': selectedAccountId,
         'amount': total,
         'client_payment_id': '$paymentId-$_paymentMethod',
       },
     ];
 
     _logRefund(
-      'creating refund: method=$_paymentMethod account=${account.id} total=$total items=${jsonEncode(items)} payments=${jsonEncode(payments)}',
+      'creating refund: method=$_paymentMethod account=$selectedAccountId total=$total items=${jsonEncode(items)} payments=${jsonEncode(payments)}',
     );
 
     setState(() {
@@ -530,7 +525,7 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
         posSessionId: posSessionId,
         posId: posId,
         storeId: storeId,
-        accountId: account.id,
+        accountId: selectedAccountId,
         saleId: '',
         clientSaleId: null,
         totalAmount: total,
