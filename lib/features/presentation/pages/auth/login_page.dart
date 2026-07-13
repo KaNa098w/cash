@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/pos_pricing_plan_status.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
@@ -18,7 +17,6 @@ import 'package:leemon_app/features/presentation/pages/auth/widgets/cachier_logi
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_state.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
-
 import 'widgets/login_steps.dart';
 
 class LoginPage extends StatefulWidget {

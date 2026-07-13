@@ -8,9 +8,11 @@ import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
+import 'package:leemon_app/features/presentation/pages/marketplace_orders/marketplace_orders_controller.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'hold_delete_confirm_dialog.dart';
+import 'incoming_orders_dialog.dart';
 import 'show_pos_action_dialog.dart';
 
 double _topBarTabWidth(bool compact) => compact ? 122.0 : 126.0;
@@ -115,17 +117,7 @@ class TopBar extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           _divider(),
-                          IconButton(
-                            // onPressed: () => showIncomingOrdersDialog(context),
-                            onPressed: () {},
-                            icon: SvgPicture.asset(
-                              'assets/svg/bag.svg',
-                              width: 24,
-                              height: 24,
-                              color: Colors.white,
-                            ),
-                            tooltip: '',
-                          ),
+                          const _MarketplaceOrdersButton(),
                           _divider(),
                           IconButton(
                             onPressed: () {
@@ -135,7 +127,10 @@ class TopBar extends StatelessWidget {
                               'assets/svg/elements.svg',
                               width: 24,
                               height: 24,
-                              color: Colors.white,
+                              colorFilter: const ColorFilter.mode(
+                                Colors.white,
+                                BlendMode.srcIn,
+                              ),
                             ),
                             tooltip: '',
                           ),
@@ -310,8 +305,89 @@ class _Chip extends StatelessWidget {
   }
 }
 
+class _MarketplaceOrdersButton extends StatefulWidget {
+  const _MarketplaceOrdersButton();
+
+  @override
+  State<_MarketplaceOrdersButton> createState() =>
+      _MarketplaceOrdersButtonState();
+}
+
+class _MarketplaceOrdersButtonState extends State<_MarketplaceOrdersButton> {
+  late final MarketplaceOrdersController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = GetIt.I<MarketplaceOrdersController>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final auth = context.read<AuthTokenProvider>();
+      unawaited(_controller.configure(
+        posKey: auth.posKey ?? '',
+        deviceId: auth.deviceId ?? '',
+      ));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final count = _controller.notificationCount;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            IconButton(
+              onPressed: () => showIncomingOrdersDialog(context),
+              icon: SvgPicture.asset(
+                'assets/svg/bag.svg',
+                width: 24,
+                height: 24,
+                colorFilter: const ColorFilter.mode(
+                  Colors.white,
+                  BlendMode.srcIn,
+                ),
+              ),
+              tooltip: 'Онлайн заказы',
+            ),
+            if (count > 0)
+              Positioned(
+                right: 3,
+                top: 5,
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 18),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0xFF262B35)),
+                  ),
+                  child: Text(
+                    count > 99 ? '99+' : '$count',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _StatusDot extends StatefulWidget {
-  const _StatusDot({super.key});
+  const _StatusDot();
 
   @override
   State<_StatusDot> createState() => _StatusDotState();
@@ -400,7 +476,10 @@ class _StatusDotState extends State<_StatusDot> {
             'assets/svg/lock.svg',
             width: 24,
             height: 24,
-            color: Colors.white,
+            colorFilter: const ColorFilter.mode(
+              Colors.white,
+              BlendMode.srcIn,
+            ),
           ),
         ),
         const SizedBox(width: 14),

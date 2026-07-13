@@ -1,19 +1,26 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:get_it/get_it.dart';
+import 'package:leemon_app/core/models/marketplace_order_models.dart';
+import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/features/presentation/pages/marketplace_orders/marketplace_orders_controller.dart';
+import 'package:provider/provider.dart';
 
 Future<void> showIncomingOrdersDialog(BuildContext context) {
   return showGeneralDialog<void>(
     context: context,
-    barrierDismissible: true,
+    barrierDismissible: false,
     barrierLabel: 'incoming-orders',
-    barrierColor: Colors.black.withValues(alpha: 0.42),
-    transitionDuration: const Duration(milliseconds: 220),
+    barrierColor: Colors.transparent,
+    transitionDuration: const Duration(milliseconds: 180),
     pageBuilder: (ctx, _, __) => const _IncomingOrdersDialog(),
     transitionBuilder: (_, anim, __, child) {
       final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
       return FadeTransition(
         opacity: anim,
         child: ScaleTransition(
-          scale: Tween<double>(begin: 0.97, end: 1).animate(curved),
+          scale: Tween<double>(begin: 0.98, end: 1).animate(curved),
           child: child,
         ),
       );
@@ -21,187 +28,65 @@ Future<void> showIncomingOrdersDialog(BuildContext context) {
   );
 }
 
-class _IncomingOrdersDialog extends StatelessWidget {
+class _IncomingOrdersDialog extends StatefulWidget {
   const _IncomingOrdersDialog();
 
-  static const _orders = <_IncomingOrder>[
-    _IncomingOrder(
-      id: 'A-2401',
-      customer: 'Айгерим С.',
-      channel: 'Glovo',
-      status: 'Новый',
-      accent: Color(0xFF0F766E),
-      eta: '12 мин',
-      amount: '12 400 c',
-      time: '14:32',
-      items: ['Латте x2', 'Цезарь x1', 'Чизкейк x1'],
-    ),
-    _IncomingOrder(
-      id: 'A-2402',
-      customer: 'Руслан Н.',
-      channel: 'Доставка',
-      status: 'Срочно',
-      accent: Color(0xFFB45309),
-      eta: '7 мин',
-      amount: '8 900 c',
-      time: '14:36',
-      items: ['Комбо бургер x2', 'Кола 1л x1'],
-    ),
-    _IncomingOrder(
-      id: 'A-2403',
-      customer: 'Самовывоз',
-      channel: 'Instagram',
-      status: 'Ожидает',
-      accent: Color(0xFF1D4ED8),
-      eta: '18 мин',
-      amount: '6 300 c',
-      time: '14:40',
-      items: ['Паста x1', 'Суп дня x1', 'Лимонад x2'],
-    ),
-  ];
+  @override
+  State<_IncomingOrdersDialog> createState() => _IncomingOrdersDialogState();
+}
+
+class _IncomingOrdersDialogState extends State<_IncomingOrdersDialog> {
+  late final MarketplaceOrdersController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = GetIt.I<MarketplaceOrdersController>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthTokenProvider>();
+      unawaited(() async {
+        await _controller.configure(
+          posKey: auth.posKey ?? '',
+          deviceId: auth.deviceId ?? '',
+        );
+        _controller.markVisibleNewOrdersSeen();
+      }());
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    final compact = size.width < 1100;
+    final compact = size.width < 1080;
 
-    return SafeArea(
-      child: Center(
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            width: compact ? size.width - 32 : 1040,
-            height: compact ? size.height - 48 : 700,
-            margin: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(30),
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFFF7F4EC),
-                  Color(0xFFEFF5F8),
-                ],
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.16),
-                  blurRadius: 34,
-                  offset: const Offset(0, 18),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(30),
-              child: Column(
+    return Material(
+      color: const Color(0xFFF7F8FA),
+      child: SizedBox(
+        width: size.width,
+        height: size.height,
+        child: SafeArea(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              return Column(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(26, 22, 18, 18),
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Color(0xFF1F2937),
-                          Color(0xFF0F172A),
-                        ],
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 54,
-                          height: 54,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF59E0B).withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.14),
-                            ),
-                          ),
-                          child: const Icon(
-                            Icons.shopping_bag_outlined,
-                            color: Color(0xFFFBBF24),
-                            size: 28,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Поступившие заказы',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                'Временный макет для входящих заказов. Позже сюда подключим реальные данные.',
-                                style: TextStyle(
-                                  color: Color(0xFFCBD5E1),
-                                  fontSize: 13,
-                                  height: 1.35,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.close, color: Colors.white70),
-                        ),
-                      ],
-                    ),
+                  _Header(
+                    controller: _controller,
+                    onClose: () => Navigator.of(context).pop(),
                   ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: compact
-                          ? ListView(
-                              children: [
-                                const _OrdersStatsRow(),
-                                const SizedBox(height: 16),
-                                ..._orders.map((order) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 12),
-                                      child: _OrderCard(order: order),
-                                    )),
-                              ],
-                            )
-                          : Row(
-                              children: [
-                                SizedBox(
-                                  width: 320,
-                                  child: Column(
-                                    children: [
-                                      const _OrdersStatsRow(),
-                                      const SizedBox(height: 16),
-                                      Expanded(
-                                        child: ListView.separated(
-                                          itemCount: _orders.length,
-                                          separatorBuilder: (_, __) =>
-                                              const SizedBox(height: 12),
-                                          itemBuilder: (_, index) =>
-                                              _OrderCard(order: _orders[index]),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 18),
-                                Expanded(
-                                  child: _OrdersPreviewPanel(order: _orders.first),
-                                ),
-                              ],
-                            ),
+                  if (_controller.error != null)
+                    _ErrorStrip(
+                      text: _controller.error!,
+                      onRefresh: _controller.refreshAll,
                     ),
+                  Expanded(
+                    child: compact
+                        ? _CompactBody(controller: _controller)
+                        : _WideBody(controller: _controller),
                   ),
                 ],
-              ),
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -209,531 +94,671 @@ class _IncomingOrdersDialog extends StatelessWidget {
   }
 }
 
-class _OrdersStatsRow extends StatelessWidget {
-  const _OrdersStatsRow();
+class _Header extends StatelessWidget {
+  const _Header({required this.controller, required this.onClose});
+
+  final MarketplaceOrdersController controller;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 76,
+      padding: const EdgeInsets.symmetric(horizontal: 22),
+      color: const Color(0xFF202733),
+      child: Row(
+        children: [
+          const Icon(Icons.shopping_bag_outlined,
+              color: Colors.white, size: 28),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Text(
+              'Онлайн заказы',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          _ScopeButton(
+            text: 'Новые',
+            count: controller.newOrders.length,
+            active: controller.scope == MarketplaceOrderScope.newOrders,
+            onTap: () => controller.setScope(MarketplaceOrderScope.newOrders),
+          ),
+          const SizedBox(width: 8),
+          _ScopeButton(
+            text: 'В работе',
+            count: controller.activeOrders.length,
+            active: controller.scope == MarketplaceOrderScope.active,
+            onTap: () => controller.setScope(MarketplaceOrderScope.active),
+          ),
+          const SizedBox(width: 10),
+          IconButton(
+            onPressed: controller.loading ? null : controller.refreshAll,
+            icon: controller.loading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.refresh, color: Colors.white),
+            tooltip: 'Обновить',
+          ),
+          IconButton(
+            onPressed: onClose,
+            icon: const Icon(Icons.close, color: Colors.white70),
+            tooltip: 'Закрыть',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScopeButton extends StatelessWidget {
+  const _ScopeButton({
+    required this.text,
+    required this.count,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String text;
+  final int count;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: active ? Colors.white : const Color(0xFF3A4352),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Text(
+              text,
+              style: TextStyle(
+                color: active ? const Color(0xFF111827) : Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              constraints: const BoxConstraints(minWidth: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: active
+                    ? const Color(0xFFEFF6FF)
+                    : Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '$count',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: active ? const Color(0xFF1D4ED8) : Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WideBody extends StatelessWidget {
+  const _WideBody({required this.controller});
+
+  final MarketplaceOrdersController controller;
 
   @override
   Widget build(BuildContext context) {
     return Row(
-      children: const [
-        Expanded(
-          child: _StatChip(
-            label: 'Новых',
-            value: '03',
-            accent: Color(0xFF0F766E),
-            bg: Color(0xFFDFF7F0),
-          ),
+      children: [
+        SizedBox(
+          width: 360,
+          child: _OrdersList(controller: controller),
         ),
-        SizedBox(width: 10),
-        Expanded(
-          child: _StatChip(
-            label: 'Срочных',
-            value: '01',
-            accent: Color(0xFFB45309),
-            bg: Color(0xFFFFF1D6),
-          ),
-        ),
-        SizedBox(width: 10),
-        Expanded(
-          child: _StatChip(
-            label: 'Сумма',
-            value: '27 600',
-            accent: Color(0xFF1D4ED8),
-            bg: Color(0xFFE6F0FF),
-          ),
-        ),
+        const VerticalDivider(width: 1, color: Color(0xFFE2E8F0)),
+        Expanded(child: _OrderDetails(controller: controller)),
       ],
     );
   }
 }
 
-class _StatChip extends StatelessWidget {
-  const _StatChip({
-    required this.label,
-    required this.value,
-    required this.accent,
-    required this.bg,
-  });
+class _CompactBody extends StatelessWidget {
+  const _CompactBody({required this.controller});
 
-  final String label;
-  final String value;
-  final Color accent;
-  final Color bg;
+  final MarketplaceOrdersController controller;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              label,
-              style: TextStyle(
-                color: accent,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Color(0xFF0F172A),
-              fontSize: 24,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
+    return Column(
+      children: [
+        SizedBox(height: 230, child: _OrdersList(controller: controller)),
+        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+        Expanded(child: _OrderDetails(controller: controller)),
+      ],
     );
   }
 }
 
-class _OrderCard extends StatelessWidget {
-  const _OrderCard({required this.order});
+class _OrdersList extends StatelessWidget {
+  const _OrdersList({required this.controller});
 
-  final _IncomingOrder order;
+  final MarketplaceOrdersController controller;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
+    final orders = controller.visibleOrders;
+    if (orders.isEmpty && controller.loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (orders.isEmpty) {
+      return const Center(
+        child: Text(
+          'Заказов нет',
+          style: TextStyle(
+            color: Color(0xFF64748B),
+            fontWeight: FontWeight.w700,
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: order.accent,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  order.customer,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F172A),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(14),
+      itemCount: orders.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final order = orders[index];
+        final active = controller.selectedOrder?.id == order.id;
+        return _OrderTile(
+          order: order,
+          active: active,
+          onTap: () => controller.selectOrder(order.id),
+        );
+      },
+    );
+  }
+}
+
+class _OrderTile extends StatelessWidget {
+  const _OrderTile({
+    required this.order,
+    required this.active,
+    required this.onTap,
+  });
+
+  final MarketplaceOrder order;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = _statusColor(order.status);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFFEFF6FF) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: active ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _shortOrderId(order.id),
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
+                _StatusPill(text: _statusLabel(order.status), color: accent),
+              ],
+            ),
+            const SizedBox(height: 9),
+            Text(
+              order.customer.name.isEmpty ? 'Покупатель' : order.customer.name,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF334155),
+                fontWeight: FontWeight.w700,
               ),
+            ),
+            if (order.customer.phone.isNotEmpty) ...[
+              const SizedBox(height: 4),
               Text(
-                order.time,
+                order.customer.phone,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Color(0xFF64748B),
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _OrderPill(
-                text: order.channel,
-                fg: order.accent,
-                bg: order.accent.withValues(alpha: 0.10),
-              ),
-              _OrderPill(
-                text: order.status,
-                fg: const Color(0xFF111827),
-                bg: const Color(0xFFF3F4F6),
-              ),
-              _OrderPill(
-                text: 'ETA ${order.eta}',
-                fg: const Color(0xFF1D4ED8),
-                bg: const Color(0xFFE8F0FF),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          ...order.items.take(2).map(
-                (item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Text(
-                    item,
-                    style: const TextStyle(
-                      color: Color(0xFF475569),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Text(
-                order.id,
-                style: const TextStyle(
-                  color: Color(0xFF94A3B8),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                order.amount,
-                style: const TextStyle(
-                  color: Color(0xFF0F172A),
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _OrdersPreviewPanel extends StatelessWidget {
-  const _OrdersPreviewPanel({required this.order});
-
-  final _IncomingOrder order;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFFCFCFD),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
-            decoration: const BoxDecoration(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFFFFF7E8),
-                  Color(0xFFF3F8FF),
-                ],
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Заказ ${order.id}',
-                        style: const TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFF111827),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '${order.customer} • ${order.channel}',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF475569),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                  decoration: BoxDecoration(
-                    color: order.accent.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    order.status,
-                    style: TextStyle(
-                      color: order.accent,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(22),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _PreviewBlock(
-                          label: 'Сумма',
-                          value: order.amount,
-                          bg: const Color(0xFFFFF7E8),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _PreviewBlock(
-                          label: 'Время',
-                          value: order.eta,
-                          bg: const Color(0xFFEAF8F2),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: _PreviewBlock(
-                          label: 'Оплата',
-                          value: 'Картой',
-                          bg: Color(0xFFEAF1FF),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  Expanded(
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(22),
-                        border: Border.all(color: const Color(0xFFE5E7EB)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Состав заказа',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF0F172A),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          ...order.items.map(
-                                (item) => Container(
-                                  margin: const EdgeInsets.only(bottom: 10),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 12,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF8FAFC),
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.receipt_long_outlined,
-                                        color: Color(0xFF64748B),
-                                        size: 18,
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          item,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            color: Color(0xFF1E293B),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                          const Spacer(),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: () {},
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
-                                    side: const BorderSide(
-                                      color: Color(0xFFD1D5DB),
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    'Отложить',
-                                    style: TextStyle(
-                                      color: Color(0xFF334155),
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () {},
-                                  style: ElevatedButton.styleFrom(
-                                    elevation: 0,
-                                    backgroundColor: const Color(0xFF111827),
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    'Принять заказ',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PreviewBlock extends StatelessWidget {
-  const _PreviewBlock({
-    required this.label,
-    required this.value,
-    required this.bg,
-  });
-
-  final String label;
-  final String value;
-  final Color bg;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF64748B),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF111827),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _OrderPill extends StatelessWidget {
-  const _OrderPill({
-    required this.text,
-    required this.fg,
-    required this.bg,
-  });
-
-  final String text;
-  final Color fg;
-  final Color bg;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: fg,
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
+          ],
         ),
       ),
     );
   }
 }
 
-class _IncomingOrder {
-  const _IncomingOrder({
-    required this.id,
-    required this.customer,
-    required this.channel,
-    required this.status,
-    required this.accent,
-    required this.eta,
-    required this.amount,
-    required this.time,
-    required this.items,
+class _OrderDetails extends StatelessWidget {
+  const _OrderDetails({required this.controller});
+
+  final MarketplaceOrdersController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final order = controller.selectedOrder;
+    if (order == null) {
+      return const Center(
+        child: Text(
+          'Выберите заказ',
+          style: TextStyle(
+            color: Color(0xFF64748B),
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+          color: Colors.white,
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Заказ ${_shortOrderId(order.id)}',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      [
+                        if (order.customer.name.isNotEmpty) order.customer.name,
+                        if (order.customer.phone.isNotEmpty)
+                          order.customer.phone,
+                      ].join('  |  '),
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _StatusPill(
+                text: _statusLabel(order.status),
+                color: _statusColor(order.status),
+              ),
+              const SizedBox(width: 12),
+              if (!order.isAccepted &&
+                  controller.scope == MarketplaceOrderScope.newOrders)
+                FilledButton.icon(
+                  onPressed: controller.actionLoading
+                      ? null
+                      : controller.acceptSelected,
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: const Text('Принять'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF16A34A),
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(128, 44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+        Expanded(
+          child: order.groupedItems.isEmpty
+              ? const Center(
+                  child: Text(
+                    'Позиции появятся после загрузки деталей заказа',
+                    style: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.all(18),
+                  itemCount: order.groupedItems.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    return _GroupedItemCard(
+                      item: order.groupedItems[index],
+                      enabled: order.isAccepted &&
+                          !order.isShipped &&
+                          !controller.actionLoading,
+                      onShip: (qty) async {
+                        final result = await controller.shipSelectedItem(
+                          item: order.groupedItems[index],
+                          quantity: qty,
+                        );
+                        if (!context.mounted || result == null) return;
+                        if (result.saleCreated) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Заказ отгружен. Продажа создана: ${result.saleId}',
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _GroupedItemCard extends StatefulWidget {
+  const _GroupedItemCard({
+    required this.item,
+    required this.enabled,
+    required this.onShip,
   });
 
-  final String id;
-  final String customer;
-  final String channel;
-  final String status;
-  final Color accent;
-  final String eta;
-  final String amount;
-  final String time;
-  final List<String> items;
+  final MarketplaceGroupedItem item;
+  final bool enabled;
+  final Future<void> Function(num quantity) onShip;
+
+  @override
+  State<_GroupedItemCard> createState() => _GroupedItemCardState();
+}
+
+class _GroupedItemCardState extends State<_GroupedItemCard> {
+  late num _quantity;
+
+  @override
+  void initState() {
+    super.initState();
+    _quantity = _defaultShipmentQuantity(widget.item.remainingQuantity);
+  }
+
+  @override
+  void didUpdateWidget(covariant _GroupedItemCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.productId != widget.item.productId ||
+        oldWidget.item.remainingQuantity != widget.item.remainingQuantity) {
+      _quantity = _defaultShipmentQuantity(widget.item.remainingQuantity);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final canShip = widget.enabled && item.remainingQuantity > 0;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.name.isEmpty ? item.productId : item.name,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  [
+                    if (item.sku.isNotEmpty) 'SKU ${item.sku}',
+                    'Запрошено ${_fmt(item.requestedQuantity)}',
+                    'Отгружено ${_fmt(item.shippedQuantity)}',
+                    'Осталось ${_fmt(item.remainingQuantity)}',
+                  ].join('  |  '),
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          _QtyStepper(
+            value: _quantity,
+            max: item.remainingQuantity,
+            enabled: canShip,
+            onChanged: (value) => setState(() => _quantity = value),
+          ),
+          const SizedBox(width: 12),
+          FilledButton.icon(
+            onPressed: canShip ? () => widget.onShip(_quantity) : null,
+            icon: const Icon(Icons.local_shipping_outlined),
+            label: const Text('Отгрузить'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF2563EB),
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: const Color(0xFFE5E7EB),
+              disabledForegroundColor: const Color(0xFF94A3B8),
+              minimumSize: const Size(134, 44),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QtyStepper extends StatelessWidget {
+  const _QtyStepper({
+    required this.value,
+    required this.max,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final num value;
+  final num max;
+  final bool enabled;
+  final ValueChanged<num> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            onPressed: enabled && value > 1 ? () => onChanged(value - 1) : null,
+            icon: const Icon(Icons.remove),
+            tooltip: 'Меньше',
+          ),
+          SizedBox(
+            width: 46,
+            child: Text(
+              _fmt(value),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF0F172A),
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed:
+                enabled && value < max ? () => onChanged(value + 1) : null,
+            icon: const Icon(Icons.add),
+            tooltip: 'Больше',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.text, required this.color});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorStrip extends StatelessWidget {
+  const _ErrorStrip({required this.text, required this.onRefresh});
+
+  final String text;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      color: const Color(0xFFFFF1F2),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Color(0xFFBE123C), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF9F1239),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: onRefresh,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Повторить'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _shortOrderId(String id) {
+  if (id.length <= 12) return id;
+  return '${id.substring(0, 8)}...${id.substring(id.length - 4)}';
+}
+
+String _statusLabel(String status) {
+  switch (status) {
+    case 'awaiting_confirmation':
+      return 'Новый';
+    case 'processing':
+      return 'В работе';
+    case 'partially_shipped':
+      return 'Частично';
+    case 'shipped':
+      return 'Отгружен';
+    default:
+      return status.isEmpty ? 'Статус' : status;
+  }
+}
+
+Color _statusColor(String status) {
+  switch (status) {
+    case 'awaiting_confirmation':
+      return const Color(0xFF0F766E);
+    case 'processing':
+      return const Color(0xFF2563EB);
+    case 'partially_shipped':
+      return const Color(0xFFB45309);
+    case 'shipped':
+      return const Color(0xFF16A34A);
+    default:
+      return const Color(0xFF475569);
+  }
+}
+
+String _fmt(num value) {
+  if (value % 1 == 0) return value.toInt().toString();
+  return value.toString();
+}
+
+num _defaultShipmentQuantity(num remaining) {
+  if (remaining <= 0) return 0;
+  return remaining < 1 ? remaining : 1;
 }

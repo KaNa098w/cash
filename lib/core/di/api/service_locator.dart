@@ -5,9 +5,11 @@ import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
 import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
 import 'package:leemon_app/features/data/datasources/payment_remote_datasource.dart';
 import 'package:leemon_app/features/data/datasources/app_update_remote_datasource.dart';
+import 'package:leemon_app/features/data/datasources/marketplace_orders_remote_datasource.dart';
 import 'package:leemon_app/features/data/datasources/popular_products_local.dart';
 import 'package:leemon_app/features/data/datasources/popular_products_remote.dart';
 import 'package:leemon_app/features/data/datasources/refunds_remote_datasource.dart';
+import 'package:leemon_app/features/presentation/pages/marketplace_orders/marketplace_orders_controller.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_local_store.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_remote_datasource.dart';
@@ -159,6 +161,20 @@ Future<void> initDependencies() async {
   if (!sl.isRegistered<AppUpdateRemoteDataSource>()) {
     sl.registerLazySingleton<AppUpdateRemoteDataSource>(
       () => AppUpdateRemoteDataSource(sl<Dio>()),
+    );
+  }
+
+  if (!sl.isRegistered<MarketplaceOrdersRemoteDataSource>()) {
+    sl.registerLazySingleton<MarketplaceOrdersRemoteDataSource>(
+      () => MarketplaceOrdersRemoteDataSource(sl<Dio>()),
+    );
+  }
+
+  if (!sl.isRegistered<MarketplaceOrdersController>()) {
+    sl.registerLazySingleton<MarketplaceOrdersController>(
+      () => MarketplaceOrdersController(
+        sl<MarketplaceOrdersRemoteDataSource>(),
+      ),
     );
   }
 
