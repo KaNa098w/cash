@@ -7,7 +7,7 @@ class RefundModel {
   final String? number;
   final DateTime? date;
 
-  final int? totalAmount;
+  final num? totalAmount;
   final String? paymentMethod;
 
   final String? reason;
@@ -66,7 +66,7 @@ class RefundModel {
     String? id,
     String? number,
     DateTime? date,
-    int? totalAmount,
+    num? totalAmount,
     String? paymentMethod,
     String? reason,
     String? reasonCode,
@@ -106,7 +106,7 @@ class RefundModel {
       id: (json['id'] ?? '').toString(),
       number: (json['number'] ?? '').toString(),
       date: _asDateTime(json['date']),
-      totalAmount: _asInt(json['total_amount']),
+      totalAmount: _asNum(json['total_amount']),
       paymentMethod: json['payment_method']?.toString(),
       reason: json['reason']?.toString(),
       reasonCode: json['reason_code']?.toString(),
@@ -280,6 +280,12 @@ int _asInt(dynamic v) {
   if (v is int) return v;
   if (v is num) return v.toInt();
   return num.tryParse(v.toString().replaceAll(',', '.'))?.round() ?? 0;
+}
+
+num _asNum(dynamic v) {
+  if (v == null) return 0;
+  if (v is num) return v;
+  return num.tryParse(v.toString().replaceAll(',', '.')) ?? 0;
 }
 
 DateTime? _asDateTime(dynamic v) {

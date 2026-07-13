@@ -49,8 +49,7 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
   String? _error;
   bool _started = false;
 
-  bool get _supportsAutoUpdate =>
-      !kIsWeb && Platform.isWindows && !kDebugMode;
+  bool get _supportsAutoUpdate => !kIsWeb && Platform.isWindows && !kDebugMode;
 
   bool get _showOverlay =>
       _stage == _StartupUpdateStage.available ||
@@ -218,7 +217,8 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
     }
 
     if (!Platform.isWindows) {
-      throw Exception('Автообновление сейчас поддерживается только на Windows.');
+      throw Exception(
+          'Автообновление сейчас поддерживается только на Windows.');
     }
 
     final packageType = latest.packageType.trim().toLowerCase();
@@ -231,7 +231,8 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
       return;
     }
 
-    throw Exception('Неподдерживаемый тип пакета обновления: ${latest.packageType}');
+    throw Exception(
+        'Неподдерживаемый тип пакета обновления: ${latest.packageType}');
   }
 
   Future<void> _runZipUpdater(File packageFile) async {
@@ -294,7 +295,7 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
         await Future.delayed(const Duration(milliseconds: 80));
       }
       await windowManager.close();
-      await Future.delayed(const Duration(milliseconds: 150));
+      await Future.delayed(const Duration(milliseconds: 2500));
       exit(0);
     } catch (_) {
       exit(0);
@@ -406,7 +407,8 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
                                     _stage == _StartupUpdateStage.failed
                                         ? 'Не удалось обновить приложение'
                                         : 'Доступно новое обновление',
-                                    style: theme.textTheme.headlineSmall?.copyWith(
+                                    style:
+                                        theme.textTheme.headlineSmall?.copyWith(
                                       fontWeight: FontWeight.w900,
                                       color: const Color(0xFF111827),
                                     ),
@@ -434,7 +436,8 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
                             decoration: BoxDecoration(
                               color: const Color(0xFFF8FAFC),
                               borderRadius: BorderRadius.circular(18),
-                              border: Border.all(color: const Color(0xFFE5E7EB)),
+                              border:
+                                  Border.all(color: const Color(0xFFE5E7EB)),
                             ),
                             child: Row(
                               children: [
@@ -491,7 +494,8 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
                             decoration: BoxDecoration(
                               color: const Color(0xFFFFFBEB),
                               borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: const Color(0xFFFDE68A)),
+                              border:
+                                  Border.all(color: const Color(0xFFFDE68A)),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -517,7 +521,8 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
                             ),
                           ),
                         ],
-                        if (_stage == _StartupUpdateStage.failed && _error != null) ...[
+                        if (_stage == _StartupUpdateStage.failed &&
+                            _error != null) ...[
                           const SizedBox(height: 18),
                           Container(
                             width: double.infinity,
@@ -525,7 +530,8 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
                             decoration: BoxDecoration(
                               color: const Color(0xFFFEF2F2),
                               borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: const Color(0xFFFECACA)),
+                              border:
+                                  Border.all(color: const Color(0xFFFECACA)),
                             ),
                             child: Text(
                               _error!,

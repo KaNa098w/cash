@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:win32/win32.dart';
@@ -30,11 +31,23 @@ class CustomerDisplayService {
   }
 
   Future<void> _writeText(String text) async {
-    await Future<void>.delayed(Duration.zero);
-    _writeSerial('$text\r\n');
+    final targetPortName = portName;
+    final targetBaudRate = baudRate;
+    final payload = '$text\r\n';
+    await Isolate.run(
+      () => _writeSerialMessage(
+        portName: targetPortName,
+        baudRate: targetBaudRate,
+        text: payload,
+      ),
+    ).timeout(const Duration(seconds: 2));
   }
 
-  void _writeSerial(String text) {
+  static void _writeSerialMessage({
+    required String portName,
+    required int baudRate,
+    required String text,
+  }) {
     final portPath = _windowsPortPath(portName);
     final portPathPtr = portPath.toNativeUtf16();
     final dcb = calloc<DCB>();
@@ -89,7 +102,7 @@ class CustomerDisplayService {
     }
   }
 
-  String _windowsPortPath(String port) {
+  static String _windowsPortPath(String port) {
     final trimmed = port.trim();
     if (trimmed.startsWith(r'\\.\')) return trimmed;
     return '\\\\.\\$trimmed';

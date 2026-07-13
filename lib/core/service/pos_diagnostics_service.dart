@@ -13,6 +13,7 @@ class PosDiagnosticsService {
   Map<String, dynamic>? _lastSnapshotFile;
   List<Map<String, dynamic>> _lastSnapshotProducts = const [];
   Map<String, dynamic>? _lastBootstrapSummary;
+  final List<Map<String, dynamic>> _localStorageIssues = [];
 
   void recordError(String message) {
     final value = message.trim();
@@ -98,6 +99,15 @@ class PosDiagnosticsService {
     _lastBootstrapSummary = Map<String, dynamic>.from(summary);
   }
 
+  void recordLocalStorageIssue(Map<String, dynamic> issue) {
+    final normalized = Map<String, dynamic>.from(issue);
+    _localStorageIssues.add(normalized);
+    _lastErrorMessage = 'Local storage issue: ${normalized['file'] ?? ''}';
+  }
+
+  List<Map<String, dynamic>> get localStorageIssues =>
+      List.unmodifiable(_localStorageIssues);
+
   Map<String, dynamic> buildReport({
     Map<String, dynamic>? localState,
     List<Map<String, dynamic>> localProducts = const [],
@@ -109,6 +119,7 @@ class PosDiagnosticsService {
       'last_bootstrap_summary': _lastBootstrapSummary,
       'last_snapshot_file': _lastSnapshotFile,
       'last_snapshot_products': _lastSnapshotProducts,
+      'local_storage_issues': localStorageIssues,
       'local_state': localState,
       'local_products_saved_from_snapshot': localProducts,
     };

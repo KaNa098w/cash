@@ -129,6 +129,7 @@ class _DiagnosticsReportView extends StatelessWidget {
       report['local_products_saved_from_snapshot'],
     );
     final snapshotProducts = _asListOfMaps(report['last_snapshot_products']);
+    final localStorageIssues = _asListOfMaps(report['local_storage_issues']);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -142,6 +143,14 @@ class _DiagnosticsReportView extends StatelessWidget {
           bootstrapSummary: bootstrapSummary,
           localState: localState,
         ),
+        if (localStorageIssues.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _DataSection(
+            title: 'Поврежденные локальные JSON',
+            subtitle: '${localStorageIssues.length} записей',
+            data: localStorageIssues,
+          ),
+        ],
         const SizedBox(height: 14),
         Text(
           'Очередь сервисов',

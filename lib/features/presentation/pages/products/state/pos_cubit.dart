@@ -17,6 +17,9 @@ part 'pos_state.dart';
 class PosCubit extends Cubit<PosState> {
   static const _kPersistedStateKey = 'persisted_pos_state_v1';
   final PosRepository repo;
+  Timer? _persistDebounce;
+  PosState? _pendingPersistState;
+  Future<void> _persistQueue = Future<void>.value();
 
   PosCubit(this.repo) : super(PosState.initial()) {
     unawaited(_restorePersistedState());
@@ -47,12 +50,44 @@ class PosCubit extends Cubit<PosState> {
 
   void _emitAndPersist(PosState nextState) {
     emit(nextState);
-    unawaited(_persistState(nextState));
+    _schedulePersistState(nextState);
+  }
+
+  void _schedulePersistState(PosState state) {
+    _pendingPersistState = state;
+    _persistDebounce?.cancel();
+    _persistDebounce = Timer(
+      const Duration(milliseconds: 250),
+      () => unawaited(_flushPersistedState()),
+    );
+  }
+
+  Future<void> _flushPersistedState() {
+    final stateToPersist = _pendingPersistState;
+    _pendingPersistState = null;
+    if (stateToPersist == null) return Future<void>.value();
+
+    _persistQueue = _persistQueue.then((_) => _persistState(stateToPersist));
+    return _persistQueue;
+  }
+
+  Future<void> flushPendingState() {
+    _persistDebounce?.cancel();
+    return _flushPersistedState();
   }
 
   Future<void> _persistState(PosState state) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kPersistedStateKey, jsonEncode(state.toJson()));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kPersistedStateKey, jsonEncode(state.toJson()));
+    } catch (error, stackTrace) {
+      developer.log(
+        'Failed to persist POS state',
+        name: 'PosCubit',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   Future<void> _restorePersistedState() async {
@@ -71,9 +106,17 @@ class PosCubit extends Cubit<PosState> {
   }
 
   Future<void> resetAllLocalState() async {
+    _persistDebounce?.cancel();
+    _pendingPersistState = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kPersistedStateKey);
     emit(PosState.initial());
+  }
+
+  @override
+  Future<void> close() async {
+    await flushPendingState();
+    return super.close();
   }
 
   List<PosTicket> _updateActiveTicketItems(

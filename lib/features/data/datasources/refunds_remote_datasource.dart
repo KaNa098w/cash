@@ -24,7 +24,7 @@ class RefundsRemoteDatasource {
       if ((customerId ?? '').trim().isNotEmpty)
         'filter[customer_id]': customerId!.trim(),
       if (date != null) 'filter[date]': _formatIsoDate(date),
-      if (totalAmount != null) 'filter[total_amount]': _toIntMoney(totalAmount),
+      if (totalAmount != null) 'filter[total_amount]': _moneyValue(totalAmount),
     };
 
     final resp = await _dio.get(
@@ -89,7 +89,7 @@ class RefundsRemoteDatasource {
     final payload = <String, dynamic>{
       "date": _formatDateForApi(date ?? DateTime.now()),
       "sale_id": saleId.trim(),
-      "total_amount": _toIntMoney(totalAmount),
+      "total_amount": _moneyValue(totalAmount),
       if (customerId != null && customerId.trim().isNotEmpty)
         "customer_id": customerId.trim(),
       if ((reasonCode ?? '').trim().isNotEmpty)
@@ -151,7 +151,7 @@ class RefundsRemoteDatasource {
 
     final payload = <String, dynamic>{
       "date": _formatDateForApi(date ?? DateTime.now()),
-      "total_amount": _toIntMoney(totalAmount),
+      "total_amount": _moneyValue(totalAmount),
       if ((reasonCode ?? '').trim().isNotEmpty)
         "reason_code": reasonCode!.trim(),
       if ((note ?? '').trim().isNotEmpty) "note": note!.trim(),
@@ -188,7 +188,7 @@ class RefundsRemoteDatasource {
     return rid;
   }
 
-  int _toIntMoney(num v) => v.round();
+  num _moneyValue(num v) => v;
 
   String _formatDateForApi(DateTime d) {
     String two(int v) => v.toString().padLeft(2, '0');

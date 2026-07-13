@@ -12,6 +12,7 @@ import 'package:leemon_app/core/models/app_update_response.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/service/device_window_mode_service.dart';
+import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
 import 'package:printing/printing.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
@@ -817,6 +818,9 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
   final sync = sl<PosSyncService>();
 
   List<QueueListItem> queueItems = await sync.loadQueueItems();
+  final localStorageIssues = sl.isRegistered<PosDiagnosticsService>()
+      ? sl<PosDiagnosticsService>().localStorageIssues
+      : const <Map<String, dynamic>>[];
   final selectedOperationIds = <String>{};
   final syncEvents = <QueuePushEvent>[];
   var syncing = false;
@@ -1091,6 +1095,44 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                         color: Color(0xFF64748B),
                       ),
                     ),
+                    if (localStorageIssues.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFFBEB),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Поврежденные локальные JSON',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF92400E),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            for (final issue in localStorageIssues.take(3))
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Text(
+                                  '${issue['file'] ?? ''}\n-> ${issue['quarantined_to'] ?? ''}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    height: 1.25,
+                                    color: Color(0xFF78350F),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                     if (syncEvents.isNotEmpty) ...[
                       const SizedBox(height: 12),
                       Container(
@@ -3555,7 +3597,7 @@ Future<void> exitAppFully() async {
     await windowManager.close();
 
     // Если по какой-то причине не закрылось — добиваем процесс
-    await Future.delayed(const Duration(milliseconds: 150));
+    await Future.delayed(const Duration(milliseconds: 2500));
     exit(0);
   } catch (_) {
     exit(0);

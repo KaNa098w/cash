@@ -406,7 +406,7 @@ Future<void> _exitAppFully() async {
       await Future.delayed(const Duration(milliseconds: 80));
     }
     await windowManager.close();
-    await Future.delayed(const Duration(milliseconds: 150));
+    await Future.delayed(const Duration(milliseconds: 2500));
     exit(0);
   } catch (_) {
     exit(0);

@@ -4,7 +4,7 @@ import 'package:leemon_app/features/presentation/utils/comment_text_controller.d
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 
 class RefundDialogResult {
-  final int totalAmount;
+  final num totalAmount;
   final String reason;
   final String? note;
 
@@ -97,14 +97,14 @@ class _RefundDialogState extends State<RefundDialog> {
     _activeCtrl = null;
   }
 
-  int _toIntMoney(String s) {
+  num _parseMoney(String s) {
     final t = s.trim().replaceAll(',', '.');
     final n = num.tryParse(t);
-    return (n ?? 0).round();
+    return n ?? 0;
   }
 
   void _submit() {
-    final amount = _toIntMoney(_amountCtrl.text);
+    final amount = _parseMoney(_amountCtrl.text);
     final reason = _reasonCtrl.text.trim();
     final note = _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim();
 

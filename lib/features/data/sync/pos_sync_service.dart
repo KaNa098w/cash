@@ -1012,7 +1012,7 @@ class PosSyncService {
 
     /// Client-side client_sale_id. Required when [saleId] is empty (offline refund).
     String? clientSaleId,
-    required int totalAmount,
+    required num totalAmount,
     required String paymentMethod,
     required List<Map<String, dynamic>> payments,
     required DateTime date,

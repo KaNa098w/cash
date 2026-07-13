@@ -811,12 +811,11 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       };
     }).toList();
 
-    final totalAmount = items.fold<int>(
+    final totalAmount = items.fold<num>(
       0,
       (sum, it) =>
           sum +
-          (((it['price'] as num?) ?? 0).round() *
-              ((it['quantity'] as num?) ?? 0).round()),
+          (((it['price'] as num?) ?? 0) * ((it['quantity'] as num?) ?? 0)),
     );
 
     final sync = sl<PosSyncService>();
