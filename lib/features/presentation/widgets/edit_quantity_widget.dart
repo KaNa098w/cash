@@ -18,15 +18,12 @@ Future<void> editSelectedQty(BuildContext context) async {
 
   final item = state.items[idx];
   final unit = item.product.measurementUnit;
-  final isPieces = ProductModel.isPiecesMeasurementUnit(unit);
-  final conversionValue = item.product.conversionValue;
-
+  final displayUnit = item.product.conversionUnit ?? unit;
+  final isPieces = ProductModel.isDiscreteConversionUnit(displayUnit) ||
+      ProductModel.isPiecesMeasurementUnit(displayUnit);
   String formatQty(num v) {
-    final shown = (conversionValue != null && conversionValue > 0)
-        ? v * conversionValue
-        : v.toDouble();
     if (isPieces) return v.round().toString();
-    var s = shown.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), '');
+    var s = v.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), '');
     return s.isEmpty ? '0' : s;
   }
 
@@ -117,7 +114,8 @@ Future<void> editSelectedQty(BuildContext context) async {
                             // Подстрой под свою модель item (name/title/sku и т.д.)
                             _ItemHintCard(
                               title: item.product.name,
-                              subtitle: 'Текущее: ${formatQty(item.qty)} $unit',
+                              subtitle:
+                                  'Текущее: ${formatQty(item.qty)} $displayUnit',
                             ),
 
                             const SizedBox(height: 12),
@@ -303,10 +301,7 @@ class _QtyDisplayCard extends StatelessWidget {
                           : RegExp(r'^[0-9]*$'),
                     ),
                   ],
-                  style: Theme.of(context)
-                      .textTheme
-                      .displaySmall
-                      ?.copyWith(
+                  style: Theme.of(context).textTheme.displaySmall?.copyWith(
                         fontSize: 42,
                         fontWeight: FontWeight.w900,
                         height: 1.0,

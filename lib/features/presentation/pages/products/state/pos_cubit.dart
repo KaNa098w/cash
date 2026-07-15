@@ -150,6 +150,7 @@ class PosCubit extends Cubit<PosState> {
       quantity: m.quantity,
       measurementUnit: m.measurementUnit,
       conversionValue: m.conversionValue,
+      conversionUnit: m.conversionUnit,
       isUniversal: m.isUniversal,
       discountType: m.discountType,
       discountPercent: m.discountPercent,
@@ -207,6 +208,12 @@ class PosCubit extends Cubit<PosState> {
     addWithQty(p, 1);
   }
 
+  bool _shouldApplyServerDiscount(Product product) {
+    return product.discountType == 'fixed' &&
+        product.priceAfterDiscount > 0 &&
+        product.priceAfterDiscount < product.price;
+  }
+
   void addWithQty(Product p, double qty) {
     if (qty <= 0 || qty.isNaN || qty.isInfinite) return;
 
@@ -222,7 +229,7 @@ class PosCubit extends Cubit<PosState> {
         final it = list[idx];
         list[idx] = it.copyWith(
           qty: it.qty + qty,
-          discountApplied: it.discountApplied || p.discountType == 'fixed',
+          discountApplied: it.discountApplied || _shouldApplyServerDiscount(p),
         );
         updatedCartQty = list[idx].qty;
         updatedDiscountApplied = list[idx].discountApplied;
@@ -231,7 +238,7 @@ class PosCubit extends Cubit<PosState> {
         list.add(CartItem(
           product: p,
           qty: qty,
-          discountApplied: p.discountType == 'fixed',
+          discountApplied: _shouldApplyServerDiscount(p),
         ));
         updatedCartQty = list.last.qty;
         updatedDiscountApplied = list.last.discountApplied;
@@ -259,6 +266,31 @@ class PosCubit extends Cubit<PosState> {
     addWithQty(product, qty);
   }
 
+  /// Replaces every cart line for a converted product with one exact line.
+  /// The conversion dialog returns the final physical quantity, not an amount
+  /// to increment by.
+  void setConvertedProductQuantity(ProductModel model, double qty) {
+    if (qty <= 0 || qty.isNaN || qty.isInfinite) return;
+    final product = _mapProductModelToProduct(model);
+    int? selectedIndex;
+    final tickets = _updateActiveTicketItems((items) {
+      final list = items
+          .where((item) => item.product.id != product.id)
+          .toList(growable: true);
+      list.add(CartItem(
+        product: product,
+        qty: qty,
+        discountApplied: _shouldApplyServerDiscount(product),
+      ));
+      selectedIndex = list.length - 1;
+      return list;
+    });
+    _emitAndPersist(state.copyWith(
+      tickets: tickets,
+      selectedItemIndex: selectedIndex,
+    ));
+  }
+
   void addUniversalProduct(ProductModel m, {required double price}) {
     if (price <= 0 || price.isNaN || price.isInfinite) return;
 
@@ -268,6 +300,7 @@ class PosCubit extends Cubit<PosState> {
       quantity: 0,
       measurementUnit: 'шт.',
       clearConversionValue: true,
+      clearConversionUnit: true,
       isUniversal: true,
       discountType: 'forbidden',
       discountPercent: 0,
@@ -333,7 +366,7 @@ class PosCubit extends Cubit<PosState> {
             product: updatedProduct,
             discount: 0,
             clearCustomUnitPrice: true,
-            discountApplied: updatedProduct.discountType == 'fixed',
+            discountApplied: _shouldApplyServerDiscount(updatedProduct),
           );
         }
       }
@@ -405,10 +438,12 @@ class PosCubit extends Cubit<PosState> {
       final list = List<CartItem>.from(items);
       if (index >= 0 && index < list.length) {
         final current = list[index];
-        final normalizedQty = current.product.isUniversal
+        var normalizedQty = current.product.isUniversal
             ? qty
-            : ProductModel.isPiecesMeasurementUnit(
-                    current.product.measurementUnit)
+            : ProductModel.isDiscreteConversionUnit(
+                        current.product.conversionUnit) ||
+                    ProductModel.isPiecesMeasurementUnit(
+                        current.product.measurementUnit)
                 ? qty.roundToDouble()
                 : qty;
         list[index] = current.copyWith(qty: normalizedQty);
@@ -447,9 +482,11 @@ class PosCubit extends Cubit<PosState> {
   double get discountSum => state.items.fold<double>(0, (p, e) {
         if (e.product.isUniversal) return p;
         if (e.discountApplied && e.product.priceAfterDiscount > 0) {
-          return p + (e.product.price - e.product.priceAfterDiscount) * e.qty;
+          return p +
+              (e.product.price - e.product.priceAfterDiscount) *
+                  e.billableQuantity;
         }
-        return p + (e.product.price * e.qty) * (e.discount / 100);
+        return p + (e.product.price * e.billableQuantity) * (e.discount / 100);
       });
 
   bool _hasAvailableProductDiscount(CartItem item) {

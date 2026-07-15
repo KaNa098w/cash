@@ -49,7 +49,6 @@ class _IncomingOrdersDialogState extends State<_IncomingOrdersDialog> {
           posKey: auth.posKey ?? '',
           deviceId: auth.deviceId ?? '',
         );
-        _controller.markVisibleNewOrdersSeen();
       }());
     });
   }
@@ -331,7 +330,7 @@ class _OrderTile extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    _shortOrderId(order.id),
+                    'Заказ № ${order.displayNumber}',
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Color(0xFF0F172A),
@@ -403,7 +402,7 @@ class _OrderDetails extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Заказ ${_shortOrderId(order.id)}',
+                      'Заказ № ${order.displayNumber}',
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Color(0xFF0F172A),
@@ -545,6 +544,8 @@ class _GroupedItemCardState extends State<_GroupedItemCard> {
       ),
       child: Row(
         children: [
+          _OrderProductImage(url: item.imageUrl),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -594,6 +595,72 @@ class _GroupedItemCardState extends State<_GroupedItemCard> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OrderProductImage extends StatelessWidget {
+  const _OrderProductImage({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    final uri = Uri.tryParse(url.trim());
+    return Container(
+      width: 84,
+      height: 84,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: uri == null || !uri.isAbsolute
+          ? const _OrderNoPhoto()
+          : Image.network(
+              uri.toString(),
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const _OrderNoPhoto(),
+              loadingBuilder: (context, child, progress) => progress == null
+                  ? child
+                  : const Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+            ),
+    );
+  }
+}
+
+class _OrderNoPhoto extends StatelessWidget {
+  const _OrderNoPhoto();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.image_not_supported_outlined,
+            size: 25,
+            color: Color(0xFF94A3B8),
+          ),
+          SizedBox(height: 4),
+          Text(
+            'Нет фото',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF94A3B8),
             ),
           ),
         ],
@@ -716,11 +783,6 @@ class _ErrorStrip extends StatelessWidget {
       ),
     );
   }
-}
-
-String _shortOrderId(String id) {
-  if (id.length <= 12) return id;
-  return '${id.substring(0, 8)}...${id.substring(id.length - 4)}';
 }
 
 String _statusLabel(String status) {

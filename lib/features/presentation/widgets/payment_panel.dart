@@ -340,8 +340,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
   double _saleQuantityForItem(CartItem it) {
     if (it.product.isUniversal) return it.qty;
-    final cv = it.product.conversionValue;
-    return (cv != null && cv > 0) ? (it.qty * cv) : it.qty;
+    return it.billableQuantity;
   }
 
   Future<PosCustomer?> _validateDebtCustomerOnline({

@@ -772,10 +772,7 @@ class _SearchBarState extends State<SearchBar> {
                             final p = products[index];
                             final selected = index == _chooserSelectedIndex;
                             final qtyLabel = (() {
-                              final shown = (p.conversionValue != null &&
-                                      p.conversionValue! > 0)
-                                  ? p.quantity * p.conversionValue!
-                                  : p.quantity;
+                              final shown = p.quantity;
                               return ProductModel.isPiecesMeasurementUnit(
                                 p.measurementUnit,
                               )

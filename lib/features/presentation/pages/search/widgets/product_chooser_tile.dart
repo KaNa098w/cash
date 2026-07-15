@@ -139,10 +139,7 @@ class ProductChooserTileState extends State<ProductChooserTile> {
   }
 
   String _formatQty(double v) {
-    final shown = (widget.product.conversionValue != null &&
-            widget.product.conversionValue! > 0)
-        ? v * widget.product.conversionValue!
-        : v;
+    final shown = v;
     if (ProductModel.isPiecesMeasurementUnit(widget.product.measurementUnit)) {
       return shown.round().toString();
     }

@@ -18,6 +18,7 @@ import 'package:leemon_app/features/presentation/pages/products/product_bloc/pro
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/refund_access_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
+import 'package:leemon_app/features/presentation/widgets/conversion_product_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/footer_status.dart'
     show TouchDeleteDialog;
 import 'package:leemon_app/features/presentation/widgets/keypad_widget.dart';
@@ -366,6 +367,23 @@ class _CartListState extends State<CartList> {
       return formatQty(shown);
     }
 
+    String formatStockQty(double v, String unit) {
+      if (ProductModel.isPiecesMeasurementUnit(unit)) {
+        return v.round().toString();
+      }
+      return formatQty(v);
+    }
+
+    String cartQtyLabel(CartItem item) {
+      if (!item.product.hasConversion) {
+        return '${formatQtyByUnit(item.qty, item.product.measurementUnit)} ${item.product.measurementUnit}';
+      }
+      final actual = item.billableQuantity
+          .toStringAsFixed(3)
+          .replaceFirst(RegExp(r'\.?0+$'), '');
+      return '$actual ${item.product.measurementUnit}';
+    }
+
     return DefaultTextStyle.merge(
       style: const TextStyle(fontSize: kCartFs),
       child: Padding(
@@ -453,7 +471,7 @@ class _CartListState extends State<CartList> {
                                         it.product.isUniversal
                                             ? _shortProductNameKeepEnd(
                                                 it.product.name)
-                                            : '${_shortProductNameKeepEnd(it.product.name)} (${formatQtyByUnit(it.product.quantity, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit})',
+                                            : '${_shortProductNameKeepEnd(it.product.name)} (${formatStockQty(it.product.quantity, it.product.measurementUnit)} ${it.product.measurementUnit})',
                                         style: const TextStyle(
                                           fontSize: 20,
                                           fontWeight: FontWeight.w600,
@@ -500,19 +518,27 @@ class _CartListState extends State<CartList> {
                                     const SizedBox(width: 16),
 
                                     SizedBox(
-                                      width: 120,
+                                      width: 170,
                                       child: InkWell(
                                         onTap: () {
                                           context
                                               .read<PosCubit>()
                                               .selectItem(i);
+                                          if (it.product.hasConversion) {
+                                            editConvertedCartItem(
+                                              context,
+                                              index: i,
+                                              item: it,
+                                            );
+                                            return;
+                                          }
                                           _showQtyDialog(
                                             context,
                                             index: i,
                                             initialQty: it.qty,
                                             productName: it.product.name,
                                             currentQtyLabel:
-                                                '${formatQtyByUnit(it.product.quantity, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit}',
+                                                '${formatStockQty(it.product.quantity, it.product.measurementUnit)} ${it.product.measurementUnit}',
                                           );
                                         },
 
@@ -529,7 +555,7 @@ class _CartListState extends State<CartList> {
                                         child: Align(
                                           alignment: Alignment.centerRight,
                                           child: Container(
-                                            width: 78,
+                                            width: 165,
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 8,
                                               vertical: 6,
@@ -544,13 +570,14 @@ class _CartListState extends State<CartList> {
                                             ),
                                             alignment: Alignment.center,
                                             child: Text(
-                                              '${formatQtyByUnit(it.qty, it.product.measurementUnit, conversionValue: it.product.conversionValue)} ${it.product.measurementUnit}',
+                                              cartQtyLabel(it),
                                               textAlign: TextAlign.center,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                               style: GoogleFonts.inter(
-                                                fontSize: 18,
+                                                fontSize: 16,
                                                 fontWeight: FontWeight.w700,
-                                                height: 1.4,
-                                                letterSpacing: 0.27,
+                                                height: 1.15,
                                               ),
                                             ),
                                           ),
@@ -558,7 +585,7 @@ class _CartListState extends State<CartList> {
                                       ),
                                     ),
 
-                                    const SizedBox(width: 55),
+                                    const SizedBox(width: 10),
 
                                     // Скидка
                                     SizedBox(
@@ -796,8 +823,8 @@ class _Header extends StatelessWidget {
           ),
           cell('Цена', w: 100),
           const SizedBox(width: 30),
-          cell('Количество', w: 120),
-          const SizedBox(width: 25),
+          cell('Количество', w: 170),
+          const SizedBox(width: 10),
           cell('Скидка', w: 80),
           const SizedBox(width: 25),
           cell('Сумма', w: 140),

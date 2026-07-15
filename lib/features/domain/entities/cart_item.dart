@@ -53,9 +53,22 @@ class CartItem extends Equatable {
     return discount;
   }
 
+  /// Quantity the selling price is applied to.
+  ///
+  /// Converted products are stored in the cart as pieces, while their price is
+  /// specified per measurement unit (for example, per square metre).
+  double get billableQuantity {
+    if (product.isUniversal) return qty;
+    final conversionValue = product.conversionValue;
+    if (product.hasConversion) {
+      return double.parse((qty * conversionValue!).toStringAsFixed(3));
+    }
+    return qty;
+  }
+
   double get sum {
-    if (product.isUniversal) return effectiveUnitPrice * qty;
-    return effectiveUnitPrice * qty * (1 - discount / 100);
+    if (product.isUniversal) return effectiveUnitPrice * billableQuantity;
+    return effectiveUnitPrice * billableQuantity * (1 - discount / 100);
   }
 
   CartItem copyWith({

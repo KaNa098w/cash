@@ -4,12 +4,17 @@ import 'dart:io' show WebSocket;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:leemon_app/core/models/marketplace_order_models.dart';
 import 'package:leemon_app/features/data/datasources/marketplace_orders_remote_datasource.dart';
 import 'package:uuid/uuid.dart';
 
-class MarketplaceOrdersController extends ChangeNotifier {
-  MarketplaceOrdersController(this._remote);
+class MarketplaceOrdersController extends ChangeNotifier
+    with WidgetsBindingObserver {
+  MarketplaceOrdersController(this._remote) {
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   final MarketplaceOrdersRemoteDataSource _remote;
 
@@ -24,7 +29,7 @@ class MarketplaceOrdersController extends ChangeNotifier {
   List<MarketplaceOrder> _newOrders = const [];
   List<MarketplaceOrder> _activeOrders = const [];
   final Set<String> _knownNewOrderIds = <String>{};
-  final Set<String> _unseenNewOrderIds = <String>{};
+  final Map<String, String> _shipmentIdempotencyKeys = <String, String>{};
   MarketplaceOrder? _selectedOrder;
   Timer? _pollTimer;
   WebSocket? _socket;
@@ -38,7 +43,7 @@ class MarketplaceOrdersController extends ChangeNotifier {
   List<MarketplaceOrder> get newOrders => List.unmodifiable(_newOrders);
   List<MarketplaceOrder> get activeOrders => List.unmodifiable(_activeOrders);
   int get newCount => _newOrders.length;
-  int get notificationCount => _unseenNewOrderIds.length;
+  int get notificationCount => _newOrders.length;
   MarketplaceOrder? get selectedOrder => _selectedOrder;
   List<MarketplaceOrder> get visibleOrders =>
       _scope == MarketplaceOrderScope.active ? _activeOrders : _newOrders;
@@ -75,7 +80,6 @@ class MarketplaceOrdersController extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      _posInfo = await _remote.fetchPosInfo(key: _posKey);
       final results = await Future.wait([
         _remote.listOrders(
           key: _posKey,
@@ -146,12 +150,12 @@ class MarketplaceOrdersController extends ChangeNotifier {
   Future<void> acceptSelected() async {
     final order = _selectedOrder;
     if (order == null || _posKey.isEmpty) return;
+    if (_actionLoading) return;
     _actionLoading = true;
     _error = null;
     notifyListeners();
     try {
       await _remote.acceptOrder(key: _posKey, orderId: order.id);
-      _unseenNewOrderIds.remove(order.id);
       await refreshAll();
       _scope = MarketplaceOrderScope.active;
       await selectOrder(order.id);
@@ -170,6 +174,22 @@ class MarketplaceOrdersController extends ChangeNotifier {
   }) async {
     final order = _selectedOrder;
     if (order == null || _posKey.isEmpty) return null;
+    if (_actionLoading) return null;
+    if (quantity is! int || quantity < 1 || quantity > 100) {
+      _error = 'Количество отгрузки должно быть целым числом от 1 до 100.';
+      notifyListeners();
+      return null;
+    }
+    if (quantity > item.remainingQuantity) {
+      _error = 'Количество превышает остаток по заказу.';
+      notifyListeners();
+      return null;
+    }
+    final operationKey = '${order.id}:${item.productId}:$quantity';
+    final idempotencyKey = _shipmentIdempotencyKeys.putIfAbsent(
+      operationKey,
+      () => const Uuid().v4(),
+    );
     _actionLoading = true;
     _error = null;
     notifyListeners();
@@ -179,16 +199,20 @@ class MarketplaceOrdersController extends ChangeNotifier {
         orderId: order.id,
         productId: item.productId,
         quantity: quantity,
-        idempotencyKey: 'shipment-${const Uuid().v4()}',
+        idempotencyKey: idempotencyKey,
       );
+      _shipmentIdempotencyKeys.remove(operationKey);
       _selectedOrder = result.order;
       await _refreshListsQuietly();
-      if (result.order.isShipped) {
-        _unseenNewOrderIds.remove(result.order.id);
-      }
       notifyListeners();
       return result;
     } catch (e) {
+      // A timeout/network error has an unknown server outcome. Keep the key so
+      // a manual retry is idempotent. A definitive 4xx response starts a new
+      // operation on the next attempt.
+      if (_isDefinitiveClientError(e)) {
+        _shipmentIdempotencyKeys.remove(operationKey);
+      }
       _error = _friendlyError(e);
       notifyListeners();
       return null;
@@ -229,27 +253,23 @@ class MarketplaceOrdersController extends ChangeNotifier {
     _activeOrders = results[1].items;
   }
 
-  void markVisibleNewOrdersSeen() {
-    if (_unseenNewOrderIds.isEmpty) return;
-    final visibleIds = _newOrders.map((order) => order.id).toSet();
-    _unseenNewOrderIds.removeWhere(visibleIds.contains);
-    notifyListeners();
-  }
-
   void _applyNewOrders(
     List<MarketplaceOrder> orders, {
     required bool notifyNew,
   }) {
     final incomingIds = orders.map((order) => order.id).toSet();
     if (notifyNew) {
+      var hasNewOrder = false;
       for (final id in incomingIds) {
         if (!_knownNewOrderIds.contains(id)) {
-          _unseenNewOrderIds.add(id);
+          hasNewOrder = true;
         }
+      }
+      if (hasNewOrder) {
+        unawaited(SystemSound.play(SystemSoundType.alert));
       }
     }
     _knownNewOrderIds.addAll(incomingIds);
-    _unseenNewOrderIds.removeWhere((id) => !incomingIds.contains(id));
     _newOrders = orders;
   }
 
@@ -313,6 +333,12 @@ class MarketplaceOrdersController extends ChangeNotifier {
   }
 
   String _friendlyError(Object error) {
+    if (error is MarketplaceOrdersApiException) {
+      if (error.statusCode == 403) {
+        return 'Тариф организации неактивен.';
+      }
+      return error.message;
+    }
     if (error is DioException) {
       final data = error.response?.data;
       if (data is Map && data['message'] != null) {
@@ -321,6 +347,8 @@ class MarketplaceOrdersController extends ChangeNotifier {
       switch (error.response?.statusCode) {
         case 401:
           return 'POS ключ или device_id не прошли проверку.';
+        case 403:
+          return 'Тариф организации неактивен.';
         case 404:
           return 'Заказ не найден или не доступен этой POS.';
         case 422:
@@ -330,8 +358,28 @@ class MarketplaceOrdersController extends ChangeNotifier {
     return error.toString();
   }
 
+  bool _isDefinitiveClientError(Object error) {
+    if (error is MarketplaceOrdersApiException) {
+      final status = error.statusCode;
+      return status != null && status >= 400 && status < 500;
+    }
+    if (error is DioException) {
+      final status = error.response?.statusCode;
+      return status != null && status >= 400 && status < 500;
+    }
+    return false;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(refreshNewOrders());
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     _socketSub?.cancel();
     _socket?.close();

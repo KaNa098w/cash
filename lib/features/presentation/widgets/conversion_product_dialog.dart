@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:leemon_app/core/models/product_response.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
+import 'package:leemon_app/features/domain/entities/cart_item.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 
@@ -12,8 +13,7 @@ Future<bool> addProductToCartWithConversionFlow(
   BuildContext context,
   ProductModel product,
 ) async {
-  final cv = product.conversionValue;
-  if (cv == null || cv <= 0) {
+  if (!product.hasConversion) {
     context.read<PosCubit>().addFromProductModel(product);
     return true;
   }
@@ -29,8 +29,39 @@ Future<bool> addProductToCartWithConversionFlow(
   if (qtyToAdd == null || qtyToAdd <= 0) return false;
 
   if (!context.mounted) return false;
-  context.read<PosCubit>().addFromProductModel(product, qty: qtyToAdd);
+  context.read<PosCubit>().setConvertedProductQuantity(product, qtyToAdd);
   return true;
+}
+
+Future<void> editConvertedCartItem(
+  BuildContext context, {
+  required int index,
+  required CartItem item,
+}) async {
+  final product = ProductModel(
+    id: item.product.id,
+    name: item.product.name,
+    measurementUnit: item.product.measurementUnit,
+    arrivalCost: item.product.arrivalCost,
+    sellingPrice: item.product.price,
+    wholesalePrice: 0,
+    quantity: item.product.quantity,
+    conversionValue: item.product.conversionValue,
+    conversionUnit: item.product.conversionUnit,
+    discountType: item.product.discountType,
+    discountPercent: item.product.discountPercent,
+    priceAfterDiscount: item.product.priceAfterDiscount,
+  );
+  final qty = await showDialog<double>(
+    context: context,
+    barrierDismissible: true,
+    builder: (_) => _ConversionProductDialog(
+      product: product,
+      initialPhysicalQuantity: item.qty,
+    ),
+  );
+  if (qty == null || qty <= 0 || !context.mounted) return;
+  context.read<PosCubit>().setQty(index, qty);
 }
 
 enum _InputTarget { measurement, pieces }
@@ -38,9 +69,11 @@ enum _InputTarget { measurement, pieces }
 class _ConversionProductDialog extends StatefulWidget {
   const _ConversionProductDialog({
     required this.product,
+    this.initialPhysicalQuantity,
   });
 
   final ProductModel product;
+  final double? initialPhysicalQuantity;
 
   @override
   State<_ConversionProductDialog> createState() =>
@@ -60,6 +93,15 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
   @override
   void initState() {
     super.initState();
+    final initialPieces = widget.initialPhysicalQuantity;
+    final cv = widget.product.conversionValue ?? 0;
+    if (initialPieces != null && initialPieces > 0) {
+      _setText(_piecesController, _formatNumber(initialPieces));
+      _setText(
+        _measurementController,
+        _formatNumber(initialPieces * cv, fractionDigits: 3),
+      );
+    }
     _measurementFocusNode.addListener(() {
       if (_measurementFocusNode.hasFocus) {
         setState(() => _activeTarget = _InputTarget.measurement);
@@ -103,13 +145,23 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
     );
   }
 
+  int _physicalQuantityFor(double measurement, double conversionValue) {
+    if (measurement <= 0 || conversionValue <= 0) return 0;
+    // Avoid an exact converted area such as 63.930 / 2.131 becoming
+    // 30.000000000000004 in binary floating point and ceil() returning 31.
+    final ratio = measurement / conversionValue;
+    final normalizedRatio = double.parse(ratio.toStringAsFixed(9));
+    return normalizedRatio.ceil();
+  }
+
   void _syncFromMeasurement() {
     if (_isSyncing) return;
     _isSyncing = true;
     final cv = widget.product.conversionValue ?? 0;
     final measurement = _parseValue(_measurementController.text) ?? 0;
-    final pieces = measurement > 0 && cv > 0 ? (measurement / cv).ceil() : 0;
-    final actualMeasurement = pieces > 0 ? pieces * cv : 0;
+    final pieces = _physicalQuantityFor(measurement, cv);
+    final actualMeasurement =
+        pieces > 0 ? double.parse((pieces * cv).toStringAsFixed(3)) : 0;
     _setText(_piecesController, pieces <= 0 ? '' : pieces.toString());
     _setText(
       _measurementController,
@@ -124,7 +176,8 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
     _isSyncing = true;
     final cv = widget.product.conversionValue ?? 0;
     final pieces = (_parseValue(_piecesController.text) ?? 0).round();
-    final measurement = pieces > 0 ? pieces * cv : 0;
+    final measurement =
+        pieces > 0 ? double.parse((pieces * cv).toStringAsFixed(3)) : 0;
     _setText(
       _measurementController,
       measurement <= 0 ? '' : _formatNumber(measurement),
@@ -162,7 +215,12 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
     final measurementValue = _parseValue(_measurementController.text) ?? 0;
     final piecesValue =
         (_parseValue(_piecesController.text) ?? 0).roundToDouble();
-    final totalAmount = piecesValue * product.sellingPrice;
+    final hasRequiredDiscount = product.discountType == 'fixed' &&
+        product.priceAfterDiscount > 0 &&
+        product.priceAfterDiscount < product.sellingPrice;
+    final unitPrice =
+        hasRequiredDiscount ? product.priceAfterDiscount : product.sellingPrice;
+    final totalAmount = measurementValue * unitPrice;
     final canConfirm = piecesValue > 0;
 
     return Dialog(
@@ -226,12 +284,14 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                               children: [
                                 _InfoChip(
                                   icon: Icons.payments_outlined,
-                                  label: money(product.sellingPrice),
+                                  label: hasRequiredDiscount
+                                      ? '${money(unitPrice)} / ${product.measurementUnit} со скидкой'
+                                      : '${money(unitPrice)} / ${product.measurementUnit}',
                                 ),
                                 _InfoChip(
                                   icon: Icons.straighten_rounded,
                                   label:
-                                      '1 шт. = ${_formatNumber(cv)} ${product.measurementUnit}',
+                                      '1 ${product.conversionUnit} = ${_formatNumber(cv, fractionDigits: 3)} ${product.measurementUnit}',
                                 ),
                                 // _InfoChip(
                                 //   icon: Icons.inventory_2_outlined,
@@ -277,7 +337,7 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: _LinkedInputCard(
-                          label: 'Количество, шт.',
+                          label: 'Количество, ${product.conversionUnit}',
                           controller: _piecesController,
                           focusNode: _piecesFocusNode,
                           keyboardType: const TextInputType.numberWithOptions(
@@ -376,7 +436,8 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                           children: [
                             _SummaryTile(
                               title: 'Количество',
-                              value: '${piecesValue.toInt()} шт.',
+                              value:
+                                  '${piecesValue.toInt()} ${product.conversionUnit}',
                             ),
                             _SummaryTile(
                               title: 'Сумма',

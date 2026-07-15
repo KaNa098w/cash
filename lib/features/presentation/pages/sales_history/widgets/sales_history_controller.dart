@@ -35,6 +35,15 @@ class SalesHistoryController {
     notify();
   }
 
+  /// Atomically reserves refund submission for this sale.
+  /// Returns false when another scan/tap is already processing it.
+  bool tryStartRefund(String saleId, VoidCallback notify) {
+    if (_refundLoading[saleId] == true) return false;
+    _refundLoading[saleId] = true;
+    notify();
+    return true;
+  }
+
   void setReceiptPrintLoading(String saleId, bool v, VoidCallback notify) {
     _receiptPrintCooldownTimers.remove(saleId)?.cancel();
     _receiptPrintLoading[saleId] = v;

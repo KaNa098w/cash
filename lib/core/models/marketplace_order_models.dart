@@ -150,6 +150,7 @@ class MarketplaceOrdersPage {
 class MarketplaceOrder {
   const MarketplaceOrder({
     required this.id,
+    required this.number,
     required this.status,
     required this.customer,
     required this.items,
@@ -161,6 +162,7 @@ class MarketplaceOrder {
     final rawItems = json['items'] ?? const [];
     return MarketplaceOrder(
       id: _string(json['id']),
+      number: _string(json['number']),
       status: _string(json['status']),
       customer: MarketplaceCustomer.fromJson(_map(json['customer'])),
       items: rawItems is List ? rawItems : const [],
@@ -176,6 +178,7 @@ class MarketplaceOrder {
   }
 
   final String id;
+  final String number;
   final String status;
   final MarketplaceCustomer customer;
   final List<dynamic> items;
@@ -187,6 +190,15 @@ class MarketplaceOrder {
       status == 'shipped';
 
   bool get isShipped => status == 'shipped';
+
+  /// Human-readable order number supplied by the marketplace backend.
+  /// UUID remains a fallback for older responses without `number`.
+  String get displayNumber => number.isNotEmpty ? number : _shortId(id);
+}
+
+String _shortId(String id) {
+  if (id.length <= 12) return id;
+  return '${id.substring(0, 8)}...${id.substring(id.length - 4)}';
 }
 
 class MarketplaceCustomer {
@@ -214,6 +226,7 @@ class MarketplaceGroupedItem {
     required this.shippedQuantity,
     required this.remainingQuantity,
     required this.status,
+    required this.images,
   });
 
   factory MarketplaceGroupedItem.fromJson(Map<String, dynamic> json) {
@@ -227,6 +240,12 @@ class MarketplaceGroupedItem {
       shippedQuantity: _num(json['shippedQuantity']),
       remainingQuantity: _num(json['remainingQuantity']),
       status: _string(json['status']),
+      images: (json['images'] is List ? json['images'] as List : const [])
+          .whereType<Map>()
+          .map((image) => MarketplaceProductImage.fromJson(
+                Map<String, dynamic>.from(image),
+              ))
+          .toList(growable: false),
     );
   }
 
@@ -239,6 +258,61 @@ class MarketplaceGroupedItem {
   final num shippedQuantity;
   final num remainingQuantity;
   final String status;
+  final List<MarketplaceProductImage> images;
+
+  String get imageUrl => images.isEmpty ? '' : images.first.preferredUrl;
+}
+
+class MarketplaceProductImage {
+  const MarketplaceProductImage({required this.url, required this.sizes});
+
+  factory MarketplaceProductImage.fromJson(Map<String, dynamic> json) {
+    final rawSizes = json['sizes'];
+    return MarketplaceProductImage(
+      url: _string(json['url']),
+      sizes: rawSizes is List
+          ? rawSizes
+              .whereType<Map>()
+              .map((size) => MarketplaceProductImageSize.fromJson(
+                    Map<String, dynamic>.from(size),
+                  ))
+              .where((size) => size.url.isNotEmpty)
+              .toList(growable: false)
+          : const [],
+    );
+  }
+
+  final String url;
+  final List<MarketplaceProductImageSize> sizes;
+
+  String get preferredUrl {
+    if (sizes.isEmpty) return url;
+    final sorted = [...sizes]..sort((a, b) => a.width.compareTo(b.width));
+    for (final size in sorted) {
+      if (size.width >= 140) return size.url;
+    }
+    return sorted.last.url;
+  }
+}
+
+class MarketplaceProductImageSize {
+  const MarketplaceProductImageSize({
+    required this.width,
+    required this.height,
+    required this.url,
+  });
+
+  factory MarketplaceProductImageSize.fromJson(Map<String, dynamic> json) {
+    return MarketplaceProductImageSize(
+      width: _int(json['width']) ?? 0,
+      height: _int(json['height']) ?? 0,
+      url: _string(json['url']),
+    );
+  }
+
+  final int width;
+  final int height;
+  final String url;
 }
 
 class MarketplaceAcceptResult {

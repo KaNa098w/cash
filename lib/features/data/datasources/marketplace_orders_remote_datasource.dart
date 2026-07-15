@@ -11,7 +11,7 @@ class MarketplaceOrdersRemoteDataSource {
     if (safeKey.isEmpty) throw Exception('pos key is empty');
 
     final response = await _dio.get('/organizations/pos/$safeKey');
-    final body = _asMap(response.data, 'fetchPosInfo');
+    final body = _checkedMap(response.data, 'fetchPosInfo');
     return MarketplacePosInfo.fromJson(body);
   }
 
@@ -32,7 +32,9 @@ class MarketplaceOrdersRemoteDataSource {
         'take': take.clamp(1, 100),
       },
     );
-    return MarketplaceOrdersPage.fromJson(_asMap(response.data, 'listOrders'));
+    return MarketplaceOrdersPage.fromJson(
+      _checkedMap(response.data, 'listOrders'),
+    );
   }
 
   Future<MarketplaceOrder> getOrder({
@@ -47,7 +49,7 @@ class MarketplaceOrdersRemoteDataSource {
     final response = await _dio.get(
       '/organizations/pos/$safeKey/marketplace/orders/$safeOrderId',
     );
-    final body = _asMap(response.data, 'getOrder');
+    final body = _checkedMap(response.data, 'getOrder');
     final data = body['data'];
     if (data is Map) {
       return MarketplaceOrder.fromJson(Map<String, dynamic>.from(data));
@@ -68,7 +70,7 @@ class MarketplaceOrdersRemoteDataSource {
       '/organizations/pos/$safeKey/marketplace/orders/$safeOrderId/accept',
     );
     return MarketplaceAcceptResult.fromJson(
-      _asMap(response.data, 'acceptOrder'),
+      _checkedMap(response.data, 'acceptOrder'),
     );
   }
 
@@ -90,6 +92,9 @@ class MarketplaceOrdersRemoteDataSource {
     if (safeIdempotencyKey.isEmpty) {
       throw Exception('idempotency key is empty');
     }
+    if (quantity is! int || quantity < 1 || quantity > 100) {
+      throw Exception('shipment quantity must be an integer from 1 to 100');
+    }
 
     final response = await _dio.put(
       '/organizations/pos/$safeKey/marketplace/orders/$safeOrderId/items/shipment',
@@ -100,7 +105,7 @@ class MarketplaceOrdersRemoteDataSource {
       options: Options(headers: {'Idempotency-Key': safeIdempotencyKey}),
     );
     return MarketplaceShipmentResult.fromJson(
-      _asMap(response.data, 'shipItem'),
+      _checkedMap(response.data, 'shipItem'),
     );
   }
 }
@@ -109,4 +114,39 @@ Map<String, dynamic> _asMap(Object? value, String operation) {
   if (value is Map<String, dynamic>) return value;
   if (value is Map) return Map<String, dynamic>.from(value);
   throw Exception('$operation: invalid response format');
+}
+
+Map<String, dynamic> _checkedMap(Object? value, String operation) {
+  final body = _asMap(value, operation);
+  if (body['ok'] == false) {
+    final rawStatus = body['status'];
+    final status = rawStatus is num
+        ? rawStatus.toInt()
+        : int.tryParse(rawStatus?.toString() ?? '');
+    final result = body['result'];
+    final resultMessage = result is Map ? result['message'] : null;
+    final message =
+        (body['message'] ?? resultMessage ?? 'Операция отклонена').toString();
+    throw MarketplaceOrdersApiException(
+      operation: operation,
+      message: message,
+      statusCode: status,
+    );
+  }
+  return body;
+}
+
+class MarketplaceOrdersApiException implements Exception {
+  const MarketplaceOrdersApiException({
+    required this.operation,
+    required this.message,
+    this.statusCode,
+  });
+
+  final String operation;
+  final String message;
+  final int? statusCode;
+
+  @override
+  String toString() => message;
 }

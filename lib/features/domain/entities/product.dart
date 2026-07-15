@@ -11,6 +11,9 @@ class Product extends Equatable {
   final double quantity;
   final String measurementUnit;
   final double? conversionValue;
+  final String? conversionUnit;
+  bool get hasConversion =>
+      conversionValue != null && conversionValue! > 0 && conversionUnit != null;
   final bool isUniversal;
 
   /// "automatic" | "fixed" | "forbidden" | null
@@ -29,6 +32,7 @@ class Product extends Equatable {
     this.quantity = 0,
     this.measurementUnit = 'шт.',
     this.conversionValue,
+    this.conversionUnit,
     this.isUniversal = false,
     this.discountType,
     this.discountPercent = 0,
@@ -46,6 +50,7 @@ class Product extends Equatable {
         quantity: (json['quantity'] as num?)?.toDouble() ?? 0,
         measurementUnit: (json['measurementUnit'] ?? 'шт.').toString(),
         conversionValue: (json['conversionValue'] as num?)?.toDouble(),
+        conversionUnit: json['conversionUnit']?.toString(),
         isUniversal: json['isUniversal'] == true,
         discountType: json['discountType']?.toString(),
         discountPercent: (json['discountPercent'] as num?)?.toDouble() ?? 0,
@@ -62,6 +67,7 @@ class Product extends Equatable {
         'quantity': quantity,
         'measurementUnit': measurementUnit,
         'conversionValue': conversionValue,
+        'conversionUnit': conversionUnit,
         'isUniversal': isUniversal,
         'discountType': discountType,
         'discountPercent': discountPercent,
@@ -78,6 +84,7 @@ class Product extends Equatable {
         quantity,
         measurementUnit,
         conversionValue,
+        conversionUnit,
         isUniversal,
         discountType,
         discountPercent,
@@ -93,7 +100,9 @@ class Product extends Equatable {
     double? quantity,
     String? measurementUnit,
     double? conversionValue,
+    String? conversionUnit,
     bool clearConversionValue = false,
+    bool clearConversionUnit = false,
     bool? isUniversal,
     String? discountType,
     double? discountPercent,
@@ -110,6 +119,8 @@ class Product extends Equatable {
       conversionValue: clearConversionValue
           ? null
           : (conversionValue ?? this.conversionValue),
+      conversionUnit:
+          clearConversionUnit ? null : (conversionUnit ?? this.conversionUnit),
       isUniversal: isUniversal ?? this.isUniversal,
       discountType: discountType ?? this.discountType,
       discountPercent: discountPercent ?? this.discountPercent,

@@ -22,6 +22,10 @@ class ProductModel {
   /// Сколько штук в 1 единице измерения.
   /// null — если measurement_unit == штуки (конвертация не нужна).
   final double? conversionValue;
+  final String? conversionUnit;
+
+  bool get hasConversion =>
+      conversionValue != null && conversionValue! > 0 && conversionUnit != null;
 
   // ── Скидки (из нового API) ──────────────────────────────────────────
   /// "automatic" | "fixed" | "forbidden" | null
@@ -54,6 +58,7 @@ class ProductModel {
     this.globalProductId,
     this.isUniversal = false,
     this.conversionValue,
+    this.conversionUnit,
     this.discountType,
     this.discountPercent = 0.0,
     this.discountAmount = 0.0,
@@ -77,6 +82,12 @@ class ProductModel {
     return piecesAliases.contains(normalizeMeasurementUnit(measurementUnit));
   }
 
+  static bool isDiscreteConversionUnit(String? unit) {
+    if (unit == null) return false;
+    const discreteUnits = {'шт', 'уп', 'кор'};
+    return discreteUnits.contains(normalizeMeasurementUnit(unit));
+  }
+
   static String? _asString(dynamic v) {
     if (v == null) return null;
     final s = v.toString().trim();
@@ -89,8 +100,7 @@ class ProductModel {
     return double.tryParse(v.toString()) ?? 0.0;
   }
 
-  static double? _asConversionValue(dynamic v, String measurementUnit) {
-    if (isPiecesMeasurementUnit(measurementUnit)) return null;
+  static double? _asConversionValue(dynamic v) {
     if (v == null) return null;
     if (v is num) return v > 0 ? v.toDouble() : null;
     final n = double.tryParse(v.toString().replaceAll(',', '.'));
@@ -114,20 +124,13 @@ class ProductModel {
     };
 
     if (rawQuantity <= 0) return 0.0;
-    if (isPiecesMeasurementUnit(measurementUnit)) return rawQuantity;
-
-    final cv = conversionValue;
-    if (cv == null || cv <= 0) return rawQuantity;
-
-    // Сервер хранит остаток в штуках, а POS работает в единице товара:
-    // 36 шт / 12 шт. в упаковке = 3 уп.
-    return rawQuantity / cv;
+    // API returns stock in the base measurement_unit (for example, m²).
+    return rawQuantity;
   }
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
     final measurementUnit = (json['measurement_unit'] ?? '').toString();
-    final conversionValue =
-        _asConversionValue(json['conversion_value'], measurementUnit);
+    final conversionValue = _asConversionValue(json['conversion_value']);
 
     return ProductModel(
       id: (json['id'] != null) ? _asString(json['id']) : null,
@@ -154,6 +157,7 @@ class ProductModel {
           json['is_universal'] == 1 ||
           json['is_universal']?.toString().trim() == '1',
       conversionValue: conversionValue,
+      conversionUnit: _asString(json['conversion_unit']),
       discountType: _asString(json['discount_type']),
       discountPercent: _asDouble(json['discount_percent']),
       discountAmount: _asDouble(json['discount_amount']),
@@ -179,6 +183,7 @@ class ProductModel {
       'global_product_id': globalProductId,
       'is_universal': isUniversal ? 1 : 0,
       'conversion_value': conversionValue,
+      'conversion_unit': conversionUnit,
       'discount_type': discountType,
       'discount_percent': discountPercent,
       'discount_amount': discountAmount,

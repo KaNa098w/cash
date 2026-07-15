@@ -834,7 +834,19 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       _ => 'cash',
     };
 
-    final accounts = await sync.loadAccounts();
+    // Reserve the operation before the first asynchronous gap. Otherwise two
+    // rapid taps can both pass the initial isLoading check.
+    if (!_controller.tryStartRefund(saleId, () => setState(() {}))) {
+      return false;
+    }
+
+    List<LocalAccount> accounts;
+    try {
+      accounts = await sync.loadAccounts();
+    } catch (_) {
+      _controller.setRefundLoading(saleId, false, () => setState(() {}));
+      rethrow;
+    }
     final visibleAccounts =
         accounts.where((account) => account.visibleToPos).toList();
     final cardAccount = visibleAccounts.cast<LocalAccount?>().firstWhere(
@@ -847,6 +859,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       showRefundError(
         'Не найден наличный счёт POS. Выполните вход заново.',
       );
+      _controller.setRefundLoading(saleId, false, () => setState(() {}));
       return false;
     }
     if ((refundPaymentMethod == 'card' || refundPaymentMethod == 'mixed') &&
@@ -854,6 +867,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       showRefundError(
         'Не найден счет карты. Обновите синхронизацию POS или настройте счет BANK/POS.',
       );
+      _controller.setRefundLoading(saleId, false, () => setState(() {}));
       return false;
     }
 
@@ -898,8 +912,6 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       for (final p in picks)
         (p.saleItemId.isNotEmpty ? p.saleItemId : p.productId): p.quantity,
     };
-
-    _controller.setRefundLoading(saleId, true, () => setState(() {}));
 
     // 🔍 Debug: Log saved return_access_key
     try {

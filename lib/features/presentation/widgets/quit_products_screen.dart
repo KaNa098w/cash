@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:leemon_app/core/models/product_response.dart';
-import 'package:leemon_app/features/data/utils/app_theme.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 
 Future<ProductModel?> showQuickProductsDialog(
@@ -10,117 +9,167 @@ Future<ProductModel?> showQuickProductsDialog(
   return showDialog<ProductModel?>(
     context: context,
     barrierDismissible: true,
-    builder: (ctx) {
-      return Dialog(
-        backgroundColor: ThemeColors.greyB,
-        insetPadding: const EdgeInsets.all(20),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 950, maxHeight: 600),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-            child: LayoutBuilder(
-              builder: (context, c) {
-                final w = c.maxWidth;
-                final cols = w > 880
-                    ? 6
-                    : w > 720
-                        ? 5
-                        : w > 560
-                            ? 4
-                            : 3;
+    builder: (ctx) => Dialog(
+      backgroundColor: const Color(0xFFF6F7F9),
+      insetPadding: const EdgeInsets.all(20),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 950, maxHeight: 600),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              final columns = width > 880
+                  ? 6
+                  : width > 720
+                      ? 5
+                      : width > 560
+                          ? 4
+                          : 3;
 
-                return Column(
-                  children: [
-                    Expanded(
-                      child: GridView.builder(
-                        padding: const EdgeInsets.all(6),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: cols,
-                          mainAxisSpacing: 16,
-                          crossAxisSpacing: 16,
-                          childAspectRatio: 0.72,
-                        ),
-                        itemCount: products.length,
-                        itemBuilder: (context, i) {
-                          final p = products[i];
-                          return _QuickProductTile(
-                            title: '${p.name} (${(() {
-                              final shown = (p.conversionValue != null &&
-                                      p.conversionValue! > 0)
-                                  ? p.quantity * p.conversionValue!
-                                  : p.quantity;
-                              return ProductModel.isPiecesMeasurementUnit(
-                                      p.measurementUnit)
-                                  ? shown.round().toString()
-                                  : shown
-                                      .toStringAsFixed(2)
-                                      .replaceFirst(RegExp(r'\\.?0+\$'), '');
-                            })()} ${p.measurementUnit})',
-                            price: p.sellingPrice,
-                            onTap: () => Navigator.of(ctx).pop(p),
-                          );
-                        },
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: SizedBox(
-                        width: 240,
-                        height: 64,
-                        child: FilledButton(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFD45F4F),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
+              return Column(
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Быстрые товары',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF111827),
+                              ),
                             ),
-                          ),
-                          onPressed: () => Navigator.of(ctx).maybePop(),
-                          child: const Text(
-                            'ЗАКРЫТЬ',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.4,
+                            SizedBox(height: 3),
+                            Text(
+                              'Выберите товар для добавления в корзину',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Color(0xFF6B7280),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
-                );
-              },
-            ),
+                      IconButton.filledTonal(
+                        tooltip: 'Закрыть',
+                        onPressed: () => Navigator.of(ctx).maybePop(),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Expanded(
+                    child: products.isEmpty
+                        ? const _EmptyQuickProducts()
+                        : GridView.builder(
+                            padding: const EdgeInsets.all(6),
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: columns,
+                              mainAxisSpacing: 16,
+                              crossAxisSpacing: 16,
+                              childAspectRatio: 0.78,
+                            ),
+                            itemCount: products.length,
+                            itemBuilder: (context, index) {
+                              final product = products[index];
+                              return _QuickProductTile(
+                                product: product,
+                                onTap: () => Navigator.of(ctx).pop(product),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
-      );
-    },
+      ),
+    ),
   );
 }
 
 class _QuickProductTile extends StatelessWidget {
-  const _QuickProductTile({
-    required this.title,
-    required this.price,
-    required this.onTap,
-  });
+  const _QuickProductTile({required this.product, required this.onTap});
 
-  final String title;
-  final double price;
+  final ProductModel product;
   final VoidCallback onTap;
+
+  String get _quantityLabel {
+    final value = ProductModel.isPiecesMeasurementUnit(product.measurementUnit)
+        ? product.quantity.round().toString()
+        : product.quantity
+            .toStringAsFixed(2)
+            .replaceFirst(RegExp(r'\.?0+$'), '');
+    return '$value ${product.measurementUnit}';
+  }
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: ThemeColors.white, // ✅ фон карточки как у диалога
-      borderRadius: BorderRadius.circular(14),
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            child: _ProductCard(title: title, price: price),
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(13),
+                  child: _ProductImage(url: product.coverUrl),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                product.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.2,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _quantityLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    money(product.effectivePrice),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF456B5A),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -128,73 +177,79 @@ class _QuickProductTile extends StatelessWidget {
   }
 }
 
-class _ProductCard extends StatelessWidget {
-  const _ProductCard({
-    required this.title,
-    required this.price,
-  });
+class _ProductImage extends StatelessWidget {
+  const _ProductImage({required this.url});
 
-  final String title;
-  final double price;
+  final String? url;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 90,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        mainAxisSize: MainAxisSize.max,
-        children: [
-          Stack(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  width: 100,
-                  height: 100,
-                  color: ThemeColors.white, // ✅ фон "картинки" greyB
-                ),
-              ),
-              const Positioned(
-                right: 4,
-                top: 4,
-                child: Icon(Icons.add, size: 20, color: Colors.black54),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Flexible(
-            child: SizedBox(
-              width: 120,
-              child: Text(
-                title,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 10,
-                  color: Color(0xFF6B7280),
-                  height: 1.2,
-                ),
-              ),
+    final safeUrl = url?.trim() ?? '';
+    final uri = Uri.tryParse(safeUrl);
+    if (uri == null || !uri.isAbsolute) return const _NoPhoto();
+
+    return Image.network(
+      safeUrl,
+      width: double.infinity,
+      height: double.infinity,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => const _NoPhoto(),
+      loadingBuilder: (context, child, progress) => progress == null
+          ? child
+          : const ColoredBox(
+              color: Color(0xFFF1F3F5),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             ),
-          ),
-          const SizedBox(height: 6),
-          Container(
-            width: 100,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            decoration: BoxDecoration(
-              color: ThemeColors.white, // ✅ фон цены тоже greyB
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              money(price),
-              style: const TextStyle(
-                fontSize: 14,
+    );
+  }
+}
+
+class _NoPhoto extends StatelessWidget {
+  const _NoPhoto();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Color(0xFFF1F3F5),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.image_not_supported_outlined,
+                size: 30, color: Color(0xFF9CA3AF)),
+            SizedBox(height: 6),
+            Text(
+              'Нет фото',
+              style: TextStyle(
+                fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: Colors.black87,
+                color: Color(0xFF9CA3AF),
               ),
-              textAlign: TextAlign.end,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyQuickProducts extends StatelessWidget {
+  const _EmptyQuickProducts();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.inventory_2_outlined, size: 48, color: Color(0xFF9CA3AF)),
+          SizedBox(height: 12),
+          Text(
+            'Быстрые товары не найдены',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF6B7280),
             ),
           ),
         ],

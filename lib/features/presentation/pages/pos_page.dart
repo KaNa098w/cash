@@ -8,6 +8,7 @@ import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.
 import 'package:leemon_app/features/presentation/pages/sales_history/sales_history_page.dart';
 import 'package:leemon_app/features/presentation/widgets/app_update_background_check.dart';
 import 'package:leemon_app/features/presentation/widgets/footer_status.dart';
+import 'package:leemon_app/features/presentation/widgets/order_notification_demo.dart';
 import 'package:leemon_app/features/presentation/widgets/top_bar.dart';
 import 'package:leemon_app/features/presentation/pages/search/search_bar.dart'
     as sb;
@@ -47,41 +48,44 @@ class _PosPageState extends State<PosPage> {
             baseTheme.primaryTextTheme,
           ),
         ),
-        child: Column(
+        child: Stack(
           children: [
-            const TopBar(),
-            Expanded(
-              child: BlocBuilder<PosCubit, PosState>(
-                builder: (context, state) {
-                  return IndexedStack(
-                    index: state.isHistoryMode ? 1 : 0,
-                    children: const [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              children: [
-                                Padding(
-                                  padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
-                                  child: sb.SearchBar(),
+            Column(
+              children: [
+                const TopBar(),
+                Expanded(
+                  child: BlocBuilder<PosCubit, PosState>(
+                    builder: (context, state) {
+                      return IndexedStack(
+                        index: state.isHistoryMode ? 1 : 0,
+                        children: const [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  children: [
+                                    Padding(
+                                      padding:
+                                          EdgeInsets.fromLTRB(16, 12, 16, 0),
+                                      child: sb.SearchBar(),
+                                    ),
+                                    SizedBox(height: 8),
+                                    Expanded(child: CartList()),
+                                    FooterStatus(),
+                                  ],
                                 ),
-                                SizedBox(height: 8),
-                                Expanded(child: CartList()),
-                                FooterStatus(),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
+                          SafeArea(top: false, child: SalesHistoryPage()),
                         ],
-                      ),
-                      SafeArea(
-                        top: false,
-                        child: SalesHistoryPage(),
-                      ),
-                    ],
-                  );
-                },
-              ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
+            const Positioned.fill(child: OrderNotificationDemo()),
           ],
         ),
       ),
