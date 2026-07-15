@@ -29,6 +29,8 @@ class MarketplaceOrdersController extends ChangeNotifier
   List<MarketplaceOrder> _newOrders = const [];
   List<MarketplaceOrder> _activeOrders = const [];
   final Set<String> _knownNewOrderIds = <String>{};
+  MarketplaceOrder? _latestIncomingOrder;
+  int _notificationRevision = 0;
   final Map<String, String> _shipmentIdempotencyKeys = <String, String>{};
   MarketplaceOrder? _selectedOrder;
   Timer? _pollTimer;
@@ -44,6 +46,8 @@ class MarketplaceOrdersController extends ChangeNotifier
   List<MarketplaceOrder> get activeOrders => List.unmodifiable(_activeOrders);
   int get newCount => _newOrders.length;
   int get notificationCount => _newOrders.length;
+  MarketplaceOrder? get latestIncomingOrder => _latestIncomingOrder;
+  int get notificationRevision => _notificationRevision;
   MarketplaceOrder? get selectedOrder => _selectedOrder;
   List<MarketplaceOrder> get visibleOrders =>
       _scope == MarketplaceOrderScope.active ? _activeOrders : _newOrders;
@@ -69,6 +73,11 @@ class MarketplaceOrdersController extends ChangeNotifier
     _error = null;
     notifyListeners();
 
+    try {
+      _posInfo = await _remote.fetchPosInfo(key: _posKey);
+    } catch (_) {
+      _posInfo = null;
+    }
     await refreshAll();
     _startPolling();
     unawaited(_prepareRealtime());
@@ -118,6 +127,16 @@ class MarketplaceOrdersController extends ChangeNotifier
       _error = _friendlyError(e);
       notifyListeners();
     }
+  }
+
+  Future<void> deactivate() async {
+    _initialized = false;
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    await _socketSub?.cancel();
+    _socketSub = null;
+    await _socket?.close();
+    _socket = null;
   }
 
   Future<void> setScope(MarketplaceOrderScope next) async {
@@ -259,13 +278,12 @@ class MarketplaceOrdersController extends ChangeNotifier
   }) {
     final incomingIds = orders.map((order) => order.id).toSet();
     if (notifyNew) {
-      var hasNewOrder = false;
-      for (final id in incomingIds) {
-        if (!_knownNewOrderIds.contains(id)) {
-          hasNewOrder = true;
-        }
-      }
-      if (hasNewOrder) {
+      final unseenOrders = orders
+          .where((order) => !_knownNewOrderIds.contains(order.id))
+          .toList(growable: false);
+      if (unseenOrders.isNotEmpty) {
+        _latestIncomingOrder = unseenOrders.first;
+        _notificationRevision++;
         unawaited(SystemSound.play(SystemSoundType.alert));
       }
     }

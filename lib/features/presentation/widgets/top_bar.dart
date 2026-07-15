@@ -7,6 +7,7 @@ import 'package:flutter_svg/svg.dart';
 import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/core/service/marketplace_feature_gate.dart';
 import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/marketplace_orders/marketplace_orders_controller.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
@@ -117,7 +118,27 @@ class TopBar extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           _divider(),
-                          const _MarketplaceOrdersButton(),
+                          AnimatedBuilder(
+                            animation: MarketplaceFeatureGate.instance,
+                            builder: (context, _) {
+                              if (MarketplaceFeatureGate.instance.enabled) {
+                                return const _MarketplaceOrdersButton();
+                              }
+                              return IconButton(
+                                onPressed: null,
+                                icon: SvgPicture.asset(
+                                  'assets/svg/bag.svg',
+                                  width: 24,
+                                  height: 24,
+                                  colorFilter: const ColorFilter.mode(
+                                    Colors.white,
+                                    BlendMode.srcIn,
+                                  ),
+                                ),
+                                tooltip: 'Онлайн заказы',
+                              );
+                            },
+                          ),
                           _divider(),
                           IconButton(
                             onPressed: () {
@@ -315,11 +336,14 @@ class _MarketplaceOrdersButton extends StatefulWidget {
 
 class _MarketplaceOrdersButtonState extends State<_MarketplaceOrdersButton> {
   late final MarketplaceOrdersController _controller;
+  int _handledNotificationRevision = 0;
 
   @override
   void initState() {
     super.initState();
     _controller = GetIt.I<MarketplaceOrdersController>();
+    _handledNotificationRevision = _controller.notificationRevision;
+    _controller.addListener(_handleMarketplaceUpdate);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final auth = context.read<AuthTokenProvider>();
@@ -328,6 +352,39 @@ class _MarketplaceOrdersButtonState extends State<_MarketplaceOrdersButton> {
         deviceId: auth.deviceId ?? '',
       ));
     });
+  }
+
+  void _handleMarketplaceUpdate() {
+    if (!mounted ||
+        _controller.notificationRevision == _handledNotificationRevision) {
+      return;
+    }
+    _handledNotificationRevision = _controller.notificationRevision;
+    final order = _controller.latestIncomingOrder;
+    if (order == null) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Новый заказ №${order.displayNumber}'),
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'Открыть',
+            onPressed: () => showIncomingOrdersDialog(context),
+          ),
+        ),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_handleMarketplaceUpdate);
+    unawaited(_controller.deactivate());
+    super.dispose();
   }
 
   @override
@@ -490,12 +547,33 @@ class _StatusDotState extends State<_StatusDot> {
           margin: const EdgeInsets.symmetric(horizontal: 8),
         ),
         const SizedBox(width: 14),
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            color: _online ? const Color(0xFF22C55E) : const Color(0xFFDC2626),
-            shape: BoxShape.circle,
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            final changed = MarketplaceFeatureGate.instance.registerTap();
+            if (!changed || !mounted) return;
+            final enabled = MarketplaceFeatureGate.instance.enabled;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  enabled
+                      ? 'Сервисы маркетплейса включены'
+                      : 'Сервисы маркетплейса отключены',
+                ),
+              ),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color:
+                    _online ? const Color(0xFF22C55E) : const Color(0xFFDC2626),
+                shape: BoxShape.circle,
+              ),
+            ),
           ),
         ),
       ],
