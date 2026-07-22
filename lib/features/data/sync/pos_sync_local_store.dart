@@ -179,6 +179,14 @@ class PosSyncLocalStore {
     ''');
 
     db.execute('''
+      CREATE TABLE IF NOT EXISTS product_id_mappings (
+        local_id TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    ''');
+
+    db.execute('''
       CREATE UNIQUE INDEX IF NOT EXISTS outbox_operations_type_client_id_unique
       ON outbox_operations (type, client_id);
     ''');
@@ -777,6 +785,49 @@ class PosSyncLocalStore {
         .toList(growable: false);
   }
 
+  Future<void> upsertLocalProduct(Map<String, dynamic> product) async {
+    final db = await _database;
+    final row = _mapProductRow(product, _nowIso());
+    if (row != null) _upsertRow(db, 'products', row);
+  }
+
+  Future<void> replaceLocalProduct({
+    required String localId,
+    required Map<String, dynamic> serverProduct,
+  }) async {
+    final db = await _database;
+    final serverId = (serverProduct['id'] ?? '').toString().trim();
+    if (serverId.isEmpty) {
+      throw const FormatException('Product response does not contain id');
+    }
+    final row = _mapProductRow(serverProduct, _nowIso());
+    if (row == null) {
+      throw const FormatException('Invalid product response');
+    }
+    _inTransaction<void>(db, () {
+      db.execute(
+        '''
+        INSERT INTO product_id_mappings (local_id, server_id, created_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(local_id) DO UPDATE SET server_id = excluded.server_id
+        ''',
+        [localId, serverId, _nowIso()],
+      );
+      db.execute('DELETE FROM products WHERE id = ?', [localId]);
+      _upsertRow(db, 'products', row);
+    });
+  }
+
+  Future<String?> findServerProductId(String localId) async {
+    final db = await _database;
+    final row = _firstRow(db.select(
+      'SELECT server_id FROM product_id_mappings WHERE local_id = ? LIMIT 1',
+      [localId],
+    ));
+    final value = (row?['server_id'] ?? '').toString().trim();
+    return value.isEmpty ? null : value;
+  }
+
   Future<List<Map<String, dynamic>>> loadProductsRaw() async {
     final db = await _database;
     final rows = db
@@ -967,11 +1018,12 @@ class PosSyncLocalStore {
         ORDER BY
           CASE type
             WHEN 'session_open'  THEN 0
-            WHEN 'sale'          THEN 1
-            WHEN 'payment'       THEN 2
-            WHEN 'refund'        THEN 3
-            WHEN 'session_close' THEN 4
-            ELSE 5
+            WHEN 'product_create' THEN 1
+            WHEN 'sale'          THEN 2
+            WHEN 'payment'       THEN 3
+            WHEN 'refund'        THEN 4
+            WHEN 'session_close' THEN 5
+            ELSE 6
           END ASC,
           created_at ASC
         LIMIT ?
@@ -1285,6 +1337,18 @@ class PosSyncLocalStore {
       );
 
       switch (type) {
+        case OutboxOperationType.productCreate:
+          final localProduct = <String, dynamic>{
+            ...normalizedPayload,
+            'id': clientId,
+            'name': _string(
+              normalizedPayload['name'],
+              fallback: _string(normalizedPayload['barcode']),
+            ),
+            'quantity': 0,
+          };
+          final productRow = _mapProductRow(localProduct, now);
+          if (productRow != null) _upsertRow(db, 'products', productRow);
         case OutboxOperationType.sale:
           final localNumber = _asInt(normalizedPayload['local_number']);
           final receiptNumber = _string(
@@ -1400,6 +1464,8 @@ class PosSyncLocalStore {
       );
 
       switch (type) {
+        case OutboxOperationType.productCreate:
+          db.execute('DELETE FROM products WHERE id = ?', [clientId]);
         case OutboxOperationType.sale:
           db.execute(
             'DELETE FROM sale_items WHERE sale_id = ?',
@@ -2408,6 +2474,8 @@ class PosSyncLocalStore {
         }
 
         switch (type) {
+          case OutboxOperationType.productCreate:
+            break;
           case OutboxOperationType.sale:
             changed = _applyPayloadValue(
                   payload,
@@ -3208,6 +3276,8 @@ class PosSyncLocalStore {
             OutboxOperationType.sale;
     final payload = decodeJsonMap((row['payload_json'] ?? '{}').toString());
     final title = switch (type) {
+      OutboxOperationType.productCreate =>
+        'Товар ${payload['name'] ?? payload['barcode'] ?? row['client_id']}',
       OutboxOperationType.sale =>
         'Чек №${payload['local_number'] ?? payload['client_sale_id'] ?? row['client_id']}',
       OutboxOperationType.payment => 'Платеж ${payload['amount'] ?? ''}'.trim(),

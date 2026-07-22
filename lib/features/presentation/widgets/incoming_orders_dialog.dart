@@ -448,6 +448,34 @@ class _OrderDetails extends StatelessWidget {
                     ),
                   ),
                 ),
+              if (order.status == 'processing' ||
+                  order.status == 'partially_shipped') ...[
+                const SizedBox(width: 12),
+                FilledButton.icon(
+                  onPressed: controller.actionLoading
+                      ? null
+                      : () => _confirmAndShip(context, controller),
+                  icon: controller.actionLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.local_shipping_outlined),
+                  label: const Text('Отгрузить заказ'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(170, 44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -470,25 +498,6 @@ class _OrderDetails extends StatelessWidget {
                   itemBuilder: (context, index) {
                     return _GroupedItemCard(
                       item: order.groupedItems[index],
-                      enabled: order.isAccepted &&
-                          !order.isShipped &&
-                          !controller.actionLoading,
-                      onShip: (qty) async {
-                        final result = await controller.shipSelectedItem(
-                          item: order.groupedItems[index],
-                          quantity: qty,
-                        );
-                        if (!context.mounted || result == null) return;
-                        if (result.saleCreated) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Заказ отгружен. Продажа создана: ${result.saleId}',
-                              ),
-                            ),
-                          );
-                        }
-                      },
                     );
                   },
                 ),
@@ -496,45 +505,48 @@ class _OrderDetails extends StatelessWidget {
       ],
     );
   }
+
+  Future<void> _confirmAndShip(
+    BuildContext context,
+    MarketplaceOrdersController controller,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Подтверждение отгрузки'),
+        content: const Text('Отгрузить все оставшиеся позиции заказа?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Отгрузить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final result = await controller.shipSelectedOrder();
+    if (!context.mounted || result == null) return;
+    final saleSuffix = result.saleCreated && result.saleId.isNotEmpty
+        ? ' Продажа создана: ${result.saleId}'
+        : '';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Заказ полностью отгружен.$saleSuffix')),
+    );
+  }
 }
 
-class _GroupedItemCard extends StatefulWidget {
-  const _GroupedItemCard({
-    required this.item,
-    required this.enabled,
-    required this.onShip,
-  });
+class _GroupedItemCard extends StatelessWidget {
+  const _GroupedItemCard({required this.item});
 
   final MarketplaceGroupedItem item;
-  final bool enabled;
-  final Future<void> Function(num quantity) onShip;
-
-  @override
-  State<_GroupedItemCard> createState() => _GroupedItemCardState();
-}
-
-class _GroupedItemCardState extends State<_GroupedItemCard> {
-  late num _quantity;
-
-  @override
-  void initState() {
-    super.initState();
-    _quantity = _defaultShipmentQuantity(widget.item.remainingQuantity);
-  }
-
-  @override
-  void didUpdateWidget(covariant _GroupedItemCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.item.productId != widget.item.productId ||
-        oldWidget.item.remainingQuantity != widget.item.remainingQuantity) {
-      _quantity = _defaultShipmentQuantity(widget.item.remainingQuantity);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    final item = widget.item;
-    final canShip = widget.enabled && item.remainingQuantity > 0;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -572,29 +584,6 @@ class _GroupedItemCardState extends State<_GroupedItemCard> {
                   ),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          _QtyStepper(
-            value: _quantity,
-            max: item.remainingQuantity,
-            enabled: canShip,
-            onChanged: (value) => setState(() => _quantity = value),
-          ),
-          const SizedBox(width: 12),
-          FilledButton.icon(
-            onPressed: canShip ? () => widget.onShip(_quantity) : null,
-            icon: const Icon(Icons.local_shipping_outlined),
-            label: const Text('Отгрузить'),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF2563EB),
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: const Color(0xFFE5E7EB),
-              disabledForegroundColor: const Color(0xFF94A3B8),
-              minimumSize: const Size(134, 44),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
             ),
           ),
         ],
@@ -662,59 +651,6 @@ class _OrderNoPhoto extends StatelessWidget {
               fontWeight: FontWeight.w700,
               color: Color(0xFF94A3B8),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _QtyStepper extends StatelessWidget {
-  const _QtyStepper({
-    required this.value,
-    required this.max,
-    required this.enabled,
-    required this.onChanged,
-  });
-
-  final num value;
-  final num max;
-  final bool enabled;
-  final ValueChanged<num> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 44,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: enabled && value > 1 ? () => onChanged(value - 1) : null,
-            icon: const Icon(Icons.remove),
-            tooltip: 'Меньше',
-          ),
-          SizedBox(
-            width: 46,
-            child: Text(
-              _fmt(value),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF0F172A),
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          IconButton(
-            onPressed:
-                enabled && value < max ? () => onChanged(value + 1) : null,
-            icon: const Icon(Icons.add),
-            tooltip: 'Больше',
           ),
         ],
       ),
@@ -818,9 +754,4 @@ Color _statusColor(String status) {
 String _fmt(num value) {
   if (value % 1 == 0) return value.toInt().toString();
   return value.toString();
-}
-
-num _defaultShipmentQuantity(num remaining) {
-  if (remaining <= 0) return 0;
-  return remaining < 1 ? remaining : 1;
 }

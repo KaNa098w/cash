@@ -10,7 +10,10 @@ class MarketplaceOrdersRemoteDataSource {
     final safeKey = key.trim();
     if (safeKey.isEmpty) throw Exception('pos key is empty');
 
-    final response = await _dio.get('/organizations/pos/$safeKey');
+    final response = await _dio.get(
+      '/organizations/pos/$safeKey',
+      options: _silentLogOptions,
+    );
     final body = _checkedMap(response.data, 'fetchPosInfo');
     return MarketplacePosInfo.fromJson(body);
   }
@@ -31,6 +34,7 @@ class MarketplaceOrdersRemoteDataSource {
         'skip': skip < 0 ? 0 : skip,
         'take': take.clamp(1, 100),
       },
+      options: _silentLogOptions,
     );
     return MarketplaceOrdersPage.fromJson(
       _checkedMap(response.data, 'listOrders'),
@@ -48,6 +52,7 @@ class MarketplaceOrdersRemoteDataSource {
 
     final response = await _dio.get(
       '/organizations/pos/$safeKey/marketplace/orders/$safeOrderId',
+      options: _silentLogOptions,
     );
     final body = _checkedMap(response.data, 'getOrder');
     final data = body['data'];
@@ -74,41 +79,42 @@ class MarketplaceOrdersRemoteDataSource {
     );
   }
 
-  Future<MarketplaceShipmentResult> shipItem({
+  Future<MarketplaceShipmentResult> shipOrder({
     required String key,
     required String orderId,
-    required String productId,
-    required num quantity,
     required String idempotencyKey,
   }) async {
     final safeKey = key.trim();
     final safeOrderId = orderId.trim();
-    final safeProductId = productId.trim();
     final safeIdempotencyKey = idempotencyKey.trim();
 
     if (safeKey.isEmpty) throw Exception('pos key is empty');
     if (safeOrderId.isEmpty) throw Exception('order id is empty');
-    if (safeProductId.isEmpty) throw Exception('product id is empty');
     if (safeIdempotencyKey.isEmpty) {
       throw Exception('idempotency key is empty');
-    }
-    if (quantity is! int || quantity < 1 || quantity > 100) {
-      throw Exception('shipment quantity must be an integer from 1 to 100');
     }
 
     final response = await _dio.put(
       '/organizations/pos/$safeKey/marketplace/orders/$safeOrderId/items/shipment',
-      data: {
-        'productId': safeProductId,
-        'quantity': quantity,
-      },
+      data: <String, dynamic>{},
       options: Options(headers: {'Idempotency-Key': safeIdempotencyKey}),
     );
-    return MarketplaceShipmentResult.fromJson(
-      _checkedMap(response.data, 'shipItem'),
-    );
+    final body = _checkedMap(response.data, 'shipOrder');
+    final result = MarketplaceShipmentResult.fromJson(body);
+    if (!result.ok) {
+      throw MarketplaceOrdersApiException(
+        operation: 'shipOrder',
+        message: (body['message'] ?? 'Не удалось отгрузить заказ').toString(),
+        statusCode: result.status,
+      );
+    }
+    return result;
   }
 }
+
+final Options _silentLogOptions = Options(
+  extra: const {'silentDioLog': true},
+);
 
 Map<String, dynamic> _asMap(Object? value, String operation) {
   if (value is Map<String, dynamic>) return value;

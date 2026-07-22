@@ -16,6 +16,7 @@ import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_state.dart';
+import 'package:leemon_app/features/presentation/pages/products/product_create_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_page.dart';
 import 'package:leemon_app/features/presentation/pages/search/search_keyboard_controller.dart';
@@ -47,10 +48,12 @@ class _SearchBarState extends State<SearchBar> {
   bool _keyboardOpen = false;
   OverlayEntry? _keyboardEntry;
   Timer? _scanDebounce;
+  Timer? _missingProductDebounce;
   Timer? _typingDebounce;
   OverlayEntry? _chooserEntry;
   Timer? _routeFocusRestoreTimer;
   bool _showClearSearchButton = false;
+  bool _creatingMissingProduct = false;
   List<ProductModel> _chooserProducts = const [];
   int _chooserSelectedIndex = 0;
   final _chooserScrollController = ScrollController();
@@ -126,13 +129,14 @@ class _SearchBarState extends State<SearchBar> {
 
   void _onQueryChanged(String _) {
     final raw = _controller.text;
+    _missingProductDebounce?.cancel();
 
     // сканеры часто шлют \n/\r в конце
     if (raw.contains('\n') || raw.contains('\r')) {
       final cleaned = raw.replaceAll(RegExp(r'[\r\n]+'), '');
       _controller.text = cleaned;
       _controller.selection = TextSelection.collapsed(offset: cleaned.length);
-      _doSearch();
+      _doSearch(submitted: true);
       return;
     }
 
@@ -152,12 +156,24 @@ class _SearchBarState extends State<SearchBar> {
     if (RegExp(r'^\d{8,}$').hasMatch(q)) {
       _typingDebounce?.cancel();
       _scanDebounce?.cancel();
-      _scanDebounce = Timer(const Duration(milliseconds: 80), _doSearch);
+      _scanDebounce = Timer(
+        const Duration(milliseconds: 80),
+        () => _doSearch(),
+      );
+      if (q.length == 11 || q.length == 12) {
+        _missingProductDebounce = Timer(
+          const Duration(seconds: 2),
+          () => _doSearch(submitted: true),
+        );
+      }
       return;
     }
 
     _typingDebounce?.cancel();
-    _typingDebounce = Timer(const Duration(milliseconds: 220), _doSearch);
+    _typingDebounce = Timer(
+      const Duration(milliseconds: 220),
+      () => _doSearch(),
+    );
   }
 
   @override
@@ -173,6 +189,7 @@ class _SearchBarState extends State<SearchBar> {
     _chooserScrollController.dispose();
     super.dispose();
     _scanDebounce?.cancel();
+    _missingProductDebounce?.cancel();
     _typingDebounce?.cancel();
     _hardwareScanResetTimer?.cancel();
     _routeFocusRestoreTimer?.cancel();
@@ -278,7 +295,7 @@ class _SearchBarState extends State<SearchBar> {
               width: double.infinity,
               child: OnScreenKeyboardSheet(
                 controllerGetter: () => _controller,
-                onEnter: _doSearch,
+                onEnter: () => _doSearch(submitted: true),
                 onClose: _dismissSearchKeyboard,
               ),
             ),
@@ -354,7 +371,7 @@ class _SearchBarState extends State<SearchBar> {
     if (code.isEmpty) return;
     _controller.text = code;
     _controller.selection = TextSelection.collapsed(offset: code.length);
-    _doSearch();
+    _doSearch(submitted: true);
   }
 
   void _ensureValidSelection() {
@@ -539,7 +556,7 @@ class _SearchBarState extends State<SearchBar> {
         return KeyEventResult.handled;
       }
       _resetHardwareScanState();
-      _doSearch();
+      _doSearch(submitted: true);
       return KeyEventResult.handled;
     }
 
@@ -633,7 +650,8 @@ class _SearchBarState extends State<SearchBar> {
     _restoreSearchFocus();
   }
 
-  Future<void> _doSearch() async {
+  Future<void> _doSearch({bool submitted = false}) async {
+    if (submitted) _missingProductDebounce?.cancel();
     final query = _controller.text.trim();
     if (query.isEmpty) {
       _removeChooser();
@@ -676,11 +694,36 @@ class _SearchBarState extends State<SearchBar> {
     }).toList();
 
     if (matches.isEmpty) {
-      // ScaffoldMessenger.of(context).showSnackBar(
-      //   SnackBar(content: Text('Товар не найден: "$query"')),
-      // );
       _removeChooser();
       _setShowClearSearchButton(isBarcodeLike);
+      if (RegExp(r'^\d{11,13}$').hasMatch(query) &&
+          (query.length == 13 || submitted) &&
+          !_creatingMissingProduct) {
+        _creatingMissingProduct = true;
+        _closeKeyboard();
+        try {
+          final created = await _runWithDialogFocus(
+            () => showProductCreateDialog(
+              context,
+              initialBarcode: query,
+              scannedProductNotFound: true,
+            ),
+            restoreFocus: false,
+          );
+          if (!mounted || created == null) return;
+          productsCubit.addProduct(created);
+          final added = await addProductToCartWithConversionFlow(
+            context,
+            created,
+          );
+          if (!mounted || !added) return;
+          _controller.clear();
+          _removeChooser();
+        } finally {
+          _creatingMissingProduct = false;
+          if (mounted) _restoreSearchFocus();
+        }
+      }
       return;
     }
 
@@ -932,7 +975,7 @@ class _SearchBarState extends State<SearchBar> {
                               _chooserProducts[_chooserSelectedIndex];
                           unawaited(_selectChooserProduct(product));
                         } else {
-                          _doSearch();
+                          _doSearch(submitted: true);
                         }
                       },
                       const SingleActivator(LogicalKeyboardKey.numpadEnter):
@@ -943,7 +986,7 @@ class _SearchBarState extends State<SearchBar> {
                               _chooserProducts[_chooserSelectedIndex];
                           unawaited(_selectChooserProduct(product));
                         } else {
-                          _doSearch();
+                          _doSearch(submitted: true);
                         }
                       },
                     },
@@ -960,7 +1003,7 @@ class _SearchBarState extends State<SearchBar> {
                             !_disableSearchFieldForIpad && !isHistoryMode,
                         onTap: _restoreSearchFocus,
                         onTapOutside: (_) => _restoreSearchFocus(),
-                        onSubmitted: (_) => _doSearch(),
+                        onSubmitted: (_) => _doSearch(submitted: true),
                         textInputAction: TextInputAction.search,
                         style: const TextStyle(fontSize: 18),
                         decoration: InputDecoration(
@@ -997,7 +1040,7 @@ class _SearchBarState extends State<SearchBar> {
                               width: 20,
                               height: 20,
                             ),
-                            onPressed: _doSearch,
+                            onPressed: () => _doSearch(submitted: true),
                           ),
                         ),
                       ),

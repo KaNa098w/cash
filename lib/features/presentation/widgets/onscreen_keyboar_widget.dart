@@ -31,7 +31,7 @@ class OnScreenKeyboardSheet extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const _Grabber(),
+              const _Grabber(), 
               const SizedBox(height: 10),
               Row(
                 children: [
@@ -43,6 +43,7 @@ class OnScreenKeyboardSheet extends StatelessWidget {
                   ),
                   const Spacer(),
                   IconButton(
+                    
                     tooltip: 'Закрыть',
                     onPressed: onClose,
                     icon: const Icon(Icons.close),

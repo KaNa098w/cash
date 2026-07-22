@@ -117,6 +117,26 @@ class ProductsCubit extends Cubit<ProductsState> {
     );
   }
 
+  void addProduct(ProductModel product) {
+    final productId = (product.id ?? '').trim();
+    if (productId.isEmpty) return;
+
+    final current = state;
+    final products = current is ProductsLoaded
+        ? current.products
+            .where((item) => (item.id ?? '').trim() != productId)
+            .toList()
+        : <ProductModel>[];
+
+    emit(
+      ProductsLoaded(
+        products: [product, ...products],
+        page: current is ProductsLoaded ? current.page : 1,
+        hasMore: current is ProductsLoaded ? current.hasMore : false,
+      ),
+    );
+  }
+
   Future<void> reset() async {
     emit(const ProductsInitial());
   }

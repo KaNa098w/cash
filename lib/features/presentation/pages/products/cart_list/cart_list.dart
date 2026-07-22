@@ -555,7 +555,7 @@ class _CartListState extends State<CartList> {
                                         child: Align(
                                           alignment: Alignment.centerRight,
                                           child: Container(
-                                            width: 165,
+                                            width: 90,
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 8,
                                               vertical: 6,

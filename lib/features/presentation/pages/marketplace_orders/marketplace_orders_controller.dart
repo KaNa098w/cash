@@ -187,24 +187,16 @@ class MarketplaceOrdersController extends ChangeNotifier
     }
   }
 
-  Future<MarketplaceShipmentResult?> shipSelectedItem({
-    required MarketplaceGroupedItem item,
-    required num quantity,
-  }) async {
+  Future<MarketplaceShipmentResult?> shipSelectedOrder() async {
     final order = _selectedOrder;
     if (order == null || _posKey.isEmpty) return null;
     if (_actionLoading) return null;
-    if (quantity is! int || quantity < 1 || quantity > 100) {
-      _error = 'Количество отгрузки должно быть целым числом от 1 до 100.';
+    if (order.status != 'processing' && order.status != 'partially_shipped') {
+      _error = 'Заказ недоступен для отгрузки.';
       notifyListeners();
       return null;
     }
-    if (quantity > item.remainingQuantity) {
-      _error = 'Количество превышает остаток по заказу.';
-      notifyListeners();
-      return null;
-    }
-    final operationKey = '${order.id}:${item.productId}:$quantity';
+    final operationKey = order.id;
     final idempotencyKey = _shipmentIdempotencyKeys.putIfAbsent(
       operationKey,
       () => const Uuid().v4(),
@@ -213,16 +205,23 @@ class MarketplaceOrdersController extends ChangeNotifier
     _error = null;
     notifyListeners();
     try {
-      final result = await _remote.shipItem(
+      final result = await _remote.shipOrder(
         key: _posKey,
         orderId: order.id,
-        productId: item.productId,
-        quantity: quantity,
         idempotencyKey: idempotencyKey,
       );
+      if (result.order.status != 'shipped') {
+        throw const MarketplaceOrdersApiException(
+          operation: 'shipOrder',
+          message: 'Backend не подтвердил полную отгрузку заказа.',
+        );
+      }
       _shipmentIdempotencyKeys.remove(operationKey);
-      _selectedOrder = result.order;
       await _refreshListsQuietly();
+      _selectedOrder = await _remote.getOrder(
+        key: _posKey,
+        orderId: order.id,
+      );
       notifyListeners();
       return result;
     } catch (e) {

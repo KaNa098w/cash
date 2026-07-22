@@ -96,6 +96,90 @@ class ProductRemoteDataSource {
     return all;
   }
 
+  Future<String?> findProductNameByBarcode({
+    required String key,
+    required String barcode,
+    required String deviceId,
+  }) async {
+    final safeKey = key.trim();
+    final safeBarcode = barcode.trim();
+    final safeDeviceId = deviceId.trim();
+
+    if (safeKey.isEmpty) {
+      throw ArgumentError.value(key, 'key', 'POS key is empty');
+    }
+    if (!RegExp(r'^\d{11,13}$').hasMatch(safeBarcode)) {
+      throw ArgumentError.value(
+        barcode,
+        'barcode',
+        'Barcode must contain 11 to 13 digits',
+      );
+    }
+    if (safeDeviceId.isEmpty) {
+      throw ArgumentError.value(deviceId, 'deviceId', 'Device id is empty');
+    }
+
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/organizations/pos/$safeKey/products/name',
+      queryParameters: {
+        'barcode': safeBarcode,
+        'device_id': safeDeviceId,
+      },
+    );
+
+    final data = response.data?['data'];
+    if (data is! Map) {
+      throw const FormatException('Invalid product name response');
+    }
+
+    final name = data['name'];
+    return name is String && name.trim().isNotEmpty ? name.trim() : null;
+  }
+
+  Future<ProductModel> createProduct({
+    required String key,
+    required String barcode,
+    required double sellingPrice,
+    required String deviceId,
+    String? name,
+    MeasurementUnit? measurementUnit,
+  }) async {
+    final safeKey = key.trim();
+    final safeBarcode = barcode.trim();
+    final safeDeviceId = deviceId.trim();
+    final safeName = name?.trim() ?? '';
+
+    if (safeKey.isEmpty) throw Exception('createProduct: pos key is empty');
+    if (safeDeviceId.isEmpty) {
+      throw Exception('createProduct: device id is empty');
+    }
+
+    final response = await _dio.post(
+      '/organizations/pos/$safeKey/products',
+      data: <String, dynamic>{
+        'barcode': safeBarcode,
+        'selling_price': sellingPrice,
+        'device_id': safeDeviceId,
+        if (safeName.isNotEmpty) 'name': safeName,
+        if (measurementUnit != null)
+          'measurement_unit': measurementUnit.apiValue,
+      },
+    );
+
+    final body = response.data;
+    final data = body is Map ? body['data'] : null;
+    if (response.statusCode != 201 || data is! Map) {
+      throw StateError('Некорректный ответ при создании товара');
+    }
+
+    final product = ProductModel.fromJson(Map<String, dynamic>.from(data));
+    if ((product.id ?? '').trim().isEmpty ||
+        (product.barcode ?? '').trim().isEmpty) {
+      throw StateError('В ответе отсутствуют данные созданного товара');
+    }
+    return product;
+  }
+
   Future<ProductModel> updateProductPrice({
     required String key,
     required String productId,

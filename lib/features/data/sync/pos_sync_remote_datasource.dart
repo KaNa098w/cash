@@ -199,6 +199,14 @@ class PosSyncRemoteDataSource {
     required Map<String, dynamic> payload,
   }) async {
     switch (type) {
+      case OutboxOperationType.productCreate:
+        return _extractResponseData(
+          await _dio.post(
+            '/organizations/pos/$key/products',
+            data: payload,
+            options: _silentOptions,
+          ),
+        );
       case OutboxOperationType.sale:
         return _extractResponseData(
           await _dio.post(

@@ -106,6 +106,50 @@ class PosSyncService {
     return _localStore.loadProducts();
   }
 
+  Future<ProductModel> createProduct({
+    required String key,
+    required String deviceId,
+    required String barcode,
+    required double sellingPrice,
+    String? name,
+    MeasurementUnit? measurementUnit,
+  }) async {
+    final localId = 'product_${_uuid.v7()}';
+    final safeName = name?.trim() ?? '';
+    final unit = measurementUnit?.apiValue ?? MeasurementUnit.pieces.apiValue;
+    final payload = <String, dynamic>{
+      'barcode': barcode.trim(),
+      'selling_price': sellingPrice,
+      'device_id': deviceId.trim(),
+      if (safeName.isNotEmpty) 'name': safeName,
+      'measurement_unit': unit,
+    };
+    final localJson = <String, dynamic>{
+      ...payload,
+      'id': localId,
+      'name': safeName.isEmpty ? barcode.trim() : safeName,
+      'quantity': 0,
+      'arrival_cost': 0,
+      'wholesale_price': 0,
+      'price_after_discount': sellingPrice,
+    };
+
+    await initialize();
+    await _localStore.upsertLocalProduct(localJson);
+    await _queueAndTrySend(
+      key: key,
+      deviceId: deviceId,
+      type: OutboxOperationType.productCreate,
+      clientId: localId,
+      payload: payload,
+      tryImmediateSend: false,
+    );
+    if (!_productsChangedController.isClosed) {
+      _productsChangedController.add(null);
+    }
+    return ProductModel.fromJson(localJson);
+  }
+
   Future<List<Map<String, dynamic>>> loadProductsRaw() {
     return _localStore.loadProductsRaw();
   }
@@ -1414,10 +1458,16 @@ class PosSyncService {
         payload: payloadForSend,
       );
     } catch (error) {
-      if (error is _WaitingForServerSessionId) {
+      if (error is _WaitingForServerSessionId ||
+          error is _WaitingForServerProductId) {
+        final message = switch (error) {
+          _WaitingForServerSessionId() => error.message,
+          _WaitingForServerProductId() => error.message,
+          _ => 'Ожидаем связанные данные',
+        };
         await _localStore.deferOperation(
           operationId: record.id,
-          message: error.message,
+          message: message,
         );
         return QueueOperationResult(
           operationId: record.id,
@@ -1425,7 +1475,7 @@ class PosSyncService {
           type: record.type,
           clientId: record.clientId,
           payload: record.payload,
-          errorMessage: error.message,
+          errorMessage: message,
         );
       }
 
@@ -1495,6 +1545,20 @@ class PosSyncService {
     OutboxOperationRecord record,
     Map<String, dynamic>? responseData,
   ) async {
+    if (record.type == OutboxOperationType.productCreate) {
+      final response = responseData;
+      if (response == null) {
+        throw const FormatException('Product response is empty');
+      }
+      await _localStore.replaceLocalProduct(
+        localId: record.clientId,
+        serverProduct: {...record.payload, ...response},
+      );
+      if (!_productsChangedController.isClosed) {
+        _productsChangedController.add(null);
+      }
+      return;
+    }
     if (record.type != OutboxOperationType.sessionOpen) return;
 
     final serverSessionId = responseData?['id']?.toString().trim() ?? '';
@@ -1512,6 +1576,7 @@ class PosSyncService {
       OutboxOperationRecord record) async {
     final payload = Map<String, dynamic>.from(record.payload);
     await _attachServerSessionIdIfReady(record.type, payload);
+    await _attachServerProductIdsIfReady(record.type, payload);
     payload['app_version'] = AppBuildInfo.appVersion;
     return payload;
   }
@@ -1521,6 +1586,8 @@ class PosSyncService {
     Map<String, dynamic> payload,
   ) async {
     switch (type) {
+      case OutboxOperationType.productCreate:
+        return;
       case OutboxOperationType.sale:
       case OutboxOperationType.payment:
       case OutboxOperationType.refund:
@@ -1544,8 +1611,32 @@ class PosSyncService {
     }
   }
 
+  Future<void> _attachServerProductIdsIfReady(
+    OutboxOperationType type,
+    Map<String, dynamic> payload,
+  ) async {
+    if (type != OutboxOperationType.sale) return;
+    final items = payload['items'];
+    if (items is! List) return;
+    for (final rawItem in items) {
+      if (rawItem is! Map) continue;
+      final item = rawItem.cast<String, dynamic>();
+      final productId = (item['product_id'] ?? '').toString().trim();
+      if (!productId.startsWith('product_')) continue;
+      final serverId = await _localStore.findServerProductId(productId);
+      if (serverId == null) {
+        throw const _WaitingForServerProductId(
+          'Ожидаем создание товара на сервере',
+        );
+      }
+      item['product_id'] = serverId;
+    }
+  }
+
   void _markDedicatedTableSynced(OutboxOperationRecord record) {
     switch (record.type) {
+      case OutboxOperationType.productCreate:
+        return;
       case OutboxOperationType.sale:
         unawaited(_localStore.upsertSaleFromOutboxPayload(record.payload));
         unawaited(_localStore.markSaleSynced(record.clientId));
@@ -1579,6 +1670,8 @@ class PosSyncService {
   String _queueRecordTitle(OutboxOperationRecord record) {
     final payload = record.payload;
     return switch (record.type) {
+      OutboxOperationType.productCreate =>
+        'Товар ${payload['name'] ?? payload['barcode'] ?? record.clientId}',
       OutboxOperationType.sale =>
         'Чек №${payload['local_number'] ?? payload['client_sale_id'] ?? record.clientId}',
       OutboxOperationType.payment =>
@@ -1597,6 +1690,12 @@ class _SyncCancelledException implements Exception {
 
 class _WaitingForServerSessionId implements Exception {
   const _WaitingForServerSessionId(this.message);
+
+  final String message;
+}
+
+class _WaitingForServerProductId implements Exception {
+  const _WaitingForServerProductId(this.message);
 
   final String message;
 }

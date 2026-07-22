@@ -1,3 +1,23 @@
+enum MeasurementUnit {
+  pieces('шт.'),
+  kilogram('кг.'),
+  gram('г.'),
+  ton('т.'),
+  liter('л.'),
+  milliliter('мл.'),
+  meter('м.'),
+  centimeter('см.'),
+  millimeter('мм.'),
+  squareMeter('кв. м.'),
+  cubicMeter('куб м.'),
+  pack('уп.'),
+  box('кор.');
+
+  const MeasurementUnit(this.apiValue);
+
+  final String apiValue;
+}
+
 class ProductModel {
   final String? id;
   final String name;

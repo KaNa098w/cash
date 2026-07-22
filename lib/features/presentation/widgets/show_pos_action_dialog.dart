@@ -26,6 +26,7 @@ import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/domain/repositories/auth_repository.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/products/product_create_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/deposit_to_cash_sheel.dart';
 import 'package:path/path.dart' as path;
 import 'package:leemon_app/core/di/api/app_version.dart';
@@ -56,6 +57,15 @@ Future<void> showPosActionsDialog(BuildContext context) {
     _PosAction('РАСПЕЧАТАТЬ ЧЕК\nПОСЛЕДНЕЙ ПРОДАЖИ', () async {
       Navigator.of(context, rootNavigator: true).pop();
       await _printLastSaleReceipt(context);
+    }),
+    _PosAction('СОЗДАТЬ\nТОВАР', () async {
+      Navigator.of(context, rootNavigator: true).pop();
+      final product = await showProductCreateDialog(context);
+      if (!context.mounted || product == null) return;
+      context.read<ProductsCubit>().addProduct(product);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Товар «${product.name}» создан')),
+      );
     }),
     _PosAction(
       'СИНХРОНИЗАЦИЯ',
