@@ -351,7 +351,7 @@ class PosCubit extends Cubit<PosState> {
     _emitAndPersist(state.copyWith(tickets: tickets));
   }
 
-  void updateProductPriceFromModel(int index, ProductModel model) {
+  void updateProductFromModel(int index, ProductModel model) {
     if (index < 0 || index >= state.items.length) return;
     final productId = (model.id ?? '').trim();
     if (productId.isEmpty) return;
@@ -513,6 +513,36 @@ class PosCubit extends Cubit<PosState> {
         );
       }
       return list;
+    });
+    _emitAndPersist(state.copyWith(tickets: tickets));
+  }
+
+  int get availableDiscountCount => state.items
+      .where(
+        (item) =>
+            !item.product.isUniversal &&
+            item.product.discountType == 'automatic' &&
+            !item.discountApplied &&
+            _hasAvailableProductDiscount(item),
+      )
+      .length;
+
+  void applyAllAvailableDiscounts() {
+    if (availableDiscountCount == 0) return;
+
+    final tickets = _updateActiveTicketItems((ticketItems) {
+      return ticketItems.map((item) {
+        final canApply = !item.product.isUniversal &&
+            item.product.discountType == 'automatic' &&
+            !item.discountApplied &&
+            _hasAvailableProductDiscount(item);
+        if (!canApply) return item;
+        return item.copyWith(
+          discount: 0,
+          clearCustomUnitPrice: true,
+          discountApplied: true,
+        );
+      }).toList(growable: false);
     });
     _emitAndPersist(state.copyWith(tickets: tickets));
   }

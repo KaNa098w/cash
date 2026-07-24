@@ -106,6 +106,14 @@ class PosSyncService {
     return _localStore.loadProducts();
   }
 
+  Future<void> cacheServerProduct(ProductModel product) async {
+    await initialize();
+    await _localStore.upsertLocalProduct(product.toJson());
+    if (!_productsChangedController.isClosed) {
+      _productsChangedController.add(null);
+    }
+  }
+
   Future<ProductModel> createProduct({
     required String key,
     required String deviceId,

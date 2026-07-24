@@ -96,7 +96,7 @@ class SaleItemRow extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.only(right: 16),
               child: Text(
-                money2(item.price),
+                money2(item.basePrice),
                 textAlign: TextAlign.right,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.inter(
@@ -159,6 +159,22 @@ class SaleItemRow extends StatelessWidget {
                   onTap: qty <= 0 ? null : () => onQtyChanged(qty - 1),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 100,
+            child: Text(
+              item.hasDiscount
+                  ? '${item.discountPercent.toStringAsFixed(item.discountPercent % 1 == 0 ? 0 : 1)}%'
+                  : '0%',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color:
+                    item.hasDiscount ? const Color(0xFF179D72) : Colors.black,
+              ),
             ),
           ),
           const SizedBox(width: 12),

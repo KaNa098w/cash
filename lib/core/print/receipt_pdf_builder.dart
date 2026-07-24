@@ -52,14 +52,22 @@ class ReceiptPdfItem {
     required this.quantity,
     required this.unitPrice,
     required this.lineTotal,
+    this.baseUnitPrice,
     this.discountPercent,
+    this.discountAmount,
+    this.totalDiscount,
   });
 
   final String name;
   final num quantity;
   final num unitPrice;
   final num lineTotal;
+  final num? baseUnitPrice;
   final num? discountPercent;
+  final num? discountAmount;
+  final num? totalDiscount;
+
+  bool get hasDiscount => (totalDiscount ?? 0) > 0;
 }
 
 class ReceiptPdfData {
@@ -364,8 +372,8 @@ Future<pw.Document> buildReceiptPdf(ReceiptPdfData data) async {
                 children: [
                   pw.Expanded(
                     child: pw.Text(
-                      '${it.quantity} x ${data.money(it.unitPrice)}'
-                      '${(it.discountPercent ?? 0) > 0 ? '  (-${it.discountPercent!.toStringAsFixed(0)}%)' : ''}',
+                      '${data.money(it.baseUnitPrice ?? it.unitPrice)} x ${it.quantity}'
+                      '  скидка ${(it.discountPercent ?? 0) > 0 ? '${it.discountPercent!.toStringAsFixed(it.discountPercent! % 1 == 0 ? 0 : 1)}%' : '0%'}',
                       style: pw.TextStyle(font: base, fontSize: itemFs),
                     ),
                   ),
@@ -379,13 +387,6 @@ Future<pw.Document> buildReceiptPdf(ReceiptPdfData data) async {
               pw.SizedBox(height: 2),
             ],
             divider(),
-            if (data.discountSum > 0) ...[
-              rowKV(
-                'Без скидки',
-                data.money(data.total + data.discountSum),
-              ),
-              rowKV('Скидка', data.money(data.discountSum)),
-            ],
             rowKV(
               'ИТОГ',
               data.money(data.total),
@@ -509,9 +510,10 @@ Future<pw.Document> buildInvoicePdf(InvoicePdfData data) async {
             columnWidths: const {
               0: pw.FixedColumnWidth(30),
               1: pw.FlexColumnWidth(),
-              2: pw.FixedColumnWidth(72),
-              3: pw.FixedColumnWidth(62),
-              4: pw.FixedColumnWidth(72),
+              2: pw.FixedColumnWidth(65),
+              3: pw.FixedColumnWidth(65),
+              4: pw.FixedColumnWidth(55),
+              5: pw.FixedColumnWidth(72),
             },
             children: [
               pw.TableRow(
@@ -521,9 +523,10 @@ Future<pw.Document> buildInvoicePdf(InvoicePdfData data) async {
                 children: [
                   cell('№', isBold: true, align: pw.Alignment.center),
                   cell('Товар', isBold: true, align: pw.Alignment.center),
-                  cell('Количество', isBold: true, align: pw.Alignment.center),
                   cell('Цена', isBold: true, align: pw.Alignment.center),
-                  cell('Сумма', isBold: true, align: pw.Alignment.center),
+                  cell('Количество', isBold: true, align: pw.Alignment.center),
+                  cell('Скидка', isBold: true, align: pw.Alignment.center),
+                  cell('Итого', isBold: true, align: pw.Alignment.center),
                 ],
               ),
               for (var i = 0; i < data.items.length; i++)
@@ -532,12 +535,20 @@ Future<pw.Document> buildInvoicePdf(InvoicePdfData data) async {
                     cell('${i + 1}', align: pw.Alignment.center),
                     cell(data.items[i].name),
                     cell(
+                      data.money(
+                        data.items[i].baseUnitPrice ?? data.items[i].unitPrice,
+                      ),
+                      align: pw.Alignment.centerRight,
+                    ),
+                    cell(
                       '${data.items[i].quantity % 1 == 0 ? data.items[i].quantity.toInt() : data.items[i].quantity} шт.',
                       align: pw.Alignment.center,
                     ),
                     cell(
-                      data.money(data.items[i].unitPrice),
-                      align: pw.Alignment.centerRight,
+                      (data.items[i].discountPercent ?? 0) > 0
+                          ? '${(data.items[i].discountPercent ?? 0).toStringAsFixed((data.items[i].discountPercent ?? 0) % 1 == 0 ? 0 : 1)}%'
+                          : '0%',
+                      align: pw.Alignment.center,
                     ),
                     cell(
                       data.money(data.items[i].lineTotal),
@@ -547,7 +558,14 @@ Future<pw.Document> buildInvoicePdf(InvoicePdfData data) async {
                 ),
               if (data.items.isEmpty)
                 pw.TableRow(
-                  children: [cell(''), cell(''), cell(''), cell(''), cell('')],
+                  children: [
+                    cell(''),
+                    cell(''),
+                    cell(''),
+                    cell(''),
+                    cell(''),
+                    cell(''),
+                  ],
                 ),
             ],
           ),

@@ -153,7 +153,7 @@ class _CartListState extends State<CartList> {
     );
   }
 
-  Future<void> _showPriceChangedDialog(
+  Future<void> _showProductChangedDialog(
     BuildContext context, {
     required ProductModel product,
   }) {
@@ -200,7 +200,7 @@ class _CartListState extends State<CartList> {
                     const SizedBox(width: 14),
                     const Expanded(
                       child: Text(
-                        'Цена успешно изменилась',
+                        'Товар успешно изменён',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
@@ -224,7 +224,7 @@ class _CartListState extends State<CartList> {
                 ),
                 const SizedBox(height: 14),
                 _PriceInfoPill(
-                  label: 'Новая цена',
+                  label: product.measurementUnit,
                   value: money(product.sellingPrice),
                   accent: true,
                 ),
@@ -252,7 +252,7 @@ class _CartListState extends State<CartList> {
     );
   }
 
-  Future<void> _openServerPriceDialog(
+  Future<void> _openProductEditDialog(
     BuildContext context, {
     required int index,
     required CartItem item,
@@ -298,6 +298,8 @@ class _CartListState extends State<CartList> {
         isDirector: isDirector,
         onSubmit: ({
           required double sellingPrice,
+          required String name,
+          required MeasurementUnit measurementUnit,
           required String? refundAccessKey,
         }) async {
           final stillOnline = await _hasInternet();
@@ -306,12 +308,14 @@ class _CartListState extends State<CartList> {
               'Изменить цену без интернета нельзя. Подключите интернет и попробуйте снова.',
             );
           }
-          return sl<ProductRemoteDataSource>().updateProductPrice(
+          return sl<ProductRemoteDataSource>().updateProduct(
             key: key,
             productId: productId,
             userId: userId,
             deviceId: deviceId,
             sellingPrice: sellingPrice,
+            name: name,
+            measurementUnit: measurementUnit,
             refundAccessKey: refundAccessKey,
           );
         },
@@ -320,8 +324,8 @@ class _CartListState extends State<CartList> {
 
     if (!context.mounted || updated == null) return;
     context.read<ProductsCubit>().updateProduct(updated);
-    context.read<PosCubit>().updateProductPriceFromModel(index, updated);
-    await _showPriceChangedDialog(context, product: updated);
+    context.read<PosCubit>().updateProductFromModel(index, updated);
+    await _showProductChangedDialog(context, product: updated);
   }
 
   void _scrollSelectedItemIntoView(PosState state) {
@@ -467,17 +471,26 @@ class _CartListState extends State<CartList> {
 
                                     // Наименование + метки
                                     Expanded(
-                                      child: Text(
-                                        it.product.isUniversal
-                                            ? _shortProductNameKeepEnd(
-                                                it.product.name)
-                                            : '${_shortProductNameKeepEnd(it.product.name)} (${formatStockQty(it.product.quantity, it.product.measurementUnit)} ${it.product.measurementUnit})',
-                                        style: const TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.w600,
+                                      child: _PriceHoldTarget(
+                                        onHoldComplete: it.product.isUniversal
+                                            ? null
+                                            : () => _openProductEditDialog(
+                                                  context,
+                                                  index: i,
+                                                  item: it,
+                                                ),
+                                        child: Text(
+                                          it.product.isUniversal
+                                              ? _shortProductNameKeepEnd(
+                                                  it.product.name)
+                                              : '${_shortProductNameKeepEnd(it.product.name)} (${formatStockQty(it.product.quantity, it.product.measurementUnit)} ${it.product.measurementUnit})',
+                                          style: const TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
 
@@ -507,7 +520,7 @@ class _CartListState extends State<CartList> {
                                             : null,
                                         onHoldComplete: it.product.isUniversal
                                             ? null
-                                            : () => _openServerPriceDialog(
+                                            : () => _openProductEditDialog(
                                                   context,
                                                   index: i,
                                                   item: it,
@@ -788,6 +801,25 @@ class _UniversalPriceDialogState extends State<_UniversalPriceDialog> {
 class _Header extends StatelessWidget {
   const _Header();
 
+  Future<void> _applyAllAvailableDiscounts(BuildContext context) async {
+    final cubit = context.read<PosCubit>();
+    final productsCount = cubit.availableDiscountCount;
+    if (productsCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('В корзине нет товаров с доступной скидкой'),
+        ),
+      );
+      return;
+    }
+    final confirmed = await _confirmApplyAllAvailableDiscounts(
+      context,
+      productsCount: productsCount,
+    );
+    if (!context.mounted || !confirmed) return;
+    cubit.applyAllAvailableDiscounts();
+  }
+
   @override
   Widget build(BuildContext context) {
     Widget cell(
@@ -825,7 +857,14 @@ class _Header extends StatelessWidget {
           const SizedBox(width: 30),
           cell('Количество', w: 170),
           const SizedBox(width: 10),
-          cell('Скидка', w: 80),
+          InkWell(
+            onTap: () => _applyAllAvailableDiscounts(context),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: cell('Скидка', w: 80),
+            ),
+          ),
           const SizedBox(width: 25),
           cell('Сумма', w: 140),
           const SizedBox(width: 60),
@@ -1110,6 +1149,24 @@ Future<bool> _confirmApplyAutomaticDiscount(
       false;
 }
 
+Future<bool> _confirmApplyAllAvailableDiscounts(
+  BuildContext context, {
+  required int productsCount,
+}) async {
+  return await showDialog<bool>(
+        context: context,
+        barrierDismissible: true,
+        builder: (_) => _DiscountConfirmDialog(
+          title: 'Применить скидки',
+          message: 'Применить доступные скидки ко всем подходящим товарам '
+              'в корзине? Товаров со скидкой: $productsCount.',
+          confirmLabel: 'Да, применить',
+          confirmColor: const Color(0xFF16A34A),
+        ),
+      ) ??
+      false;
+}
+
 Future<bool> _confirmRemoveAutomaticDiscount(
   BuildContext context, {
   required String productName,
@@ -1252,6 +1309,8 @@ class _PriceChangeException implements Exception {
 
 typedef _ServerPriceSubmit = Future<ProductModel> Function({
   required double sellingPrice,
+  required String name,
+  required MeasurementUnit measurementUnit,
   required String? refundAccessKey,
 });
 
@@ -1271,22 +1330,41 @@ class _ServerPriceDialog extends StatefulWidget {
 }
 
 class _ServerPriceDialogState extends State<_ServerPriceDialog> {
+  late final TextEditingController _nameController;
   late String _priceText;
+  late MeasurementUnit _measurementUnit;
   bool _submitting = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _priceText = '0';
+    _nameController = TextEditingController(text: widget.item.product.name);
+    _priceText = widget.item.product.price.toStringAsFixed(2);
+    _measurementUnit = MeasurementUnit.values.firstWhere(
+      (unit) => unit.apiValue == widget.item.product.measurementUnit,
+      orElse: () => MeasurementUnit.pieces,
+    );
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
   }
 
   double get _price =>
       double.tryParse(_priceText.replaceAll(',', '.').trim()) ?? 0;
 
   bool get _canSubmit {
-    if (_submitting || _price <= 0) return false;
-    return true;
+    final normalizedPrice = _priceText.replaceAll(',', '.').trim();
+    if (_submitting ||
+        !RegExp(r'^\d+(?:\.\d{1,2})?$').hasMatch(normalizedPrice) ||
+        _price < 0) {
+      return false;
+    }
+    final name = _nameController.text.trim();
+    return name.isNotEmpty && name.length <= 255;
   }
 
   String get _productName {
@@ -1298,14 +1376,31 @@ class _ServerPriceDialogState extends State<_ServerPriceDialog> {
     if (error is _PriceChangeException) return error.message;
     if (error is DioException) {
       final status = error.response?.statusCode;
+      final body = error.response?.data;
+      if (status == 422 && body is Map) {
+        final errors = body['errors'];
+        if (errors is Map) {
+          final messages = errors.values
+              .whereType<List>()
+              .expand((items) => items)
+              .map((message) => message.toString())
+              .where((message) => message.trim().isNotEmpty)
+              .toList(growable: false);
+          if (messages.isNotEmpty) return messages.join('\n');
+        }
+      }
       return switch (status) {
-        401 => 'Неверный или неактивный ключ доступа',
-        404 => 'Товар не принадлежит организации POS',
-        422 => 'Некорректная цена или обязательные поля не заполнены',
-        _ => 'Не удалось изменить цену. Проверьте интернет и попробуйте снова.',
+        401 => 'Требуется действующий ключ менеджера',
+        403 => body is Map && body['error_code'] == 'SUBSCRIPTION_INACTIVE'
+            ? 'Тариф организации неактивен'
+            : 'Изменение товара запрещено',
+        404 => 'Товар не найден или принадлежит другой организации',
+        422 => 'Проверьте заполнение полей',
+        _ =>
+          'Не удалось изменить товар. Проверьте интернет и попробуйте снова.',
       };
     }
-    return 'Не удалось изменить цену. Попробуйте снова.';
+    return 'Не удалось изменить товар. Попробуйте снова.';
   }
 
   Future<void> _submit() async {
@@ -1324,6 +1419,8 @@ class _ServerPriceDialogState extends State<_ServerPriceDialog> {
     try {
       final updated = await widget.onSubmit(
         sellingPrice: double.parse(_price.toStringAsFixed(2)),
+        name: _nameController.text.trim(),
+        measurementUnit: _measurementUnit,
         refundAccessKey: null,
       );
       if (!mounted) return;
@@ -1339,6 +1436,7 @@ class _ServerPriceDialogState extends State<_ServerPriceDialog> {
 
   Future<void> _scanAccessAndSubmit() async {
     ProductModel? updatedProduct;
+    Object? retryError;
 
     setState(() {
       _submitting = true;
@@ -1359,6 +1457,8 @@ class _ServerPriceDialogState extends State<_ServerPriceDialog> {
             try {
               updatedProduct = await widget.onSubmit(
                 sellingPrice: double.parse(_price.toStringAsFixed(2)),
+                name: _nameController.text.trim(),
+                measurementUnit: _measurementUnit,
                 refundAccessKey: accessKey,
               );
               return true;
@@ -1366,13 +1466,15 @@ class _ServerPriceDialogState extends State<_ServerPriceDialog> {
               if (e is DioException && e.response?.statusCode == 401) {
                 return false;
               }
-              rethrow;
+              retryError = e;
+              return true;
             }
           },
         ),
       );
 
       if (!mounted) return;
+      if (retryError != null) throw retryError!;
       if (granted == true && updatedProduct != null) {
         Navigator.of(context).pop(updatedProduct);
         return;
@@ -1395,7 +1497,7 @@ class _ServerPriceDialogState extends State<_ServerPriceDialog> {
     final currentPrice = widget.item.effectiveUnitPrice;
     final roleText = widget.isDirector
         ? 'Доступ подтвержден: директор'
-        : 'Для кассира нужен штрих-код доступа менеджера';
+        : 'Для изменения товара нужен ключ менеджера';
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
@@ -1438,7 +1540,7 @@ class _ServerPriceDialogState extends State<_ServerPriceDialog> {
                     const SizedBox(width: 14),
                     const Expanded(
                       child: Text(
-                        'Изменение цены',
+                        'Изменение товара',
                         style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.w900,
@@ -1455,16 +1557,50 @@ class _ServerPriceDialogState extends State<_ServerPriceDialog> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  _productName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    height: 1.35,
-                    color: Color(0xFF6B7280),
-                    fontWeight: FontWeight.w700,
+                TextField(
+                  controller: _nameController,
+                  enabled: !_submitting,
+                  maxLength: 255,
+                  onChanged: (_) => setState(() => _error = null),
+                  decoration: InputDecoration(
+                    labelText: 'Название',
+                    hintText: _productName,
+                    counterText: '',
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<MeasurementUnit>(
+                  initialValue: _measurementUnit,
+                  decoration: InputDecoration(
+                    labelText: 'Единица измерения',
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  items: MeasurementUnit.values
+                      .map(
+                        (unit) => DropdownMenuItem(
+                          value: unit,
+                          child: Text(unit.apiValue),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: _submitting
+                      ? null
+                      : (unit) {
+                          if (unit == null) return;
+                          setState(() {
+                            _measurementUnit = unit;
+                            _error = null;
+                          });
+                        },
                 ),
                 const SizedBox(height: 14),
                 Row(
@@ -1635,7 +1771,7 @@ class _ServerPriceDialogState extends State<_ServerPriceDialog> {
                             : Text(
                                 widget.isDirector
                                     ? 'Сохранить'
-                                    : 'Сканировать ключ',
+                                    : 'Ввести ключ менеджера',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w900,
                                 ),

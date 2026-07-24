@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-enum MarketplaceOrderScope { newOrders, active, all }
+enum MarketplaceOrderScope { newOrders, active, history }
 
 extension MarketplaceOrderScopeApi on MarketplaceOrderScope {
   String get apiValue {
@@ -9,8 +9,8 @@ extension MarketplaceOrderScopeApi on MarketplaceOrderScope {
         return 'new';
       case MarketplaceOrderScope.active:
         return 'active';
-      case MarketplaceOrderScope.all:
-        return 'all';
+      case MarketplaceOrderScope.history:
+        return 'history';
     }
   }
 }
@@ -18,9 +18,11 @@ extension MarketplaceOrderScopeApi on MarketplaceOrderScope {
 class MarketplacePosInfo {
   const MarketplacePosInfo({
     required this.id,
+    required this.name,
     required this.key,
     required this.deviceId,
     required this.storeId,
+    required this.hasMarketplaceIntegration,
     required this.marketplaceOrdersChannel,
     required this.realtime,
   });
@@ -33,18 +35,22 @@ class MarketplacePosInfo {
     );
     return MarketplacePosInfo(
       id: _string(raw['id']),
+      name: _string(raw['name']),
       key: _string(raw['key']),
       deviceId: _string(raw['device_id']),
       storeId: _string(raw['store_id']),
+      hasMarketplaceIntegration: raw['has_marketplace_integration'] == true,
       marketplaceOrdersChannel: _string(raw['marketplace_orders_channel']),
       realtime: realtime,
     );
   }
 
   final String id;
+  final String name;
   final String key;
   final String deviceId;
   final String storeId;
+  final bool hasMarketplaceIntegration;
   final String marketplaceOrdersChannel;
   final MarketplaceRealtimeConfig realtime;
 }
@@ -155,16 +161,31 @@ class MarketplaceOrder {
     required this.customer,
     required this.items,
     required this.groupedItems,
+    this.createdAt,
+    this.total = 0,
+    this.fulfillmentType = '',
+    this.deliveryAddress = '',
   });
 
   factory MarketplaceOrder.fromJson(Map<String, dynamic> json) {
-    final rawGrouped = json['groupedItems'] ?? const [];
+    final delivery = _map(json['delivery']);
+    final address = _map(json['address']);
+    final totals = _map(json['totals'] ?? json['summary'] ?? json['pricing']);
+    final rawGrouped = json['groupedItems'] ??
+        json['grouped_items'] ??
+        json['items'] ??
+        const [];
     final rawItems = json['items'] ?? const [];
     return MarketplaceOrder(
       id: _string(json['id']),
       number: _string(json['number']),
       status: _string(json['status']),
-      customer: MarketplaceCustomer.fromJson(_map(json['customer'])),
+      customer: MarketplaceCustomer.fromJson(
+        _map(json['customer']),
+        fallbackName: _string(json['recipientName'] ?? json['recipient_name']),
+        fallbackPhone:
+            _string(json['recipientNumber'] ?? json['recipient_number']),
+      ),
       items: rawItems is List ? rawItems : const [],
       groupedItems: rawGrouped is List
           ? rawGrouped
@@ -174,6 +195,45 @@ class MarketplaceOrder {
                   ))
               .toList()
           : const [],
+      createdAt: _dateTime(
+        json['created_at'] ?? json['createdAt'] ?? json['ordered_at'],
+      ),
+      total: _num(
+        json['total'] ??
+            json['total_amount'] ??
+            json['totalAmount'] ??
+            json['grand_total'] ??
+            totals['total'] ??
+            totals['total_amount'] ??
+            totals['grand_total'],
+      ).takeIfPositiveOr(
+        _moneyAmount(json['totalPrice'] ?? json['total_price']),
+      ),
+      fulfillmentType: _string(
+        json['fulfillment_type'] ??
+            json['fulfillmentType'] ??
+            json['delivery_type'] ??
+            json['deliveryType'] ??
+            json['deliveryMethod'] ??
+            json['shipping_type'] ??
+            (json['delivery'] is String ? json['delivery'] : null) ??
+            (json['is_pickup'] == true ? 'pickup' : null) ??
+            delivery['type'] ??
+            delivery['method'],
+      ),
+      deliveryAddress: _string(
+        json['delivery_address'] ??
+            json['deliveryAddress'] ??
+            json['shipping_address'] ??
+            delivery['address'],
+      ).isNotEmpty
+          ? _string(
+              json['delivery_address'] ??
+                  json['deliveryAddress'] ??
+                  json['shipping_address'] ??
+                  delivery['address'],
+            )
+          : _fullAddress(address),
     );
   }
 
@@ -183,6 +243,10 @@ class MarketplaceOrder {
   final MarketplaceCustomer customer;
   final List<dynamic> items;
   final List<MarketplaceGroupedItem> groupedItems;
+  final DateTime? createdAt;
+  final num total;
+  final String fulfillmentType;
+  final String deliveryAddress;
 
   bool get isAccepted =>
       status == 'processing' ||
@@ -194,6 +258,31 @@ class MarketplaceOrder {
   /// Human-readable order number supplied by the marketplace backend.
   /// UUID remains a fallback for older responses without `number`.
   String get displayNumber => number.isNotEmpty ? number : _shortId(id);
+
+  String get fulfillmentLabel {
+    final value = fulfillmentType.toLowerCase().trim();
+    if (value == 'pickup' ||
+        value == 'self_pickup' ||
+        value == 'self-pickup' ||
+        value == 'takeaway') {
+      return 'Самовывоз';
+    }
+    if (value == 'delivery' || value == 'courier' || value == 'shipping') {
+      return 'Доставка';
+    }
+    if (value == 'standard' || value == 'express' || value == 'intercity') {
+      return 'Доставка';
+    }
+    return fulfillmentType.isEmpty ? 'Не указан' : fulfillmentType;
+  }
+
+  num get displayTotal {
+    if (total > 0) return total;
+    return groupedItems.fold<num>(0, (sum, item) {
+      if (item.total > 0) return sum + item.total;
+      return sum + item.unitPrice * item.requestedQuantity;
+    });
+  }
 }
 
 String _shortId(String id) {
@@ -201,13 +290,42 @@ String _shortId(String id) {
   return '${id.substring(0, 8)}...${id.substring(id.length - 4)}';
 }
 
+DateTime? _dateTime(Object? value) {
+  final raw = value?.toString().trim() ?? '';
+  return raw.isEmpty ? null : DateTime.tryParse(raw)?.toLocal();
+}
+
+String _fullAddress(Map<String, dynamic> address) {
+  final parts = <String>[
+    _string(address['address']),
+    if (_string(address['entrance']).isNotEmpty)
+      'подъезд ${_string(address['entrance'])}',
+    if (_string(address['apartment']).isNotEmpty)
+      'кв. ${_string(address['apartment'])}',
+    if (_string(address['floor']).isNotEmpty)
+      'этаж ${_string(address['floor'])}',
+    if (_string(address['intercom']).isNotEmpty)
+      'домофон ${_string(address['intercom'])}',
+    _string(address['additionalInfo'] ?? address['additional_info']),
+  ];
+  return parts.where((part) => part.isNotEmpty).join(', ');
+}
+
 class MarketplaceCustomer {
   const MarketplaceCustomer({required this.name, required this.phone});
 
-  factory MarketplaceCustomer.fromJson(Map<String, dynamic> json) {
+  factory MarketplaceCustomer.fromJson(
+    Map<String, dynamic> json, {
+    String fallbackName = '',
+    String fallbackPhone = '',
+  }) {
     return MarketplaceCustomer(
-      name: _string(json['name']),
-      phone: _string(json['phone']),
+      name: _string(json['name']).isNotEmpty
+          ? _string(json['name'])
+          : fallbackName,
+      phone: _string(json['phone']).isNotEmpty
+          ? _string(json['phone'])
+          : fallbackPhone,
     );
   }
 
@@ -227,25 +345,68 @@ class MarketplaceGroupedItem {
     required this.remainingQuantity,
     required this.status,
     required this.images,
+    this.unitPrice = 0,
+    this.total = 0,
   });
 
   factory MarketplaceGroupedItem.fromJson(Map<String, dynamic> json) {
+    final offer = _map(json['offer']);
+    final product = _map(json['product'] ?? offer['product']);
+    final rawImages = json['images'] ?? product['images'];
+    final directImage = _string(
+      json['image_url'] ??
+          json['imageUrl'] ??
+          json['image'] ??
+          product['image_url'] ??
+          product['imageUrl'] ??
+          product['image'],
+    );
+    final images = <MarketplaceProductImage>[
+      ...(rawImages is List ? rawImages : const [])
+          .map(MarketplaceProductImage.tryParse)
+          .whereType<MarketplaceProductImage>(),
+      if (directImage.isNotEmpty)
+        MarketplaceProductImage(url: directImage, sizes: const []),
+    ];
     return MarketplaceGroupedItem(
-      productId: _string(json['productId'] ?? json['product_id']),
-      name: _string(json['name']),
-      sku: _string(json['sku']),
-      requestedQuantity: _num(json['requestedQuantity']),
-      confirmedQuantity: _num(json['confirmedQuantity']),
-      cancelledQuantity: _num(json['cancelledQuantity']),
-      shippedQuantity: _num(json['shippedQuantity']),
-      remainingQuantity: _num(json['remainingQuantity']),
+      productId:
+          _string(json['productId'] ?? json['product_id'] ?? product['id']),
+      name: _string(
+        json['name'] ??
+            json['product_name'] ??
+            json['productName'] ??
+            product['name'],
+      ),
+      sku: _string(json['sku'] ?? offer['sku'] ?? product['sku']),
+      requestedQuantity: _num(
+        json['requestedQuantity'] ??
+            json['requested_quantity'] ??
+            json['quantity'] ??
+            json['qty'],
+      ),
+      confirmedQuantity:
+          _num(json['confirmedQuantity'] ?? json['confirmed_quantity']),
+      cancelledQuantity:
+          _num(json['cancelledQuantity'] ?? json['cancelled_quantity']),
+      shippedQuantity:
+          _num(json['shippedQuantity'] ?? json['shipped_quantity']),
+      remainingQuantity: _remainingQuantity(json),
       status: _string(json['status']),
-      images: (json['images'] is List ? json['images'] as List : const [])
-          .whereType<Map>()
-          .map((image) => MarketplaceProductImage.fromJson(
-                Map<String, dynamic>.from(image),
-              ))
-          .toList(growable: false),
+      images: images,
+      unitPrice: _num(
+        json['unit_price'] ??
+            json['unitPrice'] ??
+            json['price'] ??
+            product['price'],
+      ).takeIfPositiveOr(_moneyAmount(json['price'] ?? offer['price'])),
+      total: _num(
+        json['total'] ??
+            json['line_total'] ??
+            json['lineTotal'] ??
+            json['total_amount'],
+      ).takeIfPositiveOr(
+        _moneyAmount(json['totalPrice'] ?? json['total_price']),
+      ),
     );
   }
 
@@ -259,6 +420,8 @@ class MarketplaceGroupedItem {
   final num remainingQuantity;
   final String status;
   final List<MarketplaceProductImage> images;
+  final num unitPrice;
+  final num total;
 
   String get imageUrl => images.isEmpty ? '' : images.first.preferredUrl;
 }
@@ -280,6 +443,16 @@ class MarketplaceProductImage {
               .toList(growable: false)
           : const [],
     );
+  }
+
+  static MarketplaceProductImage? tryParse(Object? value) {
+    if (value is String && value.trim().isNotEmpty) {
+      return MarketplaceProductImage(url: value.trim(), sizes: const []);
+    }
+    if (value is Map) {
+      return MarketplaceProductImage.fromJson(Map<String, dynamic>.from(value));
+    }
+    return null;
   }
 
   final String url;
@@ -382,6 +555,35 @@ num _num(Object? value) {
   if (value is num) return value;
   if (value is String) return num.tryParse(value) ?? 0;
   return 0;
+}
+
+num _moneyAmount(Object? value) {
+  if (value is num || value is String) return _num(value);
+  final money = _map(value);
+  final amount = _num(money['amount']);
+  final precision = _int(money['precision']) ?? 0;
+  if (precision <= 0) return amount;
+  var divisor = 1;
+  for (var i = 0; i < precision; i++) {
+    divisor *= 10;
+  }
+  return amount / divisor;
+}
+
+num _remainingQuantity(Map<String, dynamic> json) {
+  final explicit = json['remainingQuantity'] ?? json['remaining_quantity'];
+  if (explicit != null) return _num(explicit);
+  final requested =
+      _num(json['requestedQuantity'] ?? json['requested_quantity']);
+  final shipped = _num(json['shippedQuantity'] ?? json['shipped_quantity']);
+  final cancelled =
+      _num(json['cancelledQuantity'] ?? json['cancelled_quantity']);
+  final remaining = requested - shipped - cancelled;
+  return remaining < 0 ? 0 : remaining;
+}
+
+extension on num {
+  num takeIfPositiveOr(num fallback) => this > 0 ? this : fallback;
 }
 
 int? _int(Object? value) {

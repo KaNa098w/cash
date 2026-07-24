@@ -99,7 +99,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
         final selectedExists = bankAccounts
             .any((account) => account.id.trim() == _selectedBankAccountId);
         if (!selectedExists) {
-          _selectedBankAccountId = null;
+          _selectedBankAccountId =
+              bankAccounts.length == 1 ? bankAccounts.single.id : null;
         }
       });
     } finally {
@@ -1122,7 +1123,10 @@ class _PaymentPanelState extends State<PaymentPanel> {
                               setState(() {
                                 _isMixedPayment = false;
                                 _mixedActiveIsCard = false;
-                                _selectedBankAccountId = null;
+                                _selectedBankAccountId =
+                                    _bankAccounts.length == 1
+                                        ? _bankAccounts.single.id
+                                        : null;
                               });
                               cubit.setPaymentKind(PaymentKind.card);
                               _setCardText(context, _fmt(total));
@@ -1133,7 +1137,10 @@ class _PaymentPanelState extends State<PaymentPanel> {
                               setState(() {
                                 _isMixedPayment = true;
                                 _mixedActiveIsCard = false;
-                                _selectedBankAccountId = null;
+                                _selectedBankAccountId =
+                                    _bankAccounts.length == 1
+                                        ? _bankAccounts.single.id
+                                        : null;
                               });
                               cubit.setPaymentKind(PaymentKind.cash);
                               if (_bankAccounts.isEmpty) _loadBankAccounts();

@@ -439,8 +439,13 @@ class SaleItemModel {
   /// ✅ исходное кол-во в продаже
   final double quantity;
 
+  final double basePrice;
   final double price;
   final double totalPrice;
+  final String? discountType;
+  final double discountPercent;
+  final double discountAmount;
+  final double totalDiscount;
 
   /// ✅ сколько уже возвращено (может быть null/0)
   // ignore: non_constant_identifier_names
@@ -453,10 +458,17 @@ class SaleItemModel {
     required this.quantity,
     required this.price,
     required this.totalPrice,
+    double? basePrice,
+    this.discountType,
+    this.discountPercent = 0,
+    this.discountAmount = 0,
+    this.totalDiscount = 0,
     this.product,
     // ignore: non_constant_identifier_names
     this.refund_quantity,
-  });
+  }) : basePrice = basePrice ?? price;
+
+  bool get hasDiscount => totalDiscount > 0;
 
   bool get isUniversalProduct {
     if (product?.isUniversal == true) return true;
@@ -482,8 +494,13 @@ class SaleItemModel {
     String? productId,
     ProductModel? product,
     double? quantity,
+    double? basePrice,
     double? price,
     double? totalPrice,
+    String? discountType,
+    double? discountPercent,
+    double? discountAmount,
+    double? totalDiscount,
     // ignore: non_constant_identifier_names
     int? refund_quantity,
   }) {
@@ -493,8 +510,13 @@ class SaleItemModel {
       productId: productId ?? this.productId,
       product: product ?? this.product,
       quantity: quantity ?? this.quantity,
+      basePrice: basePrice ?? this.basePrice,
       price: price ?? this.price,
       totalPrice: totalPrice ?? this.totalPrice,
+      discountType: discountType ?? this.discountType,
+      discountPercent: discountPercent ?? this.discountPercent,
+      discountAmount: discountAmount ?? this.discountAmount,
+      totalDiscount: totalDiscount ?? this.totalDiscount,
       refund_quantity: refund_quantity ?? this.refund_quantity,
     );
   }
@@ -503,8 +525,13 @@ class SaleItemModel {
     return {
       "product_id": productId,
       "quantity": quantity,
+      "base_price": basePrice,
       "price": price,
       "total_price": totalPrice,
+      if (discountType != null) "discount_type": discountType,
+      "discount_percent": discountPercent,
+      "discount_amount": discountAmount,
+      "total_discount": totalDiscount,
       "refund_quantity": refund_quantity,
     };
   }
@@ -521,8 +548,15 @@ class SaleItemModel {
       productId: (json["product_id"] ?? "").toString(),
       product: product,
       quantity: SaleModel._toDouble(json["quantity"]),
+      basePrice: json["base_price"] == null
+          ? SaleModel._toDouble(json["price"])
+          : SaleModel._toDouble(json["base_price"]),
       price: SaleModel._toDouble(json["price"]),
       totalPrice: SaleModel._toDouble(json["total_price"]),
+      discountType: json["discount_type"]?.toString(),
+      discountPercent: SaleModel._toDouble(json["discount_percent"]),
+      discountAmount: SaleModel._toDouble(json["discount_amount"]),
+      totalDiscount: SaleModel._toDouble(json["total_discount"]),
       refund_quantity: json["refund_quantity"] == null
           ? null
           : SaleModel._toInt(json["refund_quantity"]),
@@ -536,8 +570,13 @@ class SaleItemModel {
       "productId": productId,
       "product": product?.toJson(),
       "quantity": quantity,
+      "basePrice": basePrice,
       "price": price,
       "totalPrice": totalPrice,
+      "discountType": discountType,
+      "discountPercent": discountPercent,
+      "discountAmount": discountAmount,
+      "totalDiscount": totalDiscount,
       "refund_quantity": refund_quantity,
     };
   }
@@ -554,8 +593,15 @@ class SaleItemModel {
       productId: (json["productId"] ?? "").toString(),
       product: product,
       quantity: SaleModel._toDouble(json["quantity"]),
+      basePrice: json["basePrice"] == null
+          ? SaleModel._toDouble(json["price"])
+          : SaleModel._toDouble(json["basePrice"]),
       price: SaleModel._toDouble(json["price"]),
       totalPrice: SaleModel._toDouble(json["totalPrice"]),
+      discountType: json["discountType"]?.toString(),
+      discountPercent: SaleModel._toDouble(json["discountPercent"]),
+      discountAmount: SaleModel._toDouble(json["discountAmount"]),
+      totalDiscount: SaleModel._toDouble(json["totalDiscount"]),
       refund_quantity: json["refund_quantity"] == null
           ? null
           : SaleModel._toInt(json["refund_quantity"]),

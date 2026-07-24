@@ -4,6 +4,7 @@ import 'dart:io' show WebSocket;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:leemon_app/core/models/marketplace_order_models.dart';
@@ -17,6 +18,7 @@ class MarketplaceOrdersController extends ChangeNotifier
   }
 
   final MarketplaceOrdersRemoteDataSource _remote;
+  static const int _historyPageSize = 20;
 
   String _posKey = '';
   String _deviceId = '';
@@ -28,6 +30,10 @@ class MarketplaceOrdersController extends ChangeNotifier
   MarketplaceOrderScope _scope = MarketplaceOrderScope.newOrders;
   List<MarketplaceOrder> _newOrders = const [];
   List<MarketplaceOrder> _activeOrders = const [];
+  List<MarketplaceOrder> _historyOrders = const [];
+  int _historyNextSkip = 0;
+  bool _historyLoadingMore = false;
+  bool _historyHasMore = true;
   final Set<String> _knownNewOrderIds = <String>{};
   MarketplaceOrder? _latestIncomingOrder;
   int _notificationRevision = 0;
@@ -41,16 +47,29 @@ class MarketplaceOrdersController extends ChangeNotifier
   bool get actionLoading => _actionLoading;
   String? get error => _error;
   MarketplacePosInfo? get posInfo => _posInfo;
+  bool get hasMarketplaceIntegration =>
+      _posInfo?.hasMarketplaceIntegration ?? false;
   MarketplaceOrderScope get scope => _scope;
   List<MarketplaceOrder> get newOrders => List.unmodifiable(_newOrders);
   List<MarketplaceOrder> get activeOrders => List.unmodifiable(_activeOrders);
+  List<MarketplaceOrder> get historyOrders => List.unmodifiable(_historyOrders);
+  bool get historyLoadingMore => _historyLoadingMore;
+  bool get historyHasMore => _historyHasMore;
   int get newCount => _newOrders.length;
   int get notificationCount => _newOrders.length;
   MarketplaceOrder? get latestIncomingOrder => _latestIncomingOrder;
   int get notificationRevision => _notificationRevision;
   MarketplaceOrder? get selectedOrder => _selectedOrder;
-  List<MarketplaceOrder> get visibleOrders =>
-      _scope == MarketplaceOrderScope.active ? _activeOrders : _newOrders;
+  List<MarketplaceOrder> get visibleOrders {
+    switch (_scope) {
+      case MarketplaceOrderScope.newOrders:
+        return _newOrders;
+      case MarketplaceOrderScope.active:
+        return _activeOrders;
+      case MarketplaceOrderScope.history:
+        return _historyOrders;
+    }
+  }
 
   Future<void> configure({
     required String posKey,
@@ -78,13 +97,18 @@ class MarketplaceOrdersController extends ChangeNotifier
     } catch (_) {
       _posInfo = null;
     }
+    if (!hasMarketplaceIntegration) {
+      await _disableMarketplace();
+      notifyListeners();
+      return;
+    }
     await refreshAll();
     _startPolling();
     unawaited(_prepareRealtime());
   }
 
   Future<void> refreshAll() async {
-    if (_posKey.isEmpty) return;
+    if (_posKey.isEmpty || !hasMarketplaceIntegration) return;
     _loading = true;
     _error = null;
     notifyListeners();
@@ -113,7 +137,7 @@ class MarketplaceOrdersController extends ChangeNotifier
   }
 
   Future<void> refreshNewOrders() async {
-    if (_posKey.isEmpty) return;
+    if (_posKey.isEmpty || !hasMarketplaceIntegration) return;
     try {
       final page = await _remote.listOrders(
         key: _posKey,
@@ -131,6 +155,10 @@ class MarketplaceOrdersController extends ChangeNotifier
 
   Future<void> deactivate() async {
     _initialized = false;
+    await _stopConnections();
+  }
+
+  Future<void> _stopConnections() async {
     _pollTimer?.cancel();
     _pollTimer = null;
     await _socketSub?.cancel();
@@ -139,17 +167,111 @@ class MarketplaceOrdersController extends ChangeNotifier
     _socket = null;
   }
 
+  Future<void> _disableMarketplace() async {
+    await _stopConnections();
+    _newOrders = const [];
+    _activeOrders = const [];
+    _historyOrders = const [];
+    _selectedOrder = null;
+    _latestIncomingOrder = null;
+    _knownNewOrderIds.clear();
+  }
+
   Future<void> setScope(MarketplaceOrderScope next) async {
+    if (!hasMarketplaceIntegration) return;
     if (_scope == next) return;
     _scope = next;
     _selectedOrder = null;
     notifyListeners();
+    if (next == MarketplaceOrderScope.history) {
+      await refreshHistory();
+      return;
+    }
     await _selectFallbackIfNeeded();
+  }
+
+  Future<void> refreshVisibleOrders() async {
+    if (!hasMarketplaceIntegration) return;
+    if (_scope == MarketplaceOrderScope.history) {
+      await refreshHistory();
+    } else {
+      await refreshAll();
+    }
+  }
+
+  Future<void> refreshHistory() async {
+    if (_posKey.isEmpty || _loading || !hasMarketplaceIntegration) return;
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final page = await _remote.listOrders(
+        key: _posKey,
+        scope: MarketplaceOrderScope.history,
+        skip: 0,
+        take: _historyPageSize,
+      );
+      _historyOrders = _deduplicateOrders(page.items);
+      _historyNextSkip = page.items.length;
+      _historyHasMore = page.items.length == _historyPageSize;
+      _selectedOrder = null;
+      await _selectFallbackIfNeeded();
+    } catch (e) {
+      _error = _friendlyError(e);
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loadMoreHistory() async {
+    if (_posKey.isEmpty ||
+        !hasMarketplaceIntegration ||
+        _scope != MarketplaceOrderScope.history ||
+        _loading ||
+        _historyLoadingMore ||
+        !_historyHasMore) {
+      return;
+    }
+    _historyLoadingMore = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final page = await _remote.listOrders(
+        key: _posKey,
+        scope: MarketplaceOrderScope.history,
+        skip: _historyNextSkip,
+        take: _historyPageSize,
+      );
+      _historyOrders = _deduplicateOrders([
+        ..._historyOrders,
+        ...page.items,
+      ]);
+      _historyNextSkip += page.items.length;
+      _historyHasMore = page.items.length == _historyPageSize;
+    } catch (e) {
+      _error = _friendlyError(e);
+    } finally {
+      _historyLoadingMore = false;
+      notifyListeners();
+    }
+  }
+
+  List<MarketplaceOrder> _deduplicateOrders(
+    Iterable<MarketplaceOrder> orders,
+  ) {
+    final byId = <String, MarketplaceOrder>{};
+    for (final order in orders) {
+      if (order.id.isNotEmpty) byId[order.id] = order;
+    }
+    return byId.values.toList(growable: false);
   }
 
   Future<void> selectOrder(String orderId) async {
     final safeOrderId = orderId.trim();
-    if (_posKey.isEmpty || safeOrderId.isEmpty) return;
+    if (_posKey.isEmpty || safeOrderId.isEmpty || !hasMarketplaceIntegration) {
+      return;
+    }
     _loading = true;
     _error = null;
     notifyListeners();
@@ -168,7 +290,7 @@ class MarketplaceOrdersController extends ChangeNotifier
 
   Future<void> acceptSelected() async {
     final order = _selectedOrder;
-    if (order == null || _posKey.isEmpty) return;
+    if (order == null || _posKey.isEmpty || !hasMarketplaceIntegration) return;
     if (_actionLoading) return;
     _actionLoading = true;
     _error = null;
@@ -189,7 +311,9 @@ class MarketplaceOrdersController extends ChangeNotifier
 
   Future<MarketplaceShipmentResult?> shipSelectedOrder() async {
     final order = _selectedOrder;
-    if (order == null || _posKey.isEmpty) return null;
+    if (order == null || _posKey.isEmpty || !hasMarketplaceIntegration) {
+      return null;
+    }
     if (_actionLoading) return null;
     if (order.status != 'processing' && order.status != 'partially_shipped') {
       _error = 'Заказ недоступен для отгрузки.';
@@ -254,7 +378,7 @@ class MarketplaceOrdersController extends ChangeNotifier
   }
 
   Future<void> _refreshListsQuietly() async {
-    if (_posKey.isEmpty) return;
+    if (_posKey.isEmpty || !hasMarketplaceIntegration) return;
     final results = await Future.wait([
       _remote.listOrders(
         key: _posKey,
@@ -283,6 +407,7 @@ class MarketplaceOrdersController extends ChangeNotifier
       if (unseenOrders.isNotEmpty) {
         _latestIncomingOrder = unseenOrders.first;
         _notificationRevision++;
+        SchedulerBinding.instance.ensureVisualUpdate();
         unawaited(SystemSound.play(SystemSoundType.alert));
       }
     }
@@ -291,6 +416,7 @@ class MarketplaceOrdersController extends ChangeNotifier
   }
 
   void _startPolling() {
+    if (!hasMarketplaceIntegration) return;
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 25), (_) {
       unawaited(refreshNewOrders());
@@ -298,6 +424,7 @@ class MarketplaceOrdersController extends ChangeNotifier
   }
 
   Future<void> _prepareRealtime() async {
+    if (!hasMarketplaceIntegration) return;
     final config = _posInfo?.realtime;
     if (config == null || !config.canConnect || kIsWeb) return;
 
@@ -389,7 +516,7 @@ class MarketplaceOrdersController extends ChangeNotifier
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && hasMarketplaceIntegration) {
       unawaited(refreshNewOrders());
     }
   }

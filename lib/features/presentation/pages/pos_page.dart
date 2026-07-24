@@ -8,6 +8,7 @@ import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.
 import 'package:leemon_app/features/presentation/pages/sales_history/sales_history_page.dart';
 import 'package:leemon_app/features/presentation/widgets/app_update_background_check.dart';
 import 'package:leemon_app/features/presentation/widgets/footer_status.dart';
+import 'package:leemon_app/features/presentation/widgets/order_notification_demo.dart';
 import 'package:leemon_app/features/presentation/widgets/top_bar.dart';
 import 'package:leemon_app/features/presentation/pages/search/search_bar.dart'
     as sb;
@@ -84,6 +85,7 @@ class _PosPageState extends State<PosPage> {
                 ),
               ],
             ),
+            const Positioned.fill(child: OrderNotificationDemo()),
           ],
         ),
       ),

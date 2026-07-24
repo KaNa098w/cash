@@ -76,7 +76,7 @@ class _IncomingOrdersDialogState extends State<_IncomingOrdersDialog> {
                   if (_controller.error != null)
                     _ErrorStrip(
                       text: _controller.error!,
-                      onRefresh: _controller.refreshAll,
+                      onRefresh: _controller.refreshVisibleOrders,
                     ),
                   Expanded(
                     child: compact
@@ -133,9 +133,17 @@ class _Header extends StatelessWidget {
             active: controller.scope == MarketplaceOrderScope.active,
             onTap: () => controller.setScope(MarketplaceOrderScope.active),
           ),
+          const SizedBox(width: 8),
+          _ScopeButton(
+            text: 'История',
+            count: controller.historyOrders.length,
+            active: controller.scope == MarketplaceOrderScope.history,
+            onTap: () => controller.setScope(MarketplaceOrderScope.history),
+          ),
           const SizedBox(width: 10),
           IconButton(
-            onPressed: controller.loading ? null : controller.refreshAll,
+            onPressed:
+                controller.loading ? null : controller.refreshVisibleOrders,
             icon: controller.loading
                 ? const SizedBox(
                     width: 20,
@@ -269,30 +277,63 @@ class _OrdersList extends StatelessWidget {
       return const Center(child: CircularProgressIndicator());
     }
     if (orders.isEmpty) {
-      return const Center(
-        child: Text(
-          'Заказов нет',
-          style: TextStyle(
-            color: Color(0xFF64748B),
-            fontWeight: FontWeight.w700,
-          ),
+      return RefreshIndicator(
+        onRefresh: controller.refreshVisibleOrders,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: const [
+            SizedBox(height: 120),
+            Center(
+              child: Text(
+                'Заказов нет',
+                style: TextStyle(
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(14),
-      itemCount: orders.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final order = orders[index];
-        final active = controller.selectedOrder?.id == order.id;
-        return _OrderTile(
-          order: order,
-          active: active,
-          onTap: () => controller.selectOrder(order.id),
-        );
+    final showHistoryLoader =
+        controller.scope == MarketplaceOrderScope.history &&
+            controller.historyLoadingMore;
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification.metrics.extentAfter < 240 &&
+            controller.scope == MarketplaceOrderScope.history) {
+          unawaited(controller.loadMoreHistory());
+        }
+        return false;
       },
+      child: RefreshIndicator(
+        onRefresh: controller.refreshVisibleOrders,
+        child: ListView.separated(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(14),
+          itemCount: orders.length + (showHistoryLoader ? 1 : 0),
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (context, index) {
+            if (index == orders.length) {
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final order = orders[index];
+            final active = controller.selectedOrder?.id == order.id;
+            return _OrderTile(
+              order: order,
+              active: active,
+              showHistoryInfo:
+                  controller.scope == MarketplaceOrderScope.history,
+              onTap: () => controller.selectOrder(order.id),
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -301,11 +342,13 @@ class _OrderTile extends StatelessWidget {
   const _OrderTile({
     required this.order,
     required this.active,
+    required this.showHistoryInfo,
     required this.onTap,
   });
 
   final MarketplaceOrder order;
   final bool active;
+  final bool showHistoryInfo;
   final VoidCallback onTap;
 
   @override
@@ -362,6 +405,34 @@ class _OrderTile extends StatelessWidget {
                 ),
               ),
             ],
+            if (showHistoryInfo) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  if (order.createdAt != null)
+                    Expanded(
+                      child: Text(
+                        _formatOrderDate(order.createdAt!),
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    )
+                  else
+                    const Spacer(),
+                  if (order.displayTotal > 0)
+                    Text(
+                      _formatOrderTotal(order.displayTotal),
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -394,7 +465,13 @@ class _OrderDetails extends StatelessWidget {
       children: [
         Container(
           padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
-          color: Colors.white,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF172033), Color(0xFF263750)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
           child: Row(
             children: [
               Expanded(
@@ -405,21 +482,17 @@ class _OrderDetails extends StatelessWidget {
                       'Заказ № ${order.displayNumber}',
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Color(0xFF0F172A),
+                        color: Colors.white,
                         fontSize: 24,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      [
-                        if (order.customer.name.isNotEmpty) order.customer.name,
-                        if (order.customer.phone.isNotEmpty)
-                          order.customer.phone,
-                      ].join('  |  '),
+                    const Text(
+                      'Подробная информация и состав заказа',
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF64748B),
+                      style: TextStyle(
+                        color: Color(0xFFCBD5E1),
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -448,8 +521,9 @@ class _OrderDetails extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (order.status == 'processing' ||
-                  order.status == 'partially_shipped') ...[
+              if (controller.scope != MarketplaceOrderScope.history &&
+                  (order.status == 'processing' ||
+                      order.status == 'partially_shipped')) ...[
                 const SizedBox(width: 12),
                 FilledButton.icon(
                   onPressed: controller.actionLoading
@@ -479,20 +553,35 @@ class _OrderDetails extends StatelessWidget {
             ],
           ),
         ),
-        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+        _OrderSummary(order: order),
         Expanded(
           child: order.groupedItems.isEmpty
               ? const Center(
-                  child: Text(
-                    'Позиции появятся после загрузки деталей заказа',
-                    style: TextStyle(
-                      color: Color(0xFF64748B),
-                      fontWeight: FontWeight.w700,
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.inventory_2_outlined,
+                          size: 44,
+                          color: Color(0xFF94A3B8),
+                        ),
+                        SizedBox(height: 12),
+                        Text(
+                          'Backend не передал позиции этого заказа',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.all(18),
+                  padding: const EdgeInsets.fromLTRB(22, 8, 22, 22),
                   itemCount: order.groupedItems.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 12),
                   itemBuilder: (context, index) {
@@ -540,6 +629,176 @@ class _OrderDetails extends StatelessWidget {
   }
 }
 
+class _OrderSummary extends StatelessWidget {
+  const _OrderSummary({required this.order});
+
+  final MarketplaceOrder order;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFFF7F8FA),
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _SummaryTile(
+                icon: Icons.person_outline,
+                label: 'Покупатель',
+                value: order.customer.name.isEmpty
+                    ? 'Не указан'
+                    : order.customer.name,
+                detail: order.customer.phone,
+              ),
+              _SummaryTile(
+                icon: order.fulfillmentLabel == 'Самовывоз'
+                    ? Icons.storefront_outlined
+                    : Icons.local_shipping_outlined,
+                label: 'Получение',
+                value: order.fulfillmentLabel,
+                detail: order.deliveryAddress,
+                width: 432,
+              ),
+              _SummaryTile(
+                icon: Icons.schedule_outlined,
+                label: 'Дата заказа',
+                value: order.createdAt == null
+                    ? 'Не указана'
+                    : _formatOrderDate(order.createdAt!),
+              ),
+              _SummaryTile(
+                icon: Icons.payments_outlined,
+                label: 'Итого',
+                value: order.displayTotal > 0
+                    ? _formatOrderTotal(order.displayTotal)
+                    : 'Не указан',
+                emphasized: true,
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              const Icon(
+                Icons.shopping_bag_outlined,
+                size: 20,
+                color: Color(0xFF334155),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Состав заказа · ${order.groupedItems.length}',
+                style: const TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryTile extends StatelessWidget {
+  const _SummaryTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.detail = '',
+    this.emphasized = false,
+    this.width = 210,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final String detail;
+  final bool emphasized;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      constraints: const BoxConstraints(minHeight: 88),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: emphasized ? const Color(0xFFEFF6FF) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: emphasized ? const Color(0xFFBFDBFE) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: emphasized
+                  ? const Color(0xFFDBEAFE)
+                  : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              icon,
+              size: 20,
+              color: emphasized
+                  ? const Color(0xFF2563EB)
+                  : const Color(0xFF475569),
+            ),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: const Color(0xFF0F172A),
+                    fontSize: emphasized ? 17 : 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                if (detail.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    detail,
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _GroupedItemCard extends StatelessWidget {
   const _GroupedItemCard({required this.item});
 
@@ -551,8 +810,15 @@ class _GroupedItemCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A0F172A),
+            blurRadius: 16,
+            offset: Offset(0, 5),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -571,22 +837,89 @@ class _GroupedItemCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  [
-                    if (item.sku.isNotEmpty) 'SKU ${item.sku}',
-                    'Запрошено ${_fmt(item.requestedQuantity)}',
-                    'Отгружено ${_fmt(item.shippedQuantity)}',
-                    'Осталось ${_fmt(item.remainingQuantity)}',
-                  ].join('  |  '),
-                  style: const TextStyle(
-                    color: Color(0xFF64748B),
-                    fontWeight: FontWeight.w700,
+                if (item.sku.isNotEmpty)
+                  Text(
+                    'Артикул: ${item.sku}',
+                    style: const TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _ItemMetric(
+                      label: 'Количество',
+                      value: _fmt(item.requestedQuantity),
+                    ),
+                    if (item.shippedQuantity > 0)
+                      _ItemMetric(
+                        label: 'Отгружено',
+                        value: _fmt(item.shippedQuantity),
+                        color: const Color(0xFF16A34A),
+                      ),
+                    if (item.remainingQuantity > 0)
+                      _ItemMetric(
+                        label: 'Осталось',
+                        value: _fmt(item.remainingQuantity),
+                        color: const Color(0xFFB45309),
+                      ),
+                    if (item.unitPrice > 0)
+                      _ItemMetric(
+                        label: 'Цена',
+                        value: _formatOrderTotal(item.unitPrice),
+                      ),
+                  ],
                 ),
               ],
             ),
           ),
+          if (item.total > 0) ...[
+            const SizedBox(width: 14),
+            Text(
+              _formatOrderTotal(item.total),
+              style: const TextStyle(
+                color: Color(0xFF0F172A),
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _ItemMetric extends StatelessWidget {
+  const _ItemMetric({
+    required this.label,
+    required this.value,
+    this.color = const Color(0xFF475569),
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        '$label: $value',
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -645,9 +978,9 @@ class _OrderNoPhoto extends StatelessWidget {
           ),
           SizedBox(height: 4),
           Text(
-            'Нет фото',
+            'Фото не передано',
             style: TextStyle(
-              fontSize: 10,
+              fontSize: 9,
               fontWeight: FontWeight.w700,
               color: Color(0xFF94A3B8),
             ),
@@ -731,6 +1064,14 @@ String _statusLabel(String status) {
       return 'Частично';
     case 'shipped':
       return 'Отгружен';
+    case 'delivered':
+      return 'Доставлен';
+    case 'completed':
+      return 'Завершён';
+    case 'cancelled':
+      return 'Отменён';
+    case 'partially_cancelled':
+      return 'Частично отменён';
     default:
       return status.isEmpty ? 'Статус' : status;
   }
@@ -745,7 +1086,12 @@ Color _statusColor(String status) {
     case 'partially_shipped':
       return const Color(0xFFB45309);
     case 'shipped':
+    case 'delivered':
+    case 'completed':
       return const Color(0xFF16A34A);
+    case 'cancelled':
+    case 'partially_cancelled':
+      return const Color(0xFFDC2626);
     default:
       return const Color(0xFF475569);
   }
@@ -754,4 +1100,24 @@ Color _statusColor(String status) {
 String _fmt(num value) {
   if (value % 1 == 0) return value.toInt().toString();
   return value.toString();
+}
+
+String _formatOrderDate(DateTime value) {
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(value.day)}.${two(value.month)}.${value.year} '
+      '${two(value.hour)}:${two(value.minute)}';
+}
+
+String _formatOrderTotal(num value) {
+  final fixed =
+      value % 1 == 0 ? value.toInt().toString() : value.toStringAsFixed(2);
+  final parts = fixed.split('.');
+  final digits = parts.first;
+  final buffer = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(' ');
+    buffer.write(digits[i]);
+  }
+  if (parts.length > 1) buffer.write(',${parts[1]}');
+  return '$buffer ₸';
 }

@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:leemon_app/core/models/marketplace_order_models.dart';
 
 class MarketplaceOrdersRemoteDataSource {
@@ -10,10 +13,10 @@ class MarketplaceOrdersRemoteDataSource {
     final safeKey = key.trim();
     if (safeKey.isEmpty) throw Exception('pos key is empty');
 
-    final response = await _dio.get(
-      '/organizations/pos/$safeKey',
-      options: _silentLogOptions,
-    );
+    final path = '/organizations/pos/$safeKey';
+    _logMarketplaceRequest('GET', path);
+    final response = await _dio.get(path);
+    _logMarketplaceResponse('GET', path, response);
     final body = _checkedMap(response.data, 'fetchPosInfo');
     return MarketplacePosInfo.fromJson(body);
   }
@@ -27,15 +30,18 @@ class MarketplaceOrdersRemoteDataSource {
     final safeKey = key.trim();
     if (safeKey.isEmpty) throw Exception('pos key is empty');
 
+    final path = '/organizations/pos/$safeKey/marketplace/orders';
+    final query = <String, dynamic>{
+      'scope': scope.apiValue,
+      'skip': skip < 0 ? 0 : skip,
+      'take': take.clamp(1, 100),
+    };
+    _logMarketplaceRequest('GET', path, query: query);
     final response = await _dio.get(
-      '/organizations/pos/$safeKey/marketplace/orders',
-      queryParameters: {
-        'scope': scope.apiValue,
-        'skip': skip < 0 ? 0 : skip,
-        'take': take.clamp(1, 100),
-      },
-      options: _silentLogOptions,
+      path,
+      queryParameters: query,
     );
+    _logMarketplaceResponse('GET', path, response);
     return MarketplaceOrdersPage.fromJson(
       _checkedMap(response.data, 'listOrders'),
     );
@@ -50,10 +56,10 @@ class MarketplaceOrdersRemoteDataSource {
     if (safeKey.isEmpty) throw Exception('pos key is empty');
     if (safeOrderId.isEmpty) throw Exception('order id is empty');
 
-    final response = await _dio.get(
-      '/organizations/pos/$safeKey/marketplace/orders/$safeOrderId',
-      options: _silentLogOptions,
-    );
+    final path = '/organizations/pos/$safeKey/marketplace/orders/$safeOrderId';
+    _logMarketplaceRequest('GET', path);
+    final response = await _dio.get(path);
+    _logMarketplaceResponse('GET', path, response);
     final body = _checkedMap(response.data, 'getOrder');
     final data = body['data'];
     if (data is Map) {
@@ -71,9 +77,11 @@ class MarketplaceOrdersRemoteDataSource {
     if (safeKey.isEmpty) throw Exception('pos key is empty');
     if (safeOrderId.isEmpty) throw Exception('order id is empty');
 
-    final response = await _dio.post(
-      '/organizations/pos/$safeKey/marketplace/orders/$safeOrderId/accept',
-    );
+    final path =
+        '/organizations/pos/$safeKey/marketplace/orders/$safeOrderId/accept';
+    _logMarketplaceRequest('POST', path, body: const <String, dynamic>{});
+    final response = await _dio.post(path);
+    _logMarketplaceResponse('POST', path, response);
     return MarketplaceAcceptResult.fromJson(
       _checkedMap(response.data, 'acceptOrder'),
     );
@@ -94,17 +102,23 @@ class MarketplaceOrdersRemoteDataSource {
       throw Exception('idempotency key is empty');
     }
 
+    final path =
+        '/organizations/pos/$safeKey/marketplace/orders/$safeOrderId/items/shipment';
+    final body = <String, dynamic>{};
+    _logMarketplaceRequest('PUT', path, body: body);
     final response = await _dio.put(
-      '/organizations/pos/$safeKey/marketplace/orders/$safeOrderId/items/shipment',
-      data: <String, dynamic>{},
+      path,
+      data: body,
       options: Options(headers: {'Idempotency-Key': safeIdempotencyKey}),
     );
-    final body = _checkedMap(response.data, 'shipOrder');
-    final result = MarketplaceShipmentResult.fromJson(body);
+    _logMarketplaceResponse('PUT', path, response);
+    final responseBody = _checkedMap(response.data, 'shipOrder');
+    final result = MarketplaceShipmentResult.fromJson(responseBody);
     if (!result.ok) {
       throw MarketplaceOrdersApiException(
         operation: 'shipOrder',
-        message: (body['message'] ?? 'Не удалось отгрузить заказ').toString(),
+        message: (responseBody['message'] ?? 'Не удалось отгрузить заказ')
+            .toString(),
         statusCode: result.status,
       );
     }
@@ -112,9 +126,51 @@ class MarketplaceOrdersRemoteDataSource {
   }
 }
 
-final Options _silentLogOptions = Options(
-  extra: const {'silentDioLog': true},
-);
+void _logMarketplaceRequest(
+  String method,
+  String path, {
+  Map<String, dynamic>? query,
+  Object? body,
+}) {
+  _printMarketplaceLog(
+    '[MARKETPLACE REQUEST]\n'
+    'method: $method\n'
+    'url: $path\n'
+    'query: ${_prettyJson(query ?? const <String, dynamic>{})}\n'
+    'body: ${body == null ? '<empty>' : _prettyJson(body)}',
+  );
+}
+
+void _logMarketplaceResponse(
+  String method,
+  String path,
+  Response<dynamic> response,
+) {
+  _printMarketplaceLog(
+    '[MARKETPLACE RESPONSE]\n'
+    'method: $method\n'
+    'url: $path\n'
+    'status: ${response.statusCode}\n'
+    'body: ${_prettyJson(response.data)}',
+  );
+}
+
+String _prettyJson(Object? value) {
+  try {
+    return const JsonEncoder.withIndent('  ').convert(value);
+  } catch (_) {
+    return value.toString();
+  }
+}
+
+void _printMarketplaceLog(String value) {
+  const chunkSize = 800;
+  for (var offset = 0; offset < value.length; offset += chunkSize) {
+    final end =
+        (offset + chunkSize < value.length) ? offset + chunkSize : value.length;
+    debugPrintSynchronously(value.substring(offset, end));
+  }
+}
 
 Map<String, dynamic> _asMap(Object? value, String operation) {
   if (value is Map<String, dynamic>) return value;

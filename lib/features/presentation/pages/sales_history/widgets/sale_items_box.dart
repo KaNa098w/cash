@@ -44,6 +44,10 @@ class SaleItemsBox extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       child: Column(
         children: [
+          if (!selectable && items.isNotEmpty) ...[
+            const _SaleItemsHeader(),
+            const SizedBox(height: 4),
+          ],
           if (items.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
@@ -67,6 +71,61 @@ class SaleItemsBox extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _SaleItemsHeader extends StatelessWidget {
+  const _SaleItemsHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+      color: Color(0xFF6B7280),
+    );
+
+    return const Row(
+      children: [
+        SizedBox(width: 32),
+        Expanded(flex: 30, child: Text('Товар', style: style)),
+        Expanded(
+          flex: 16,
+          child: Padding(
+            padding: EdgeInsets.only(right: 24),
+            child: Text(
+              'Цена',
+              textAlign: TextAlign.right,
+              style: style,
+            ),
+          ),
+        ),
+        Expanded(
+          flex: 14,
+          child: Text(
+            'Количество',
+            textAlign: TextAlign.center,
+            style: style,
+          ),
+        ),
+        Expanded(
+          flex: 14,
+          child: Text(
+            'Скидка',
+            textAlign: TextAlign.center,
+            style: style,
+          ),
+        ),
+        Expanded(
+          flex: 18,
+          child: Text(
+            'Итого',
+            textAlign: TextAlign.right,
+            style: style,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -101,7 +160,7 @@ class _SaleItemPreviewRow extends StatelessWidget {
           ),
           const SizedBox(width: 16),
           Expanded(
-            flex: 34,
+            flex: 30,
             child: Text(
               item.displayProductName,
               overflow: TextOverflow.ellipsis,
@@ -114,11 +173,11 @@ class _SaleItemPreviewRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            flex: 18,
+            flex: 16,
             child: Padding(
               padding: const EdgeInsets.only(right: 24),
               child: Text(
-                money2(item.price),
+                money2(item.basePrice),
                 textAlign: TextAlign.right,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.inter(
@@ -131,7 +190,7 @@ class _SaleItemPreviewRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            flex: 18,
+            flex: 14,
             child: Text(
               '${_qty(item.quantity)} $_unit',
               textAlign: TextAlign.center,
@@ -141,6 +200,23 @@ class _SaleItemPreviewRow extends StatelessWidget {
                 height: 1.4,
                 fontWeight: FontWeight.w600,
                 color: Colors.black,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 14,
+            child: Text(
+              item.hasDiscount
+                  ? '${item.discountPercent.toStringAsFixed(item.discountPercent % 1 == 0 ? 0 : 1)}%'
+                  : '0%',
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+                color:
+                    item.hasDiscount ? const Color(0xFF179D72) : Colors.black,
               ),
             ),
           ),

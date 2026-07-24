@@ -140,16 +140,23 @@ class ProductRemoteDataSource {
     required String key,
     required String barcode,
     required double sellingPrice,
+    required String userId,
     required String deviceId,
     String? name,
     MeasurementUnit? measurementUnit,
+    String? managerAccessKey,
   }) async {
     final safeKey = key.trim();
     final safeBarcode = barcode.trim();
+    final safeUserId = userId.trim();
     final safeDeviceId = deviceId.trim();
     final safeName = name?.trim() ?? '';
+    final accessKey = managerAccessKey?.trim();
 
     if (safeKey.isEmpty) throw Exception('createProduct: pos key is empty');
+    if (safeUserId.isEmpty) {
+      throw Exception('createProduct: user id is empty');
+    }
     if (safeDeviceId.isEmpty) {
       throw Exception('createProduct: device id is empty');
     }
@@ -159,11 +166,15 @@ class ProductRemoteDataSource {
       data: <String, dynamic>{
         'barcode': safeBarcode,
         'selling_price': sellingPrice,
+        'user_id': safeUserId,
         'device_id': safeDeviceId,
         if (safeName.isNotEmpty) 'name': safeName,
         if (measurementUnit != null)
           'measurement_unit': measurementUnit.apiValue,
       },
+      options: accessKey == null || accessKey.isEmpty
+          ? null
+          : Options(headers: {'X-Return-Access-Key': accessKey}),
     );
 
     final body = response.data;
@@ -180,31 +191,34 @@ class ProductRemoteDataSource {
     return product;
   }
 
-  Future<ProductModel> updateProductPrice({
+  Future<ProductModel> updateProduct({
     required String key,
     required String productId,
     required String userId,
     required String deviceId,
     required double sellingPrice,
+    String? name,
+    MeasurementUnit? measurementUnit,
     String? refundAccessKey,
   }) async {
     final safeKey = key.trim();
     final safeProductId = productId.trim();
     final safeUserId = userId.trim();
     final safeDeviceId = deviceId.trim();
+    final safeName = name?.trim();
     final accessKey = refundAccessKey?.trim();
 
     if (safeKey.isEmpty) {
-      throw Exception('updateProductPrice: pos key is empty');
+      throw Exception('updateProduct: pos key is empty');
     }
     if (safeProductId.isEmpty) {
-      throw Exception('updateProductPrice: product id is empty');
+      throw Exception('updateProduct: product id is empty');
     }
     if (safeUserId.isEmpty) {
-      throw Exception('updateProductPrice: user id is empty');
+      throw Exception('updateProduct: user id is empty');
     }
     if (safeDeviceId.isEmpty) {
-      throw Exception('updateProductPrice: device id is empty');
+      throw Exception('updateProduct: device id is empty');
     }
 
     final response = await _dio.put(
@@ -213,8 +227,9 @@ class ProductRemoteDataSource {
         'selling_price': sellingPrice,
         'user_id': safeUserId,
         'device_id': safeDeviceId,
-        if (accessKey != null && accessKey.isNotEmpty)
-          'refund_access_key': accessKey,
+        if (safeName != null) 'name': safeName,
+        if (measurementUnit != null)
+          'measurement_unit': measurementUnit.apiValue,
       },
       options: accessKey == null || accessKey.isEmpty
           ? null
@@ -224,12 +239,12 @@ class ProductRemoteDataSource {
     final body = response.data;
     if (body is! Map<String, dynamic>) {
       throw Exception(
-        'updateProductPrice: invalid response format (expected Map)',
+        'updateProduct: invalid response format (expected Map)',
       );
     }
     final data = body['data'];
     if (data is! Map) {
-      throw Exception('updateProductPrice: invalid "data" (expected Map)');
+      throw Exception('updateProduct: invalid "data" (expected Map)');
     }
 
     return ProductModel.fromJson(Map<String, dynamic>.from(data));

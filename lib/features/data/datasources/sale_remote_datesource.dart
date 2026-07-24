@@ -52,7 +52,7 @@ class SaleRemoteDataSource {
       queryParameters: {
         'page': page,
         'perPage': perPage,
-        'include': 'items,refund.items,payments.account',
+        'include': 'refund.items,payments.account',
         'sort': sort,
         if ((customerId ?? '').trim().isNotEmpty)
           'filter[customer_id]': customerId!.trim(),
@@ -107,7 +107,7 @@ class SaleRemoteDataSource {
     final resp = await _dio.get(
       '/organizations/pos/sales/$sid',
       queryParameters: {
-        'include': 'items,refund.items,payments.account',
+        'include': 'refund.items,payments.account',
       },
     );
 

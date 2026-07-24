@@ -4,8 +4,13 @@ import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:get_it/get_it.dart';
+import 'package:leemon_app/core/models/marketplace_order_models.dart';
+import 'package:leemon_app/features/presentation/pages/marketplace_orders/marketplace_orders_controller.dart';
+import 'package:leemon_app/features/presentation/widgets/incoming_orders_dialog.dart';
 
 class OrderNotificationDemo extends StatefulWidget {
   const OrderNotificationDemo({super.key});
@@ -15,37 +20,71 @@ class OrderNotificationDemo extends StatefulWidget {
 }
 
 class _OrderNotificationDemoState extends State<OrderNotificationDemo> {
-  final List<_DemoOrder> _orders = [];
-  final Map<int, Timer> _timers = {};
+  final List<_NotificationOrder> _orders = [];
+  final Map<String, Timer> _timers = {};
   final AudioPlayer _audioPlayer = AudioPlayer();
-  int _nextOrderNumber = 1248;
-  Timer? _secondDemoTimer;
+  late final MarketplaceOrdersController _controller;
+  int _handledNotificationRevision = 0;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _addOrder();
-      _secondDemoTimer = Timer(const Duration(milliseconds: 1400), _addOrder);
-    });
+    _controller = GetIt.I<MarketplaceOrdersController>();
+    _handledNotificationRevision = _controller.notificationRevision;
+    _controller.addListener(_handleMarketplaceUpdate);
   }
 
-  void _addOrder() {
+  void _handleMarketplaceUpdate() {
+    if (!mounted) return;
+    if (!_controller.hasMarketplaceIntegration) {
+      for (final timer in _timers.values) {
+        timer.cancel();
+      }
+      _timers.clear();
+      if (_orders.isNotEmpty) setState(_orders.clear);
+      return;
+    }
+    if (_controller.notificationRevision == _handledNotificationRevision) {
+      return;
+    }
+    _handledNotificationRevision = _controller.notificationRevision;
+    final order = _controller.latestIncomingOrder;
+    if (order == null) return;
+    _addOrder(_notificationFromMarketplaceOrder(order));
+  }
+
+  void _addOrder(_NotificationOrder order) {
     if (!mounted) return;
     unawaited(_playOrderSound());
-    final number = _nextOrderNumber++;
-    final order = _DemoOrder(
-      number: number,
-      customer: number.isEven ? 'Алексей Смирнов' : 'Айгерим К.',
-      itemsCount: number.isEven ? 4 : 2,
-      total: number.isEven ? '12 450 ₸' : '6 790 ₸',
-      delivery: number.isEven ? 'Доставка' : 'Самовывоз',
-    );
     setState(() => _orders.insert(0, order));
-    _timers[number] = Timer(
+    // On some desktop embedders an asynchronous socket/timer callback marks
+    // the widget dirty but the next frame is not requested until the next
+    // pointer event. Explicitly wake the renderer for incoming orders.
+    SchedulerBinding.instance.ensureVisualUpdate();
+    _timers[order.id] = Timer(
       const Duration(seconds: 5),
-      () => _dismiss(number),
+      () => _dismiss(order.id),
+    );
+  }
+
+  _NotificationOrder _notificationFromMarketplaceOrder(
+    MarketplaceOrder order,
+  ) {
+    final itemsCount = order.groupedItems.isNotEmpty
+        ? order.groupedItems.fold<int>(
+            0,
+            (total, item) => total + item.requestedQuantity.round(),
+          )
+        : order.items.length;
+    return _NotificationOrder(
+      id: order.id,
+      number: order.displayNumber,
+      customer: order.customer.name.trim().isEmpty
+          ? 'Покупатель'
+          : order.customer.name,
+      itemsCount: itemsCount,
+      total: 'Маркетплейс',
+      delivery: 'Новый',
     );
   }
 
@@ -63,23 +102,20 @@ class _OrderNotificationDemoState extends State<OrderNotificationDemo> {
     }
   }
 
-  void _dismiss(int number) {
-    _timers.remove(number)?.cancel();
+  void _dismiss(String id) {
+    _timers.remove(id)?.cancel();
     if (!mounted) return;
-    setState(() => _orders.removeWhere((order) => order.number == number));
+    setState(() => _orders.removeWhere((order) => order.id == id));
   }
 
-  Future<void> _openOrder(_DemoOrder order) async {
-    _dismiss(order.number);
-    await showDialog<void>(
-      context: context,
-      builder: (context) => _DemoOrderDialog(order: order),
-    );
+  Future<void> _openOrder(_NotificationOrder order) async {
+    _dismiss(order.id);
+    await showIncomingOrdersDialog(context);
   }
 
   @override
   void dispose() {
-    _secondDemoTimer?.cancel();
+    _controller.removeListener(_handleMarketplaceUpdate);
     for (final timer in _timers.values) {
       timer.cancel();
     }
@@ -89,6 +125,9 @@ class _OrderNotificationDemoState extends State<OrderNotificationDemo> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_controller.hasMarketplaceIntegration) {
+      return const SizedBox.shrink();
+    }
     return IgnorePointer(
       ignoring: false,
       child: Stack(
@@ -102,33 +141,14 @@ class _OrderNotificationDemoState extends State<OrderNotificationDemo> {
               children: [
                 for (final order in _orders.take(4)) ...[
                   _OrderNotificationCard(
-                    key: ValueKey(order.number),
+                    key: ValueKey(order.id),
                     order: order,
                     onTap: () => _openOrder(order),
-                    onClose: () => _dismiss(order.number),
+                    onClose: () => _dismiss(order.id),
                   ),
                   const SizedBox(height: 10),
                 ],
               ],
-            ),
-          ),
-          Positioned(
-            right: 18,
-            bottom: 18,
-            child: ElevatedButton.icon(
-              onPressed: _addOrder,
-              icon: const Icon(Icons.notifications_active_outlined, size: 19),
-              label: const Text('Тест: новый заказ'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 5,
-              ),
             ),
           ),
         ],
@@ -194,7 +214,7 @@ class _OrderNotificationCard extends StatelessWidget {
     required this.onClose,
   });
 
-  final _DemoOrder order;
+  final _NotificationOrder order;
   final VoidCallback onTap;
   final VoidCallback onClose;
 
@@ -426,72 +446,9 @@ class _OrderNotificationCard extends StatelessWidget {
   }
 }
 
-class _DemoOrderDialog extends StatelessWidget {
-  const _DemoOrderDialog({required this.order});
-
-  final _DemoOrder order;
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: Text('Заказ № ${order.number}'),
-      content: SizedBox(
-        width: 440,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Макет карточки заказа',
-              style: TextStyle(color: Color(0xFF64748B)),
-            ),
-            const SizedBox(height: 22),
-            _detailRow('Клиент', order.customer),
-            _detailRow('Получение', order.delivery),
-            _detailRow('Позиций', '${order.itemsCount}'),
-            _detailRow('К оплате', order.total, strong: true),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Закрыть'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Перейти к заказу'),
-        ),
-      ],
-    );
-  }
-
-  Widget _detailRow(String label, String value, {bool strong = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 13),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 110,
-            child:
-                Text(label, style: const TextStyle(color: Color(0xFF64748B))),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
-              fontSize: strong ? 18 : 14,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DemoOrder {
-  const _DemoOrder({
+class _NotificationOrder {
+  const _NotificationOrder({
+    required this.id,
     required this.number,
     required this.customer,
     required this.itemsCount,
@@ -499,7 +456,8 @@ class _DemoOrder {
     required this.delivery,
   });
 
-  final int number;
+  final String id;
+  final String number;
   final String customer;
   final int itemsCount;
   final String total;

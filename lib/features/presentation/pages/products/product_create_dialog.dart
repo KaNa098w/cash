@@ -8,6 +8,7 @@ import 'package:leemon_app/core/models/product_response.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/datasources/product_remote_datasource.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
+import 'package:leemon_app/features/presentation/pages/sales_history/widgets/refund_access_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 import 'package:provider/provider.dart';
@@ -18,6 +19,12 @@ Future<ProductModel?> showProductCreateDialog(
   bool scannedProductNotFound = false,
 }) async {
   final auth = context.read<AuthTokenProvider>();
+  final activeUserId = auth.activeUserId?.trim() ?? '';
+  final isDirector = auth.users.any(
+    (user) =>
+        user.id == activeUserId &&
+        user.roles.any((role) => role.toLowerCase() == 'director'),
+  );
 
   if (scannedProductNotFound) {
     final shouldCreate = await showDialog<bool>(
@@ -33,7 +40,9 @@ Future<ProductModel?> showProductCreateDialog(
     barrierDismissible: false,
     builder: (_) => _ProductCreateDialog(
       posKey: auth.posKey?.trim() ?? '',
+      userId: activeUserId,
       deviceId: auth.deviceId?.trim() ?? '',
+      isDirector: isDirector,
       initialBarcode: initialBarcode.trim(),
       scannedProductNotFound: false,
     ),
@@ -140,13 +149,17 @@ class _ProductNotFoundDialog extends StatelessWidget {
 class _ProductCreateDialog extends StatefulWidget {
   const _ProductCreateDialog({
     required this.posKey,
+    required this.userId,
     required this.deviceId,
+    required this.isDirector,
     required this.initialBarcode,
     required this.scannedProductNotFound,
   });
 
   final String posKey;
+  final String userId;
   final String deviceId;
+  final bool isDirector;
   final String initialBarcode;
   final bool scannedProductNotFound;
 
@@ -345,9 +358,12 @@ class _ProductCreateDialogState extends State<_ProductCreateDialog> {
         !_formKey.currentState!.validate()) {
       return;
     }
-    if (widget.posKey.isEmpty || widget.deviceId.isEmpty) {
-      setState(
-          () => _error = 'Не найдены POS key или идентификатор устройства.');
+    if (widget.posKey.isEmpty ||
+        widget.userId.isEmpty ||
+        widget.deviceId.isEmpty) {
+      setState(() {
+        _error = 'Не найдены данные POS, пользователя или устройства.';
+      });
       return;
     }
 
@@ -357,14 +373,12 @@ class _ProductCreateDialogState extends State<_ProductCreateDialog> {
     });
     _hideNameKeyboard();
     try {
-      final product = await sl<PosSyncService>().createProduct(
-        key: widget.posKey,
-        barcode: _barcodeController.text,
-        sellingPrice: _parsedPrice()!,
-        deviceId: widget.deviceId,
-        name: _nameController.text,
-        measurementUnit: MeasurementUnit.pieces,
-      );
+      final product = widget.isDirector
+          ? await _createProduct()
+          : await _createWithManagerKey();
+      if (product == null) return;
+      if (!mounted) return;
+      await sl<PosSyncService>().cacheServerProduct(product);
       if (!mounted) return;
       Navigator.of(context).pop(product);
     } catch (error) {
@@ -373,6 +387,53 @@ class _ProductCreateDialogState extends State<_ProductCreateDialog> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<ProductModel> _createProduct({String? managerAccessKey}) {
+    return sl<ProductRemoteDataSource>().createProduct(
+      key: widget.posKey,
+      barcode: _barcodeController.text,
+      sellingPrice: _parsedPrice()!,
+      userId: widget.userId,
+      deviceId: widget.deviceId,
+      name: _nameController.text,
+      measurementUnit: MeasurementUnit.pieces,
+      managerAccessKey: managerAccessKey,
+    );
+  }
+
+  Future<ProductModel?> _createWithManagerKey() async {
+    ProductModel? createdProduct;
+    Object? retryError;
+
+    final granted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => RefundAccessDialog(
+        title: 'Доступ к созданию товара',
+        scanTitle: 'Сканируй штрих-код доступа менеджера',
+        onScanned: (barcode) async {
+          final accessKey = barcode.trim();
+          if (accessKey.isEmpty) return false;
+          try {
+            createdProduct = await _createProduct(
+              managerAccessKey: accessKey,
+            );
+            return true;
+          } on DioException catch (error) {
+            if (error.response?.statusCode == 401) return false;
+            retryError = error;
+            return true;
+          } catch (error) {
+            retryError = error;
+            return true;
+          }
+        },
+      ),
+    );
+
+    if (retryError != null) throw retryError!;
+    return granted == true ? createdProduct : null;
   }
 
   String _friendlyError(Object error) {
@@ -397,7 +458,7 @@ class _ProductCreateDialogState extends State<_ProductCreateDialog> {
       }
       switch (error.response?.statusCode) {
         case 401:
-          return 'POS key или идентификатор устройства не прошли проверку.';
+          return 'Неверный, просроченный или чужой ключ менеджера.';
         case 403:
           return 'Подписка организации неактивна.';
         case 422:
@@ -671,7 +732,11 @@ class _ProductCreateDialogState extends State<_ProductCreateDialog> {
                                 )
                               : const Icon(Icons.add),
                           label: Text(
-                            _loading ? 'Создание…' : 'Создать товар',
+                            _loading
+                                ? 'Создание…'
+                                : widget.isDirector
+                                    ? 'Создать товар'
+                                    : 'Ввести ключ менеджера',
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                         ),

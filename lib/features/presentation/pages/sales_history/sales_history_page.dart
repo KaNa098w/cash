@@ -288,6 +288,19 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     setState(() {});
   }
 
+  ReceiptPdfItem _receiptItem(SaleItemModel item) {
+    return ReceiptPdfItem(
+      name: item.displayProductName,
+      quantity: item.quantity,
+      baseUnitPrice: item.basePrice,
+      unitPrice: item.price,
+      lineTotal: item.totalPrice,
+      discountPercent: item.discountPercent,
+      discountAmount: item.discountAmount,
+      totalDiscount: item.totalDiscount,
+    );
+  }
+
   ReceiptPdfData _buildSaleReceiptData({
     required SaleModel sale,
     required AuthTokenProvider auth,
@@ -309,18 +322,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       ),
       cashierName: cashierName,
       storeName: _storeName(auth),
-      items: sale.items
-          .map(
-            (it) => ReceiptPdfItem(
-              name: it.displayProductName,
-              quantity: it.quantity,
-              unitPrice: it.price,
-              lineTotal: it.totalPrice,
-            ),
-          )
-          .toList(),
+      items: sale.items.map(_receiptItem).toList(),
       total: sale.totalAmount,
-      discountSum: 0,
       paymentMethodLabel: switch (sale.paymentMethod.trim().toLowerCase()) {
         'cash' => 'Наличные',
         'card' => 'Безналичный',
@@ -383,18 +386,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
             ),
             cashierName: cashierName,
             storeName: _storeName(auth),
-            items: sale.items
-                .map(
-                  (it) => ReceiptPdfItem(
-                    name: it.displayProductName,
-                    quantity: it.quantity,
-                    unitPrice: it.price,
-                    lineTotal: it.totalPrice,
-                  ),
-                )
-                .toList(),
+            items: sale.items.map(_receiptItem).toList(),
             total: sale.totalAmount,
-            discountSum: 0,
             paymentMethodLabel: switch (
                 sale.paymentMethod.trim().toLowerCase()) {
               'cash' => 'Наличные',
@@ -459,18 +452,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
               sale.number.trim().isEmpty ? sale.localId : sale.number.trim(),
           cashierName: cashierName,
           storeName: storeName,
-          items: sale.items
-              .map(
-                (it) => ReceiptPdfItem(
-                  name: it.displayProductName,
-                  quantity: it.quantity,
-                  unitPrice: it.price,
-                  lineTotal: it.totalPrice,
-                ),
-              )
-              .toList(),
+          items: sale.items.map(_receiptItem).toList(),
           total: sale.totalAmount,
-          discountSum: 0,
           paymentMethodLabel: switch (sale.paymentMethod.trim().toLowerCase()) {
             'cash' => 'Наличные',
             'card' => 'Безналичный',
