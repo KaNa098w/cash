@@ -333,12 +333,110 @@ class _MarketplaceOrdersButtonState extends State<_MarketplaceOrdersButton> {
 
   Future<void> _showIncomingOrders() async {
     if (!mounted || _incomingOrdersDialogOpen) return;
+    if (!_controller.hasMarketplaceIntegration) {
+      await _showMarketplaceUnavailableDialog();
+      return;
+    }
     _incomingOrdersDialogOpen = true;
     try {
       await showIncomingOrdersDialog(context);
     } finally {
       _incomingOrdersDialogOpen = false;
     }
+  }
+
+  Future<void> _showMarketplaceUnavailableDialog() {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        backgroundColor: Colors.transparent,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 430),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(26, 26, 26, 22),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.2),
+                  blurRadius: 36,
+                  offset: const Offset(0, 18),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF7F1),
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  alignment: Alignment.center,
+                  child: SvgPicture.asset(
+                    'assets/svg/bag.svg',
+                    width: 34,
+                    height: 34,
+                    colorFilter: const ColorFilter.mode(
+                      Color(0xFF179D72),
+                      BlendMode.srcIn,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Маркетплейс недоступен',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF111827),
+                    fontSize: 23,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Онлайн-заказы не подключены для этой торговой точки. '
+                  'Обратитесь к администратору, чтобы получить доступ.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF6B7280),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52),
+                      backgroundColor: const Color(0xFF33CC99),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      'Понятно',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -352,9 +450,7 @@ class _MarketplaceOrdersButtonState extends State<_MarketplaceOrdersButton> {
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, _) {
-        if (!_controller.hasMarketplaceIntegration) {
-          return const SizedBox.shrink();
-        }
+        final marketplaceAvailable = _controller.hasMarketplaceIntegration;
         final count = _controller.notificationCount;
         return Stack(
           clipBehavior: Clip.none,
@@ -370,9 +466,11 @@ class _MarketplaceOrdersButtonState extends State<_MarketplaceOrdersButton> {
                   BlendMode.srcIn,
                 ),
               ),
-              tooltip: 'Онлайн заказы',
+              tooltip: marketplaceAvailable
+                  ? 'Онлайн-заказы'
+                  : 'Маркетплейс недоступен',
             ),
-            if (count > 0)
+            if (marketplaceAvailable && count > 0)
               Positioned(
                 right: 3,
                 top: 5,

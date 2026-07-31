@@ -22,6 +22,7 @@ import 'package:leemon_app/features/presentation/widgets/conversion_product_dial
 import 'package:leemon_app/features/presentation/widgets/footer_status.dart'
     show TouchDeleteDialog;
 import 'package:leemon_app/features/presentation/widgets/keypad_widget.dart';
+import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 
 const double kCartFs = 18;
 const double kCartRowHeight = 52;
@@ -532,41 +533,43 @@ class _CartListState extends State<CartList> {
 
                                     SizedBox(
                                       width: 170,
-                                      child: InkWell(
-                                        onTap: () {
-                                          context
-                                              .read<PosCubit>()
-                                              .selectItem(i);
-                                          if (it.product.hasConversion) {
-                                            editConvertedCartItem(
+                                      child: Align(
+                                        alignment: Alignment.centerRight,
+                                        child: InkWell(
+                                          onTap: () {
+                                            context
+                                                .read<PosCubit>()
+                                                .selectItem(i);
+                                            if (it.product.hasConversion) {
+                                              editConvertedCartItem(
+                                                context,
+                                                index: i,
+                                                item: it,
+                                              );
+                                              return;
+                                            }
+                                            _showQtyDialog(
                                               context,
                                               index: i,
-                                              item: it,
+                                              initialQty: it.qty,
+                                              productName: it.product.name,
+                                              currentQtyLabel:
+                                                  '${formatStockQty(it.product.quantity, it.product.measurementUnit)} ${it.product.measurementUnit}',
                                             );
-                                            return;
-                                          }
-                                          _showQtyDialog(
-                                            context,
-                                            index: i,
-                                            initialQty: it.qty,
-                                            productName: it.product.name,
-                                            currentQtyLabel:
-                                                '${formatStockQty(it.product.quantity, it.product.measurementUnit)} ${it.product.measurementUnit}',
-                                          );
-                                        },
+                                          },
 
-                                        // убираем эффекты как и в строке
-                                        splashFactory: NoSplash.splashFactory,
-                                        overlayColor:
-                                            const WidgetStatePropertyAll(
-                                                Colors.transparent),
-                                        splashColor: Colors.transparent,
-                                        highlightColor: Colors.transparent,
-                                        hoverColor: Colors.transparent,
+                                          // Нажатие срабатывает только по самому
+                                          // блоку количества, а не по всей колонке.
+                                          splashFactory: NoSplash.splashFactory,
+                                          overlayColor:
+                                              const WidgetStatePropertyAll(
+                                                  Colors.transparent),
+                                          splashColor: Colors.transparent,
+                                          highlightColor: Colors.transparent,
+                                          hoverColor: Colors.transparent,
 
-                                        borderRadius: BorderRadius.circular(10),
-                                        child: Align(
-                                          alignment: Alignment.centerRight,
+                                          borderRadius:
+                                              BorderRadius.circular(10),
                                           child: Container(
                                             width: 90,
                                             padding: const EdgeInsets.symmetric(
@@ -576,7 +579,6 @@ class _CartListState extends State<CartList> {
                                             decoration: BoxDecoration(
                                               color: isSelected
                                                   ? Colors.white
-                                                  // тот же фон что и у выбранной карточки
                                                   : Colors.transparent,
                                               borderRadius:
                                                   BorderRadius.circular(10),
@@ -1331,6 +1333,8 @@ class _ServerPriceDialog extends StatefulWidget {
 
 class _ServerPriceDialogState extends State<_ServerPriceDialog> {
   late final TextEditingController _nameController;
+  final FocusNode _nameFocusNode = FocusNode();
+  OverlayEntry? _nameKeyboardEntry;
   late String _priceText;
   late MeasurementUnit _measurementUnit;
   bool _submitting = false;
@@ -1349,8 +1353,42 @@ class _ServerPriceDialogState extends State<_ServerPriceDialog> {
 
   @override
   void dispose() {
+    _nameKeyboardEntry?.remove();
+    _nameKeyboardEntry = null;
+    _nameFocusNode.dispose();
     _nameController.dispose();
     super.dispose();
+  }
+
+  void _showNameKeyboard() {
+    if (_submitting || _nameKeyboardEntry != null) return;
+    _nameFocusNode.requestFocus();
+    _nameController.selection = TextSelection.collapsed(
+      offset: _nameController.text.length,
+    );
+
+    _nameKeyboardEntry = OverlayEntry(
+      builder: (_) => Positioned(
+        left: 0,
+        right: 0,
+        bottom: 0,
+        child: Material(
+          color: Colors.transparent,
+          child: OnScreenKeyboardSheet(
+            controllerGetter: () => _nameController,
+            onEnter: _hideNameKeyboard,
+            onClose: _hideNameKeyboard,
+          ),
+        ),
+      ),
+    );
+    Overlay.of(context, rootOverlay: true).insert(_nameKeyboardEntry!);
+  }
+
+  void _hideNameKeyboard() {
+    _nameKeyboardEntry?.remove();
+    _nameKeyboardEntry = null;
+    _nameFocusNode.unfocus();
   }
 
   double get _price =>
@@ -1502,285 +1540,298 @@ class _ServerPriceDialogState extends State<_ServerPriceDialog> {
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       backgroundColor: Colors.transparent,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 34,
-                  offset: const Offset(0, 18),
-                ),
-              ],
+      child: LayoutBuilder(
+        builder: (context, constraints) => Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 520,
+              maxHeight: constraints.maxHeight,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 34,
+                    offset: const Offset(0, 18),
+                  ),
+                ],
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEAF7F1),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(
-                        Icons.price_change_rounded,
-                        color: Color(0xFF179D72),
-                        size: 27,
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEAF7F1),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.price_change_rounded,
+                            color: Color(0xFF179D72),
+                            size: 27,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        const Expanded(
+                          child: Text(
+                            'Изменение товара',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF111827),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: _submitting
+                              ? null
+                              : () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _nameController,
+                      focusNode: _nameFocusNode,
+                      enabled: !_submitting,
+                      maxLength: 255,
+                      onChanged: (_) => setState(() => _error = null),
+                      decoration: InputDecoration(
+                        labelText: 'Название',
+                        hintText: _productName,
+                        counterText: '',
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        suffixIcon: IconButton(
+                          onPressed: _submitting ? null : _showNameKeyboard,
+                          tooltip: 'Открыть клавиатуру',
+                          icon: const Icon(Icons.keyboard_alt_outlined),
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 14),
-                    const Expanded(
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<MeasurementUnit>(
+                      initialValue: _measurementUnit,
+                      decoration: InputDecoration(
+                        labelText: 'Единица измерения',
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      items: MeasurementUnit.values
+                          .map(
+                            (unit) => DropdownMenuItem(
+                              value: unit,
+                              child: Text(unit.apiValue),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: _submitting
+                          ? null
+                          : (unit) {
+                              if (unit == null) return;
+                              setState(() {
+                                _measurementUnit = unit;
+                                _error = null;
+                              });
+                            },
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _PriceInfoPill(
+                            label: 'Текущая',
+                            value: money(currentPrice),
+                            accent: false,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _PriceInfoPill(
+                            label: 'Новая',
+                            value: money(_price),
+                            accent: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      height: 58,
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFF33CC99)),
+                      ),
                       child: Text(
-                        'Изменение товара',
-                        style: TextStyle(
-                          fontSize: 24,
+                        _priceText.isEmpty ? '0' : _priceText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 31,
                           fontWeight: FontWeight.w900,
                           color: Color(0xFF111827),
                         ),
                       ),
                     ),
-                    IconButton(
-                      onPressed: _submitting
-                          ? null
-                          : () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close_rounded),
+                    const SizedBox(height: 12),
+                    AmountKeypad(
+                      text: _priceText,
+                      showQuickRows: false,
+                      onChanged: _submitting
+                          ? (_) {}
+                          : (value) {
+                              setState(() {
+                                _priceText = value;
+                                _error = null;
+                              });
+                            },
                     ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _nameController,
-                  enabled: !_submitting,
-                  maxLength: 255,
-                  onChanged: (_) => setState(() => _error = null),
-                  decoration: InputDecoration(
-                    labelText: 'Название',
-                    hintText: _productName,
-                    counterText: '',
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<MeasurementUnit>(
-                  initialValue: _measurementUnit,
-                  decoration: InputDecoration(
-                    labelText: 'Единица измерения',
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  items: MeasurementUnit.values
-                      .map(
-                        (unit) => DropdownMenuItem(
-                          value: unit,
-                          child: Text(unit.apiValue),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: _submitting
-                      ? null
-                      : (unit) {
-                          if (unit == null) return;
-                          setState(() {
-                            _measurementUnit = unit;
-                            _error = null;
-                          });
-                        },
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _PriceInfoPill(
-                        label: 'Текущая',
-                        value: money(currentPrice),
-                        accent: false,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _PriceInfoPill(
-                        label: 'Новая',
-                        value: money(_price),
-                        accent: true,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Container(
-                  height: 58,
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF33CC99)),
-                  ),
-                  child: Text(
-                    _priceText.isEmpty ? '0' : _priceText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 31,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                AmountKeypad(
-                  text: _priceText,
-                  showQuickRows: false,
-                  onChanged: _submitting
-                      ? (_) {}
-                      : (value) {
-                          setState(() {
-                            _priceText = value;
-                            _error = null;
-                          });
-                        },
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: widget.isDirector
-                        ? const Color(0xFFEAF7F1)
-                        : const Color(0xFFFFF7E6),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: widget.isDirector
-                          ? const Color(0xFFBCE7D0)
-                          : const Color(0xFFF3D19E),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        widget.isDirector
-                            ? Icons.verified_user_rounded
-                            : Icons.key_rounded,
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
                         color: widget.isDirector
-                            ? const Color(0xFF179D72)
-                            : const Color(0xFFB7791F),
+                            ? const Color(0xFFEAF7F1)
+                            : const Color(0xFFFFF7E6),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: widget.isDirector
+                              ? const Color(0xFFBCE7D0)
+                              : const Color(0xFFF3D19E),
+                        ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          roleText,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF374151),
+                      child: Row(
+                        children: [
+                          Icon(
+                            widget.isDirector
+                                ? Icons.verified_user_rounded
+                                : Icons.key_rounded,
+                            color: widget.isDirector
+                                ? const Color(0xFF179D72)
+                                : const Color(0xFFB7791F),
                           ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              roleText,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF374151),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFECEA),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFD15850)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.error_outline_rounded,
+                              color: Color(0xFFD15850),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _error!,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFFD15850),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
-                  ),
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFECEA),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFD15850)),
-                    ),
-                    child: Row(
+                    const SizedBox(height: 16),
+                    Row(
                       children: [
-                        const Icon(
-                          Icons.error_outline_rounded,
-                          color: Color(0xFFD15850),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _submitting
+                                ? null
+                                : () => Navigator.of(context).pop(),
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(52),
+                              side: const BorderSide(color: Color(0xFFD1D5DB)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(13),
+                              ),
+                            ),
+                            child: const Text(
+                              'Отмена',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: Text(
-                            _error!,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFFD15850),
+                          child: FilledButton(
+                            onPressed: _canSubmit ? _submit : null,
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(52),
+                              backgroundColor: const Color(0xFF33CC99),
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: const Color(0xFFA8DABD),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(13),
+                              ),
                             ),
+                            child: _submitting
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Text(
+                                    widget.isDirector
+                                        ? 'Сохранить'
+                                        : 'Ввести ключ менеджера',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _submitting
-                            ? null
-                            : () => Navigator.of(context).pop(),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(52),
-                          side: const BorderSide(color: Color(0xFFD1D5DB)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(13),
-                          ),
-                        ),
-                        child: const Text(
-                          'Отмена',
-                          style: TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: _canSubmit ? _submit : null,
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(52),
-                          backgroundColor: const Color(0xFF33CC99),
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: const Color(0xFFA8DABD),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(13),
-                          ),
-                        ),
-                        child: _submitting
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Text(
-                                widget.isDirector
-                                    ? 'Сохранить'
-                                    : 'Ввести ключ менеджера',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                      ),
-                    ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
