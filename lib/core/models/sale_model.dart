@@ -446,6 +446,10 @@ class SaleItemModel {
   final double discountPercent;
   final double discountAmount;
   final double totalDiscount;
+  final String? measurementUnit;
+  final double? conversionValue;
+  final String? conversionUnit;
+  final String? convertedQuantity;
 
   /// ✅ сколько уже возвращено (может быть null/0)
   // ignore: non_constant_identifier_names
@@ -463,6 +467,10 @@ class SaleItemModel {
     this.discountPercent = 0,
     this.discountAmount = 0,
     this.totalDiscount = 0,
+    this.measurementUnit,
+    this.conversionValue,
+    this.conversionUnit,
+    this.convertedQuantity,
     this.product,
     // ignore: non_constant_identifier_names
     this.refund_quantity,
@@ -501,6 +509,10 @@ class SaleItemModel {
     double? discountPercent,
     double? discountAmount,
     double? totalDiscount,
+    String? measurementUnit,
+    double? conversionValue,
+    String? conversionUnit,
+    String? convertedQuantity,
     // ignore: non_constant_identifier_names
     int? refund_quantity,
   }) {
@@ -517,6 +529,10 @@ class SaleItemModel {
       discountPercent: discountPercent ?? this.discountPercent,
       discountAmount: discountAmount ?? this.discountAmount,
       totalDiscount: totalDiscount ?? this.totalDiscount,
+      measurementUnit: measurementUnit ?? this.measurementUnit,
+      conversionValue: conversionValue ?? this.conversionValue,
+      conversionUnit: conversionUnit ?? this.conversionUnit,
+      convertedQuantity: convertedQuantity ?? this.convertedQuantity,
       refund_quantity: refund_quantity ?? this.refund_quantity,
     );
   }
@@ -557,6 +573,12 @@ class SaleItemModel {
       discountPercent: SaleModel._toDouble(json["discount_percent"]),
       discountAmount: SaleModel._toDouble(json["discount_amount"]),
       totalDiscount: SaleModel._toDouble(json["total_discount"]),
+      measurementUnit: json["measurement_unit"]?.toString(),
+      conversionValue: json["conversion_value"] == null
+          ? null
+          : SaleModel._toDouble(json["conversion_value"]),
+      conversionUnit: json["conversion_unit"]?.toString(),
+      convertedQuantity: json["converted_quantity"]?.toString(),
       refund_quantity: json["refund_quantity"] == null
           ? null
           : SaleModel._toInt(json["refund_quantity"]),
@@ -577,6 +599,10 @@ class SaleItemModel {
       "discountPercent": discountPercent,
       "discountAmount": discountAmount,
       "totalDiscount": totalDiscount,
+      "measurementUnit": measurementUnit,
+      "conversionValue": conversionValue,
+      "conversionUnit": conversionUnit,
+      "convertedQuantity": convertedQuantity,
       "refund_quantity": refund_quantity,
     };
   }
@@ -602,6 +628,12 @@ class SaleItemModel {
       discountPercent: SaleModel._toDouble(json["discountPercent"]),
       discountAmount: SaleModel._toDouble(json["discountAmount"]),
       totalDiscount: SaleModel._toDouble(json["totalDiscount"]),
+      measurementUnit: json["measurementUnit"]?.toString(),
+      conversionValue: json["conversionValue"] == null
+          ? null
+          : SaleModel._toDouble(json["conversionValue"]),
+      conversionUnit: json["conversionUnit"]?.toString(),
+      convertedQuantity: json["convertedQuantity"]?.toString(),
       refund_quantity: json["refund_quantity"] == null
           ? null
           : SaleModel._toInt(json["refund_quantity"]),

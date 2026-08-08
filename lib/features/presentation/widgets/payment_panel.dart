@@ -340,8 +340,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
   final _printService = PrintService();
 
   double _saleQuantityForItem(CartItem it) {
-    if (it.product.isUniversal) return it.qty;
-    return it.billableQuantity;
+    return it.qty;
   }
 
   Future<PosCustomer?> _validateDebtCustomerOnline({

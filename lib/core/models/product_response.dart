@@ -108,6 +108,23 @@ class ProductModel {
     return discreteUnits.contains(normalizeMeasurementUnit(unit));
   }
 
+  static bool allowsPartialPackagesFor({
+    required String measurementUnit,
+    required String? conversionUnit,
+  }) {
+    final base = normalizeMeasurementUnit(measurementUnit);
+    final converted =
+        conversionUnit == null ? '' : normalizeMeasurementUnit(conversionUnit);
+    const discreteBaseUnits = {'шт', 'уп', 'кор'};
+    const packageUnits = {'уп', 'кор'};
+    return discreteBaseUnits.contains(base) && packageUnits.contains(converted);
+  }
+
+  bool get allowsPartialPackages => allowsPartialPackagesFor(
+        measurementUnit: measurementUnit,
+        conversionUnit: conversionUnit,
+      );
+
   static String? _asString(dynamic v) {
     if (v == null) return null;
     final s = v.toString().trim();

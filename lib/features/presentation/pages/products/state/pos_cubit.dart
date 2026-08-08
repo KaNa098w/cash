@@ -266,9 +266,7 @@ class PosCubit extends Cubit<PosState> {
     addWithQty(product, qty);
   }
 
-  /// Replaces every cart line for a converted product with one exact line.
-  /// The conversion dialog returns the final physical quantity, not an amount
-  /// to increment by.
+  /// Replaces every cart line with the exact quantity in measurement_unit.
   void setConvertedProductQuantity(ProductModel model, double qty) {
     if (qty <= 0 || qty.isNaN || qty.isInfinite) return;
     final product = _mapProductModelToProduct(model);
@@ -440,12 +438,16 @@ class PosCubit extends Cubit<PosState> {
         final current = list[index];
         var normalizedQty = current.product.isUniversal
             ? qty
-            : ProductModel.isDiscreteConversionUnit(
-                        current.product.conversionUnit) ||
+            : current.product.allowsPartialPackages ||
                     ProductModel.isPiecesMeasurementUnit(
                         current.product.measurementUnit)
                 ? qty.roundToDouble()
-                : qty;
+                : current.product.hasConversion
+                    ? _normalizeToWholePackages(
+                        qty,
+                        current.product.conversionValue!,
+                      )
+                    : qty;
         list[index] = current.copyWith(qty: normalizedQty);
       }
       return list;
@@ -462,7 +464,11 @@ class PosCubit extends Cubit<PosState> {
     if (idx < 0 || idx >= items.length) return;
 
     final current = items[idx];
-    setQty(idx, current.qty + 1);
+    final step =
+        current.product.hasConversion && !current.product.allowsPartialPackages
+            ? current.product.conversionValue!
+            : 1.0;
+    setQty(idx, current.qty + step);
   }
 
   // Уменьшить количество у выбранной позиции
@@ -473,8 +479,24 @@ class PosCubit extends Cubit<PosState> {
     if (idx < 0 || idx >= items.length) return;
 
     final current = items[idx];
-    final newQty = current.qty - 1;
+    final step =
+        current.product.hasConversion && !current.product.allowsPartialPackages
+            ? current.product.conversionValue!
+            : 1.0;
+    final newQty = current.qty - step;
     setQty(idx, newQty);
+  }
+
+  static double _normalizeToWholePackages(
+    double quantity,
+    double conversionValue,
+  ) {
+    final ratio = double.parse(
+      (quantity / conversionValue).toStringAsFixed(9),
+    );
+    return double.parse(
+      (ratio.ceil() * conversionValue).toStringAsFixed(3),
+    );
   }
 
   double get total => state.items.fold<double>(0, (p, e) => p + e.sum);

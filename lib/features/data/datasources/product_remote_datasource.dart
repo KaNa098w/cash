@@ -14,6 +14,40 @@ class ProductRemoteDataSource {
     return _getProductsPage(page: page, perPage: perPage, key: key);
   }
 
+  /// The backend applies this filter to both barcode and local_barcode.
+  Future<PaginatedProducts> getProductsByBarcode({
+    required String key,
+    required String barcode,
+  }) async {
+    final safeBarcode = barcode.trim();
+    final response = await _dio.get(
+      '/organizations/pos/$key/products',
+      queryParameters: {
+        'filter[barcode]': safeBarcode,
+        'page': 1,
+        'perPage': 50,
+      },
+    );
+    final data = response.data;
+    if (data is! Map<String, dynamic> || data['data'] is! List) {
+      throw const FormatException('Invalid products response format');
+    }
+    final items = (data['data'] as List)
+        .whereType<Map>()
+        .map((item) => ProductModel.fromJson(Map<String, dynamic>.from(item)))
+        .toList(growable: false);
+    final meta = data['meta'] is Map
+        ? Map<String, dynamic>.from(data['meta'] as Map)
+        : const <String, dynamic>{};
+    return PaginatedProducts(
+      items: items,
+      currentPage: (meta['current_page'] as num?)?.toInt() ?? 1,
+      lastPage: (meta['last_page'] as num?)?.toInt() ?? 1,
+      total: (meta['total'] as num?)?.toInt() ?? items.length,
+      perPage: (meta['per_page'] as num?)?.toInt() ?? 50,
+    );
+  }
+
   Future<PaginatedProducts> _getProductsPage({
     required int page,
     required int perPage,

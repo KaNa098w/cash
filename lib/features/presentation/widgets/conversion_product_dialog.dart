@@ -18,6 +18,13 @@ Future<bool> addProductToCartWithConversionFlow(
     return true;
   }
 
+  // Discrete base units are sold one base unit per scan. Packages may be
+  // fractional and are shown only as a derived value.
+  if (product.allowsPartialPackages) {
+    context.read<PosCubit>().addFromProductModel(product, qty: 1);
+    return true;
+  }
+
   final qtyToAdd = await showDialog<double>(
     context: context,
     barrierDismissible: true,
@@ -93,13 +100,16 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
   @override
   void initState() {
     super.initState();
-    final initialPieces = widget.initialPhysicalQuantity;
+    final initialQuantity = widget.initialPhysicalQuantity;
     final cv = widget.product.conversionValue ?? 0;
-    if (initialPieces != null && initialPieces > 0) {
-      _setText(_piecesController, _formatNumber(initialPieces));
+    if (initialQuantity != null && initialQuantity > 0) {
       _setText(
         _measurementController,
-        _formatNumber(initialPieces * cv, fractionDigits: 3),
+        _formatNumber(initialQuantity, fractionDigits: 3),
+      );
+      _setText(
+        _piecesController,
+        _formatNumber(initialQuantity / cv, fractionDigits: 3),
       );
     }
     _measurementFocusNode.addListener(() {
@@ -159,13 +169,20 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
     _isSyncing = true;
     final cv = widget.product.conversionValue ?? 0;
     final measurement = _parseValue(_measurementController.text) ?? 0;
-    final pieces = _physicalQuantityFor(measurement, cv);
-    final actualMeasurement =
-        pieces > 0 ? double.parse((pieces * cv).toStringAsFixed(3)) : 0;
-    _setText(_piecesController, pieces <= 0 ? '' : pieces.toString());
+    final allowsPartial = widget.product.allowsPartialPackages;
+    final normalizedMeasurement = allowsPartial
+        ? measurement.roundToDouble()
+        : (_physicalQuantityFor(measurement, cv) * cv);
+    final packages = normalizedMeasurement > 0 ? normalizedMeasurement / cv : 0;
+    _setText(
+      _piecesController,
+      packages <= 0 ? '' : _formatNumber(packages, fractionDigits: 3),
+    );
     _setText(
       _measurementController,
-      actualMeasurement <= 0 ? '' : _formatNumber(actualMeasurement),
+      normalizedMeasurement <= 0
+          ? ''
+          : _formatNumber(normalizedMeasurement, fractionDigits: 3),
     );
     _isSyncing = false;
     setState(() {});
@@ -175,9 +192,18 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
     if (_isSyncing) return;
     _isSyncing = true;
     final cv = widget.product.conversionValue ?? 0;
-    final pieces = (_parseValue(_piecesController.text) ?? 0).round();
-    final measurement =
-        pieces > 0 ? double.parse((pieces * cv).toStringAsFixed(3)) : 0;
+    final enteredPackages = _parseValue(_piecesController.text) ?? 0;
+    final allowsPartial = widget.product.allowsPartialPackages;
+    final measurement = allowsPartial
+        ? (enteredPackages * cv).roundToDouble()
+        : enteredPackages.round() * cv;
+    final normalizedPackages = measurement > 0 ? measurement / cv : 0;
+    _setText(
+      _piecesController,
+      normalizedPackages <= 0
+          ? ''
+          : _formatNumber(normalizedPackages, fractionDigits: 3),
+    );
     _setText(
       _measurementController,
       measurement <= 0 ? '' : _formatNumber(measurement),
@@ -213,15 +239,14 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
     final product = widget.product;
     final cv = product.conversionValue ?? 0;
     final measurementValue = _parseValue(_measurementController.text) ?? 0;
-    final piecesValue =
-        (_parseValue(_piecesController.text) ?? 0).roundToDouble();
+    final packagesValue = _parseValue(_piecesController.text) ?? 0;
     final hasRequiredDiscount = product.discountType == 'fixed' &&
         product.priceAfterDiscount > 0 &&
         product.priceAfterDiscount < product.sellingPrice;
     final unitPrice =
         hasRequiredDiscount ? product.priceAfterDiscount : product.sellingPrice;
     final totalAmount = measurementValue * unitPrice;
-    final canConfirm = piecesValue > 0;
+    final canConfirm = measurementValue > 0;
 
     return Dialog(
       elevation: 0,
@@ -341,10 +366,13 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                           controller: _piecesController,
                           focusNode: _piecesFocusNode,
                           keyboardType: const TextInputType.numberWithOptions(
-                              decimal: false),
+                              decimal: true),
                           inputFormatters: [
                             FilteringTextInputFormatter.allow(
-                                RegExp(r'^[0-9]*$')),
+                              product.allowsPartialPackages
+                                  ? RegExp(r'^[0-9]*[.,]?[0-9]*$')
+                                  : RegExp(r'^[0-9]*$'),
+                            ),
                           ],
                           selected: _activeTarget == _InputTarget.pieces,
                           hintText: '0',
@@ -365,7 +393,9 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                         text: _activeTarget == _InputTarget.measurement
                             ? _measurementController.text
                             : _piecesController.text,
-                        allowDecimal: _activeTarget == _InputTarget.measurement,
+                        allowDecimal:
+                            _activeTarget == _InputTarget.measurement ||
+                                product.allowsPartialPackages,
                         showQuickRows: false,
                         onChanged: (next) {
                           final controller =
@@ -437,7 +467,7 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                             _SummaryTile(
                               title: 'Количество',
                               value:
-                                  '${piecesValue.toInt()} ${product.conversionUnit}',
+                                  '${_formatNumber(packagesValue, fractionDigits: 3)} ${product.conversionUnit}',
                             ),
                             _SummaryTile(
                               title: 'Сумма',
@@ -473,13 +503,13 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                           onPressed: canConfirm
                               ? () {
                                   _runSyncNow();
-                                  final finalPieces =
-                                      (_parseValue(_piecesController.text) ?? 0)
-                                          .roundToDouble();
-                                  if (finalPieces <= 0) {
+                                  final finalQuantity = _parseValue(
+                                          _measurementController.text) ??
+                                      0;
+                                  if (finalQuantity <= 0) {
                                     return;
                                   }
-                                  Navigator.of(context).pop(finalPieces);
+                                  Navigator.of(context).pop(finalQuantity);
                                 }
                               : null,
                           style: FilledButton.styleFrom(

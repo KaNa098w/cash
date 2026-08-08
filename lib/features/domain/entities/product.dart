@@ -14,6 +14,16 @@ class Product extends Equatable {
   final String? conversionUnit;
   bool get hasConversion =>
       conversionValue != null && conversionValue! > 0 && conversionUnit != null;
+  bool get allowsPartialPackages {
+    String normalize(String value) =>
+        value.toLowerCase().replaceAll('.', '').trim();
+    const discreteBaseUnits = {'шт', 'уп', 'кор'};
+    const packageUnits = {'уп', 'кор'};
+    return hasConversion &&
+        discreteBaseUnits.contains(normalize(measurementUnit)) &&
+        packageUnits.contains(normalize(conversionUnit!));
+  }
+
   final bool isUniversal;
 
   /// "automatic" | "fixed" | "forbidden" | null

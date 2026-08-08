@@ -357,19 +357,11 @@ class _CartListState extends State<CartList> {
       return v.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
     }
 
-    double displayQty(double v, double? conversionValue, String unit) {
-      if (conversionValue != null && conversionValue > 0) {
-        return v * conversionValue;
-      }
-      return v;
-    }
-
     String formatQtyByUnit(double v, String unit, {double? conversionValue}) {
-      final shown = displayQty(v, conversionValue, unit);
       if (ProductModel.isPiecesMeasurementUnit(unit)) {
-        return shown.round().toString();
+        return v.round().toString();
       }
-      return formatQty(shown);
+      return formatQty(v);
     }
 
     String formatStockQty(double v, String unit) {
@@ -380,13 +372,8 @@ class _CartListState extends State<CartList> {
     }
 
     String cartQtyLabel(CartItem item) {
-      if (!item.product.hasConversion) {
-        return '${formatQtyByUnit(item.qty, item.product.measurementUnit)} ${item.product.measurementUnit}';
-      }
-      final actual = item.billableQuantity
-          .toStringAsFixed(3)
-          .replaceFirst(RegExp(r'\.?0+$'), '');
-      return '$actual ${item.product.measurementUnit}';
+      final base = formatQtyByUnit(item.qty, item.product.measurementUnit);
+      return '$base ${item.product.measurementUnit}';
     }
 
     return DefaultTextStyle.merge(
