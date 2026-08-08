@@ -45,6 +45,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 RandomAccessFile? _singleInstanceLock;
 final List<Map<String, dynamic>> _startupLocalStorageIssues = [];
 final _AppShutdownCoordinator _shutdownCoordinator = _AppShutdownCoordinator();
+bool _appUiStarted = false;
+bool _startupFailureUiShown = false;
 
 Future<void> main() async {
   runZonedGuarded(() async {
@@ -56,6 +58,11 @@ Future<void> main() async {
     await _bootstrapApp();
   }, (error, stackTrace) {
     unawaited(_recordStartupError(error, stackTrace));
+    // Never replace an already running cash register with the startup failure
+    // screen because of an uncaught background Future. The error is persisted
+    // to diagnostics and the current UI remains usable.
+    if (_appUiStarted || _startupFailureUiShown) return;
+    _startupFailureUiShown = true;
     runApp(_StartupFailureApp(error: error));
   });
 }
@@ -68,14 +75,25 @@ Future<void> _bootstrapApp() async {
     return;
   }
 
-  await Hive.initFlutter();
-  await initializeDateFormatting('ru');
+  try {
+    // Hive currently has no runtime consumers. Its failure must not prevent the
+    // POS, SQLite storage and offline queue from starting.
+    await Hive.initFlutter();
+  } catch (error, stackTrace) {
+    await _recordStartupError(error, stackTrace);
+  }
+  try {
+    await initializeDateFormatting('ru');
+  } catch (error, stackTrace) {
+    // Intl can fall back to basic formatting; this is not a reason to stop POS.
+    await _recordStartupError(error, stackTrace);
+  }
   _KioskWindowListener? kioskListener;
 
   final prefs = await _loadSharedPreferencesWithRecovery();
-  final savedEnv = prefs.getString('app_environment');
+  final savedEnv = prefs?.getString('app_environment');
   final savedDeviceMode = DeviceWindowMode.fromValue(
-    prefs.getString(deviceWindowModePrefsKey),
+    prefs?.getString(deviceWindowModePrefsKey),
   );
   final defaultEnv = isDesktop ? AppEnvironment.prod : AppEnvironment.dev;
   final initialEnv = switch (savedEnv) {
@@ -85,16 +103,28 @@ Future<void> _bootstrapApp() async {
   };
 
   if (isDesktop) {
-    await windowManager.ensureInitialized().timeout(const Duration(seconds: 3));
-    await windowManager.setPreventClose(true);
+    var windowManagerReady = false;
+    try {
+      await windowManager
+          .ensureInitialized()
+          .timeout(const Duration(seconds: 3));
+      windowManagerReady = true;
+      await windowManager.setPreventClose(true);
+    } catch (error, stackTrace) {
+      // A window-management plugin failure should not replace the application
+      // if Flutter can still create and display its native window.
+      await _recordStartupError(error, stackTrace);
+    }
     AppConfig.init(env: initialEnv);
     await initDependencies();
     _publishStartupLocalStorageIssues();
-    kioskListener = _KioskWindowListener(
-      savedDeviceMode ?? DeviceWindowMode.monoblock,
-      shutdownCoordinator: _shutdownCoordinator,
-    );
-    windowManager.addListener(kioskListener);
+    if (windowManagerReady) {
+      kioskListener = _KioskWindowListener(
+        savedDeviceMode ?? DeviceWindowMode.monoblock,
+        shutdownCoordinator: _shutdownCoordinator,
+      );
+      windowManager.addListener(kioskListener);
+    }
   } else {
     AppConfig.init(env: initialEnv);
     await initDependencies();
@@ -102,7 +132,13 @@ Future<void> _bootstrapApp() async {
   }
 
   final authProvider = AuthTokenProvider();
-  await authProvider.init();
+  try {
+    await authProvider.init();
+  } catch (error, stackTrace) {
+    // Continue to the key/login screen with an empty in-memory provider. A
+    // local preferences failure must not prevent the cashier UI from opening.
+    await _recordStartupError(error, stackTrace);
+  }
   sl<DeviceIdStore>().deviceId = authProvider.deviceId;
 
   runApp(
@@ -126,6 +162,7 @@ Future<void> _bootstrapApp() async {
       child: const _PosApp(),
     ),
   );
+  _appUiStarted = true;
 
   if (isDesktop && kioskListener != null) {
     unawaited(_showDesktopWindow(kioskListener.mode));
@@ -134,14 +171,23 @@ Future<void> _bootstrapApp() async {
   unawaited(_initializeLocalSync());
 }
 
-Future<SharedPreferences> _loadSharedPreferencesWithRecovery() async {
+Future<SharedPreferences?> _loadSharedPreferencesWithRecovery() async {
   try {
     return await SharedPreferences.getInstance();
   } on FormatException catch (error, stackTrace) {
     await _recordStartupError(error, stackTrace);
     final recovered = await _quarantineCorruptedSharedPreferences();
-    if (!recovered) rethrow;
-    return SharedPreferences.getInstance();
+    if (recovered) {
+      try {
+        return await SharedPreferences.getInstance();
+      } catch (retryError, retryStackTrace) {
+        await _recordStartupError(retryError, retryStackTrace);
+      }
+    }
+    return null;
+  } catch (error, stackTrace) {
+    await _recordStartupError(error, stackTrace);
+    return null;
   }
 }
 

@@ -95,6 +95,7 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
 
   _InputTarget _activeTarget = _InputTarget.measurement;
   bool _isSyncing = false;
+  bool _replaceActiveValueOnNextKeypadInput = false;
   Timer? _recalcDebounce;
 
   @override
@@ -114,16 +115,18 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
     }
     _measurementFocusNode.addListener(() {
       if (_measurementFocusNode.hasFocus) {
-        setState(() => _activeTarget = _InputTarget.measurement);
+        _activateTarget(_InputTarget.measurement, selectAll: true);
       }
     });
     _piecesFocusNode.addListener(() {
       if (_piecesFocusNode.hasFocus) {
-        setState(() => _activeTarget = _InputTarget.pieces);
+        _activateTarget(_InputTarget.pieces, selectAll: true);
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _measurementFocusNode.requestFocus();
+      if (!mounted) return;
+      _measurementFocusNode.requestFocus();
+      _activateTarget(_InputTarget.measurement, selectAll: true);
     });
   }
 
@@ -153,6 +156,50 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
       text: value,
       selection: TextSelection.collapsed(offset: value.length),
     );
+  }
+
+  TextEditingController get _activeController =>
+      _activeTarget == _InputTarget.measurement
+          ? _measurementController
+          : _piecesController;
+
+  void _activateTarget(_InputTarget target, {required bool selectAll}) {
+    _activeTarget = target;
+    final controller = _activeController;
+    if (selectAll && controller.text.isNotEmpty) {
+      controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: controller.text.length,
+      );
+      _replaceActiveValueOnNextKeypadInput = true;
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _onFieldChanged(String _) {
+    _replaceActiveValueOnNextKeypadInput = false;
+    _scheduleSync();
+  }
+
+  void _onKeypadChanged(String next) {
+    final controller = _activeController;
+    final current = controller.text;
+    var value = next;
+
+    if (_replaceActiveValueOnNextKeypadInput && current.isNotEmpty) {
+      if (next.startsWith(current) && next.length > current.length) {
+        final entered = next.substring(current.length);
+        value = entered == '.' ? '0.' : entered;
+      } else if (next.length < current.length) {
+        // Backspace on a fully selected initial value clears it.
+        value = '';
+      }
+    }
+
+    _replaceActiveValueOnNextKeypadInput = false;
+    _setText(controller, value);
+    _scheduleSync();
+    setState(() {});
   }
 
   int _physicalQuantityFor(double measurement, double conversionValue) {
@@ -226,11 +273,62 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
     _recalcDebounce = Timer(const Duration(milliseconds: 800), _runSyncNow);
   }
 
-  void _clear() {
-    _recalcDebounce?.cancel();
-    _setText(_measurementController, '');
-    _setText(_piecesController, '');
-    setState(() {});
+  Widget _buildFixedActions(BuildContext context, {required bool canConfirm}) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        18,
+        12,
+        18,
+        12 + MediaQuery.viewPaddingOf(context).bottom,
+      ),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF9FBFA),
+        border: Border(top: BorderSide(color: Color(0xFFE1E8E4))),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => Navigator.of(context).maybePop(),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(50),
+                side: const BorderSide(color: Color(0xFFD1D9D4)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              child: const Text(
+                'Отмена',
+                style: TextStyle(color: Colors.black),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: FilledButton(
+              onPressed: canConfirm
+                  ? () {
+                      _runSyncNow();
+                      final finalQuantity =
+                          _parseValue(_measurementController.text) ?? 0;
+                      if (finalQuantity <= 0) return;
+                      Navigator.of(context).pop(finalQuantity);
+                    }
+                  : null,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(50),
+                backgroundColor: const Color(0xFF1F7A55),
+                disabledBackgroundColor: const Color(0xFF9CB7AA),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              child: const Text('Добавить в чек'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -256,6 +354,7 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 540),
           child: Container(
+            clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               color: const Color(0xFFF9FBFA),
               borderRadius: BorderRadius.circular(22),
@@ -267,128 +366,141 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                 ),
               ],
             ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            child: Stack(
+              children: [
+                SingleChildScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(
+                    18,
+                    16,
+                    18,
+                    88 + MediaQuery.viewPaddingOf(context).bottom,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE8F3ED),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: const Icon(
-                          Icons.grid_view_rounded,
-                          size: 22,
-                          color: Color(0xFF1F7A55),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              product.name,
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF15231A),
-                              ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8F3ED),
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                            const SizedBox(height: 4),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
+                            child: const Icon(
+                              Icons.grid_view_rounded,
+                              size: 22,
+                              color: Color(0xFF1F7A55),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _InfoChip(
-                                  icon: Icons.payments_outlined,
-                                  label: hasRequiredDiscount
-                                      ? '${money(unitPrice)} / ${product.measurementUnit} со скидкой'
-                                      : '${money(unitPrice)} / ${product.measurementUnit}',
+                                Text(
+                                  product.name,
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF15231A),
+                                  ),
                                 ),
-                                _InfoChip(
-                                  icon: Icons.straighten_rounded,
-                                  label:
-                                      '1 ${product.conversionUnit} = ${_formatNumber(cv, fractionDigits: 3)} ${product.measurementUnit}',
+                                const SizedBox(height: 4),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    _InfoChip(
+                                      icon: Icons.payments_outlined,
+                                      label: hasRequiredDiscount
+                                          ? '${money(unitPrice)} / ${product.measurementUnit} со скидкой'
+                                          : '${money(unitPrice)} / ${product.measurementUnit}',
+                                    ),
+                                    _InfoChip(
+                                      icon: Icons.straighten_rounded,
+                                      label:
+                                          '1 ${product.conversionUnit} = ${_formatNumber(cv, fractionDigits: 3)} ${product.measurementUnit}',
+                                    ),
+                                    // _InfoChip(
+                                    //   icon: Icons.inventory_2_outlined,
+                                    //   label:
+                                    //       'Остаток: ${_formatNumber(widget.remainingQty)} шт.',
+                                    // ),
+                                  ],
                                 ),
-                                // _InfoChip(
-                                //   icon: Icons.inventory_2_outlined,
-                                //   label:
-                                //       'Остаток: ${_formatNumber(widget.remainingQty)} шт.',
-                                // ),
                               ],
                             ),
-                          ],
-                        ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(context).maybePop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
                       ),
-                      IconButton(
-                        onPressed: () => Navigator.of(context).maybePop(),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _LinkedInputCard(
-                          label: product.measurementUnit,
-                          controller: _measurementController,
-                          focusNode: _measurementFocusNode,
-                          keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                              RegExp(r'^[0-9]*[.,]?[0-9]*$'),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _LinkedInputCard(
+                              label: product.measurementUnit,
+                              controller: _measurementController,
+                              focusNode: _measurementFocusNode,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                      decimal: true),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'^[0-9]*[.,]?[0-9]*$'),
+                                ),
+                              ],
+                              selected:
+                                  _activeTarget == _InputTarget.measurement,
+                              hintText: '0',
+                              onChanged: _onFieldChanged,
+                              onTap: () {
+                                _measurementFocusNode.requestFocus();
+                                _activateTarget(
+                                  _InputTarget.measurement,
+                                  selectAll: true,
+                                );
+                              },
                             ),
-                          ],
-                          selected: _activeTarget == _InputTarget.measurement,
-                          hintText: '0',
-                          onChanged: (_) => _scheduleSync(),
-                          onTap: () {
-                            setState(
-                                () => _activeTarget = _InputTarget.measurement);
-                            _measurementFocusNode.requestFocus();
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _LinkedInputCard(
-                          label: 'Количество, ${product.conversionUnit}',
-                          controller: _piecesController,
-                          focusNode: _piecesFocusNode,
-                          keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                              product.allowsPartialPackages
-                                  ? RegExp(r'^[0-9]*[.,]?[0-9]*$')
-                                  : RegExp(r'^[0-9]*$'),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _LinkedInputCard(
+                              label: 'Количество, ${product.conversionUnit}',
+                              controller: _piecesController,
+                              focusNode: _piecesFocusNode,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                      decimal: true),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  product.allowsPartialPackages
+                                      ? RegExp(r'^[0-9]*[.,]?[0-9]*$')
+                                      : RegExp(r'^[0-9]*$'),
+                                ),
+                              ],
+                              selected: _activeTarget == _InputTarget.pieces,
+                              hintText: '0',
+                              onChanged: _onFieldChanged,
+                              onTap: () {
+                                _piecesFocusNode.requestFocus();
+                                _activateTarget(
+                                  _InputTarget.pieces,
+                                  selectAll: true,
+                                );
+                              },
                             ),
-                          ],
-                          selected: _activeTarget == _InputTarget.pieces,
-                          hintText: '0',
-                          onChanged: (_) => _scheduleSync(),
-                          onTap: () {
-                            setState(() => _activeTarget = _InputTarget.pieces);
-                            _piecesFocusNode.requestFocus();
-                          },
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
+                      const SizedBox(height: 12),
                       AmountKeypad(
                         text: _activeTarget == _InputTarget.measurement
                             ? _measurementController.text
@@ -397,136 +509,60 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                             _activeTarget == _InputTarget.measurement ||
                                 product.allowsPartialPackages,
                         showQuickRows: false,
-                        onChanged: (next) {
-                          final controller =
-                              _activeTarget == _InputTarget.measurement
-                                  ? _measurementController
-                                  : _piecesController;
-                          _setText(controller, next);
-                          _scheduleSync();
-                          setState(() {});
-                        },
+                        onChanged: _onKeypadChanged,
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: _clear,
-                              style: OutlinedButton.styleFrom(
-                                minimumSize: const Size.fromHeight(50),
-                                side:
-                                    const BorderSide(color: Color(0xFFD1D9D4)),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: const Text('Очистить',
-                                  style: TextStyle(color: Colors.black)),
-                            ),
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF163F2C), Color(0xFF1F7A55)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF163F2C), Color(0xFF1F7A55)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Будет добавлено',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: Colors.white.withValues(alpha: 0.78),
-                          ),
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${_formatNumber(measurementValue)} ${product.measurementUnit}',
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            fontSize: 24,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _SummaryTile(
-                              title: 'Количество',
-                              value:
-                                  '${_formatNumber(packagesValue, fractionDigits: 3)} ${product.conversionUnit}',
+                            Text(
+                              '${_formatNumber(measurementValue)} ${product.measurementUnit}',
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontSize: 20,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
-                            _SummaryTile(
-                              title: 'Сумма',
-                              value: money(totalAmount),
+                            const SizedBox(height: 5),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: [
+                                _SummaryTile(
+                                  title: 'Количество',
+                                  value:
+                                      '${_formatNumber(packagesValue, fractionDigits: 3)} ${product.conversionUnit}',
+                                ),
+                                _SummaryTile(
+                                  title: 'Сумма',
+                                  value: money(totalAmount),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.of(context).maybePop(),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(50),
-                            side: const BorderSide(color: Color(0xFFD1D9D4)),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          child: const Text(
-                            'Отмена',
-                            style: TextStyle(color: Colors.black),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: canConfirm
-                              ? () {
-                                  _runSyncNow();
-                                  final finalQuantity = _parseValue(
-                                          _measurementController.text) ??
-                                      0;
-                                  if (finalQuantity <= 0) {
-                                    return;
-                                  }
-                                  Navigator.of(context).pop(finalQuantity);
-                                }
-                              : null,
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(50),
-                            backgroundColor: const Color(0xFF1F7A55),
-                            disabledBackgroundColor: const Color(0xFF9CB7AA),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          child: const Text('Добавить в чек'),
-                        ),
                       ),
                     ],
                   ),
-                ],
-              ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _buildFixedActions(context, canConfirm: canConfirm),
+                ),
+              ],
             ),
           ),
         ),
@@ -656,7 +692,7 @@ class _SummaryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       constraints: const BoxConstraints(minWidth: 120),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(14),
@@ -672,7 +708,7 @@ class _SummaryTile extends StatelessWidget {
               fontSize: 12,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             value,
             style: const TextStyle(

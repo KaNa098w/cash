@@ -68,7 +68,11 @@ class PosSyncLocalStore {
 
     final db = sqlite.sqlite3.open(p.join(dbDir.path, 'pos_sync.sqlite'));
     db.execute('PRAGMA journal_mode = WAL;');
-    db.execute('PRAGMA synchronous = NORMAL;');
+    // FULL asks the OS to flush committed WAL transactions to durable storage.
+    // This is intentionally preferred for a POS where sudden power loss is
+    // more costly than the small write-performance difference from NORMAL.
+    db.execute('PRAGMA synchronous = FULL;');
+    db.execute('PRAGMA busy_timeout = 5000;');
     db.execute('PRAGMA foreign_keys = ON;');
     _createSchema(db);
     _migrateSchema(db);
