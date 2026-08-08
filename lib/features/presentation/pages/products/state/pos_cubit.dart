@@ -91,17 +91,25 @@ class PosCubit extends Cubit<PosState> {
   }
 
   Future<void> _restorePersistedState() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_kPersistedStateKey);
-    if (raw == null || raw.trim().isEmpty) return;
-
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kPersistedStateKey);
+      if (raw == null || raw.trim().isEmpty) return;
+
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) return;
       final restored = PosState.fromJson(decoded);
       super.emit(restored);
-    } catch (_) {
-      await prefs.remove(_kPersistedStateKey);
+    } catch (error, stackTrace) {
+      // A partially written preferences file after a power loss must not
+      // escape from this unawaited startup task or prevent the empty cart from
+      // being usable. SharedPreferences recovery is handled centrally.
+      developer.log(
+        'Failed to restore persisted POS state',
+        name: 'PosCubit',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
