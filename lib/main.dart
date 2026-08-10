@@ -28,6 +28,7 @@ import 'package:leemon_app/features/domain/repositories/auth_repository.dart';
 import 'package:leemon_app/features/domain/repositories/product_repository.dart';
 import 'package:leemon_app/features/domain/repositories/session_repository.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
+import 'package:leemon_app/features/presentation/pages/marketplace_orders/marketplace_orders_controller.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:path_provider/path_provider.dart';
@@ -689,12 +690,16 @@ class _PosApp extends StatefulWidget {
 }
 
 class _PosAppState extends State<_PosApp> {
+  static const MethodChannel _powerChannel = MethodChannel('leemon/power');
+
   late final GoRouter _router;
   final _customerDisplay = CustomerDisplayService();
   StreamSubscription<void>? _productsSyncSub;
   StreamSubscription<PosState>? _posStateSub;
   late final Future<void> Function() _shutdownCallback;
   num? _lastCustomerDisplayTotal;
+  Future<void>? _resumeRecovery;
+  DateTime? _lastResumeRecoveryAt;
 
   @override
   void initState() {
@@ -711,14 +716,64 @@ class _PosAppState extends State<_PosApp> {
       await posCubit.flushPendingState();
     };
     _shutdownCoordinator.addCallback(_shutdownCallback);
+    if (!kIsWeb && Platform.isWindows) {
+      _powerChannel.setMethodCallHandler(_handlePowerMethod);
+    }
   }
 
   @override
   void dispose() {
+    if (!kIsWeb && Platform.isWindows) {
+      _powerChannel.setMethodCallHandler(null);
+    }
     _shutdownCoordinator.removeCallback(_shutdownCallback);
     _productsSyncSub?.cancel();
     _posStateSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _handlePowerMethod(MethodCall call) async {
+    if (call.method != 'systemResumed') return;
+
+    final now = DateTime.now();
+    final lastRunAt = _lastResumeRecoveryAt;
+    if (lastRunAt != null &&
+        now.difference(lastRunAt) < const Duration(seconds: 3)) {
+      return;
+    }
+    _lastResumeRecoveryAt = now;
+    await (_resumeRecovery ??= _recoverAfterWindowsResume().whenComplete(
+      () => _resumeRecovery = null,
+    ));
+  }
+
+  Future<void> _recoverAfterWindowsResume() async {
+    // Windows may announce resume before Wi-Fi/Ethernet is usable. A short
+    // delay avoids a burst of immediately failing requests on the UI isolate.
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    if (!mounted) return;
+
+    final auth = context.read<AuthTokenProvider>();
+    final key = (auth.posKey ?? '').trim();
+    final deviceId = (auth.deviceId ?? '').trim();
+    if (key.isEmpty || deviceId.isEmpty) return;
+
+    final sync = sl<PosSyncService>();
+    sync.stopBackgroundLoops();
+    sync.startBackgroundLoops(key: key, deviceId: deviceId);
+
+    if (sl.isRegistered<MarketplaceOrdersController>()) {
+      await sl<MarketplaceOrdersController>().configure(
+        posKey: key,
+        deviceId: deviceId,
+        force: true,
+      );
+    }
+
+    if (mounted) {
+      setState(() {});
+      WidgetsBinding.instance.ensureVisualUpdate();
+    }
   }
 
   void _sendTotalToCustomerDisplay(PosState state) {
