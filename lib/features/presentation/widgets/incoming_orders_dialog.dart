@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:leemon_app/core/models/marketplace_order_models.dart';
+import 'package:leemon_app/core/print/print_service.dart';
+import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/presentation/pages/marketplace_orders/marketplace_orders_controller.dart';
 import 'package:provider/provider.dart';
@@ -37,6 +39,7 @@ class _IncomingOrdersDialog extends StatefulWidget {
 
 class _IncomingOrdersDialogState extends State<_IncomingOrdersDialog> {
   late final MarketplaceOrdersController _controller;
+  String? _printingInvoiceOrderId;
 
   @override
   void initState() {
@@ -80,8 +83,16 @@ class _IncomingOrdersDialogState extends State<_IncomingOrdersDialog> {
                     ),
                   Expanded(
                     child: compact
-                        ? _CompactBody(controller: _controller)
-                        : _WideBody(controller: _controller),
+                        ? _CompactBody(
+                            controller: _controller,
+                            printingInvoiceOrderId: _printingInvoiceOrderId,
+                            onPrintInvoice: _printInvoice,
+                          )
+                        : _WideBody(
+                            controller: _controller,
+                            printingInvoiceOrderId: _printingInvoiceOrderId,
+                            onPrintInvoice: _printInvoice,
+                          ),
                   ),
                 ],
               );
@@ -90,6 +101,64 @@ class _IncomingOrdersDialogState extends State<_IncomingOrdersDialog> {
         ),
       ),
     );
+  }
+
+  Future<void> _printInvoice(MarketplaceOrder order) async {
+    if (_printingInvoiceOrderId != null) return;
+    setState(() => _printingInvoiceOrderId = order.id);
+
+    final auth = context.read<AuthTokenProvider>();
+    final cashierName = (auth.activeUserName ?? '').trim().isEmpty
+        ? '-'
+        : auth.activeUserName!.trim();
+    final storeName = (auth.storeName?.trim().isNotEmpty == true)
+        ? auth.storeName!.trim()
+        : (auth.posName?.trim().isNotEmpty == true)
+            ? auth.posName!.trim()
+            : 'Магазин';
+
+    try {
+      final doc = await buildInvoicePdf(
+        InvoicePdfData(
+          money: _formatOrderTotal,
+          invoiceDate: order.createdAt ?? DateTime.now(),
+          invoiceNumber: order.displayNumber,
+          cashierName: cashierName,
+          storeName: storeName,
+          buyerName: order.customer.name,
+          items: order.groupedItems
+              .map(
+                (item) => ReceiptPdfItem(
+                  name: item.name.isEmpty ? item.productId : item.name,
+                  quantity: item.requestedQuantity,
+                  baseUnitPrice: item.unitPrice,
+                  unitPrice: item.unitPrice,
+                  lineTotal: item.total > 0
+                      ? item.total
+                      : item.unitPrice * item.requestedQuantity,
+                ),
+              )
+              .toList(),
+          total: order.displayTotal,
+          paymentMethodLabel: 'Онлайн-заказ',
+        ),
+      );
+      await PrintService().printPdfBytesSilently(
+        await doc.save(),
+        printerName: auth.invoicePrinterName,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Накладная отправлена на печать')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка печати накладной: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _printingInvoiceOrderId = null);
+    }
   }
 }
 
@@ -229,9 +298,15 @@ class _ScopeButton extends StatelessWidget {
 }
 
 class _WideBody extends StatelessWidget {
-  const _WideBody({required this.controller});
+  const _WideBody({
+    required this.controller,
+    required this.printingInvoiceOrderId,
+    required this.onPrintInvoice,
+  });
 
   final MarketplaceOrdersController controller;
+  final String? printingInvoiceOrderId;
+  final ValueChanged<MarketplaceOrder> onPrintInvoice;
 
   @override
   Widget build(BuildContext context) {
@@ -242,16 +317,28 @@ class _WideBody extends StatelessWidget {
           child: _OrdersList(controller: controller),
         ),
         const VerticalDivider(width: 1, color: Color(0xFFE2E8F0)),
-        Expanded(child: _OrderDetails(controller: controller)),
+        Expanded(
+          child: _OrderDetails(
+            controller: controller,
+            printingInvoiceOrderId: printingInvoiceOrderId,
+            onPrintInvoice: onPrintInvoice,
+          ),
+        ),
       ],
     );
   }
 }
 
 class _CompactBody extends StatelessWidget {
-  const _CompactBody({required this.controller});
+  const _CompactBody({
+    required this.controller,
+    required this.printingInvoiceOrderId,
+    required this.onPrintInvoice,
+  });
 
   final MarketplaceOrdersController controller;
+  final String? printingInvoiceOrderId;
+  final ValueChanged<MarketplaceOrder> onPrintInvoice;
 
   @override
   Widget build(BuildContext context) {
@@ -259,7 +346,13 @@ class _CompactBody extends StatelessWidget {
       children: [
         SizedBox(height: 230, child: _OrdersList(controller: controller)),
         const Divider(height: 1, color: Color(0xFFE2E8F0)),
-        Expanded(child: _OrderDetails(controller: controller)),
+        Expanded(
+          child: _OrderDetails(
+            controller: controller,
+            printingInvoiceOrderId: printingInvoiceOrderId,
+            onPrintInvoice: onPrintInvoice,
+          ),
+        ),
       ],
     );
   }
@@ -441,9 +534,15 @@ class _OrderTile extends StatelessWidget {
 }
 
 class _OrderDetails extends StatelessWidget {
-  const _OrderDetails({required this.controller});
+  const _OrderDetails({
+    required this.controller,
+    required this.printingInvoiceOrderId,
+    required this.onPrintInvoice,
+  });
 
   final MarketplaceOrdersController controller;
+  final String? printingInvoiceOrderId;
+  final ValueChanged<MarketplaceOrder> onPrintInvoice;
 
   @override
   Widget build(BuildContext context) {
@@ -503,6 +602,30 @@ class _OrderDetails extends StatelessWidget {
                 text: _statusLabel(order.status),
                 color: _statusColor(order.status),
               ),
+              if (controller.scope == MarketplaceOrderScope.active) ...[
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed: printingInvoiceOrderId == null
+                      ? () => onPrintInvoice(order)
+                      : null,
+                  icon: printingInvoiceOrderId == order.id
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.print_outlined),
+                  label: const Text('Распечатать накладную'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    minimumSize: const Size(210, 44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(width: 12),
               if (!order.isAccepted &&
                   controller.scope == MarketplaceOrderScope.newOrders)

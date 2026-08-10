@@ -36,6 +36,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     return EXIT_SUCCESS;
   }
 
+  // A POS terminal must stay available while the application is running.
+  // ES_CONTINUOUS keeps this request in effect until it is explicitly reset
+  // below (or the process exits).
+  ::SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED |
+                            ES_DISPLAY_REQUIRED);
+
   // Attach to console when present (e.g., 'flutter run') or create a
   // new console when running with a debugger.
   if (!::AttachConsole(ATTACH_PARENT_PROCESS) && ::IsDebuggerPresent()) {
@@ -57,6 +63,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
   if (!window.Create(L"Leemon", origin, size)) {
+    ::SetThreadExecutionState(ES_CONTINUOUS);
     if (app_mutex != nullptr) {
       ::CloseHandle(app_mutex);
     }
@@ -70,6 +77,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     ::DispatchMessage(&msg);
   }
 
+  ::SetThreadExecutionState(ES_CONTINUOUS);
   ::CoUninitialize();
   if (app_mutex != nullptr) {
     ::CloseHandle(app_mutex);
