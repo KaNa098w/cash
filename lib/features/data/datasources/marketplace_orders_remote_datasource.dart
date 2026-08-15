@@ -76,7 +76,7 @@ class MarketplaceOrdersRemoteDataSource {
     final safeOrderId = orderId.trim();
     if (safeKey.isEmpty) throw Exception('pos key is empty');
     if (safeOrderId.isEmpty) throw Exception('order id is empty');
-
+    
     final path =
         '/organizations/pos/$safeKey/marketplace/orders/$safeOrderId/accept';
     _logMarketplaceRequest('POST', path, body: const <String, dynamic>{});

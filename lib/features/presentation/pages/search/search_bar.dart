@@ -58,7 +58,7 @@ class _SearchBarState extends State<SearchBar> {
   int _chooserSelectedIndex = 0;
   final _chooserScrollController = ScrollController();
   bool _loadingLastSale = true;
-  static const double _chooserItemExtent = 57.0;
+  static const double _chooserItemExtent = 68.0;
 
   @override
   void didChangeDependencies() {
@@ -152,7 +152,8 @@ class _SearchBarState extends State<SearchBar> {
       _setShowClearSearchButton(false);
     }
 
-    // если похоже на штрихкод — делаем быстрый автосабмит
+    // Цифровой ввод может быть и ручным. Ищем быстро, но не
+    // добавляем товар до Enter/суффикса сканера.
     if (RegExp(r'^\d{8,}$').hasMatch(q)) {
       _typingDebounce?.cancel();
       _scanDebounce?.cancel();
@@ -160,12 +161,6 @@ class _SearchBarState extends State<SearchBar> {
         const Duration(milliseconds: 80),
         () => _doSearch(),
       );
-      if (q.length == 11 || q.length == 12) {
-        _missingProductDebounce = Timer(
-          const Duration(seconds: 2),
-          () => _doSearch(submitted: true),
-        );
-      }
       return;
     }
 
@@ -651,7 +646,11 @@ class _SearchBarState extends State<SearchBar> {
   }
 
   Future<void> _doSearch({bool submitted = false}) async {
-    if (submitted) _missingProductDebounce?.cancel();
+    if (submitted) {
+      _scanDebounce?.cancel();
+      _typingDebounce?.cancel();
+      _missingProductDebounce?.cancel();
+    }
     final query = _controller.text.trim();
     if (query.isEmpty) {
       _removeChooser();
@@ -710,7 +709,13 @@ class _SearchBarState extends State<SearchBar> {
             ),
             restoreFocus: false,
           );
-          if (!mounted || created == null) return;
+          if (!mounted) return;
+          if (created == null) {
+            _controller.clear();
+            _removeChooser();
+            _setShowClearSearchButton(false);
+            return;
+          }
           productsCubit.addProduct(created);
           final added = await addProductToCartWithConversionFlow(
             context,
@@ -729,9 +734,14 @@ class _SearchBarState extends State<SearchBar> {
 
     _setShowClearSearchButton(false);
 
-    // ✅ если найден 1 товар — сразу добавляем в продажу
+    // Живой поиск лишь показывает товар. Добавляем его только после
+    // Enter (в том числе Enter-суффикса аппаратного сканера) или выбора.
     if (matches.length == 1) {
       final p = matches.first;
+      if (!submitted) {
+        _showProductChooser(matches);
+        return;
+      }
       _removeChooser();
       _closeKeyboard();
       final added = await _runWithDialogFocus(
@@ -814,6 +824,13 @@ class _SearchBarState extends State<SearchBar> {
                           itemBuilder: (_, index) {
                             final p = products[index];
                             final selected = index == _chooserSelectedIndex;
+                            final barcode = (p.barcode ?? '').trim();
+                            final localBarcode = (p.localBarcode ?? '').trim();
+                            final barcodeLabel = barcode.isNotEmpty
+                                ? 'Штрихкод: $barcode'
+                                : localBarcode.isNotEmpty
+                                    ? 'Локальный штрихкод: $localBarcode'
+                                    : null;
                             final qtyLabel = (() {
                               final shown = p.quantity;
                               return ProductModel.isPiecesMeasurementUnit(
@@ -859,15 +876,17 @@ class _SearchBarState extends State<SearchBar> {
                                       color: Colors.black,
                                     ),
                                   ),
-                                  /* subtitle: Text(
-                                [
-                                  if (p.barcode != null) '${p.barcode}',
-                                  // if (p.localBarcode != null)
-                                  //   'Код: ${p.localBarcode}',
-                                  // 'Ед.: ${p.measurementUnit}',
-                                ].where((e) => e.isNotEmpty).join(' • '),
-                                style: const TextStyle(fontSize: 11),
-                              ), */
+                                  subtitle: barcodeLabel == null
+                                      ? null
+                                      : Text(
+                                          barcodeLabel,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF6B7280),
+                                          ),
+                                        ),
                                   trailing: Text(
                                     money(p.sellingPrice),
                                     style: TextStyle(

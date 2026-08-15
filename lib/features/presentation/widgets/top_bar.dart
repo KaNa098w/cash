@@ -11,6 +11,7 @@ import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/marketplace_orders/marketplace_orders_controller.dart';
 import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/widgets/app_scroll_behovir.dart';
 import 'hold_delete_confirm_dialog.dart';
 import 'incoming_orders_dialog.dart';
 import 'show_pos_action_dialog.dart';
@@ -50,63 +51,67 @@ class TopBar extends StatelessWidget {
                     Expanded(
                       child: Padding(
                         padding: EdgeInsets.only(top: topPad),
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              _Chip(
-                                text: 'История',
-                                icon: 'assets/svg/history.svg',
-                                active: state.isHistoryMode,
-                                compact: compact,
-                                onTap: cubit.showHistory,
-                              ),
-                              SizedBox(width: tabGap),
-                              for (final t in state.tickets) ...[
-                                _TicketTab(
-                                  text: '${t.items.length} товар',
-                                  active: !state.isHistoryMode &&
-                                      t.id == state.activeTicketId,
+                        child: ScrollConfiguration(
+                          behavior: AppScrollBehavior(),
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            physics: const ClampingScrollPhysics(),
+                            child: Row(
+                              children: [
+                                _Chip(
+                                  text: 'История',
+                                  icon: 'assets/svg/history.svg',
+                                  active: state.isHistoryMode,
                                   compact: compact,
-                                  onTap: () => cubit.switchTicket(t.id),
-                                  showClose: canCloseTickets,
-                                  onClose: canCloseTickets
-                                      ? () async {
-                                          if (t.items.isEmpty) {
-                                            cubit.closeTicket(t.id);
-                                            return;
-                                          }
-
-                                          final shouldDelete =
-                                              await showHoldDeleteConfirmDialog(
-                                            context,
-                                            ticketId: t.id,
-                                            itemsCount: t.items.length,
-                                          );
-                                          if (!context.mounted ||
-                                              shouldDelete != true) {
-                                            return;
-                                          }
-
-                                          cubit.closeTicket(t.id);
-                                        }
-                                      : null,
+                                  onTap: cubit.showHistory,
                                 ),
                                 SizedBox(width: tabGap),
-                              ],
-                              TextButton(
-                                onPressed: cubit.createHoldTicket,
-                                child: Text(
-                                  '+ ОТЛОЖКА',
-                                  style: TextStyle(
-                                    color: const Color(0xFFFFFFFF),
-                                    fontSize: holdFont,
-                                    fontWeight: FontWeight.w500,
-                                    letterSpacing: 0.2,
+                                for (final t in state.tickets) ...[
+                                  _TicketTab(
+                                    text: '${t.items.length} товар',
+                                    active: !state.isHistoryMode &&
+                                        t.id == state.activeTicketId,
+                                    compact: compact,
+                                    onTap: () => cubit.switchTicket(t.id),
+                                    showClose: canCloseTickets,
+                                    onClose: canCloseTickets
+                                        ? () async {
+                                            if (t.items.isEmpty) {
+                                              cubit.closeTicket(t.id);
+                                              return;
+                                            }
+
+                                            final shouldDelete =
+                                                await showHoldDeleteConfirmDialog(
+                                              context,
+                                              ticketId: t.id,
+                                              itemsCount: t.items.length,
+                                            );
+                                            if (!context.mounted ||
+                                                shouldDelete != true) {
+                                              return;
+                                            }
+
+                                            cubit.closeTicket(t.id);
+                                          }
+                                        : null,
+                                  ),
+                                  SizedBox(width: tabGap),
+                                ],
+                                TextButton(
+                                  onPressed: cubit.createHoldTicket,
+                                  child: Text(
+                                    '+ ОТЛОЖКА',
+                                    style: TextStyle(
+                                      color: const Color(0xFFFFFFFF),
+                                      fontSize: holdFont,
+                                      fontWeight: FontWeight.w500,
+                                      letterSpacing: 0.2,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
