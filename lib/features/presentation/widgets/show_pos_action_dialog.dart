@@ -45,10 +45,7 @@ Future<void> showPosActionsDialog(BuildContext context) {
   final actions = <_PosAction>[
     _PosAction('ВЫХОД ИЗ ПРОГРАММЫ', () async {
       Navigator.of(context, rootNavigator: true).pop();
-
-      // (опционально) если нужно перед выходом что-то сохранить/закрыть — делай здесь
-
-      await exitAppFully();
+      await exitAppFully(context);
     }),
     _PosAction('ЗАБЛОКИРОВАТЬ КАССУ', () {
       Navigator.of(context, rootNavigator: true).pop();
@@ -3064,7 +3061,8 @@ Future<void> _runZipUpdater(File packageFile, BuildContext context) async {
       ),
     );
   }
-  await exitAppFully();
+  if (!context.mounted) return;
+  await exitAppFully(context);
 }
 
 Future<void> _runSilentInstaller(
@@ -3089,7 +3087,8 @@ Future<void> _runSilentInstaller(
       ),
     );
   }
-  await exitAppFully();
+  if (!context.mounted) return;
+  await exitAppFully(context);
 }
 
 File _resolveUpdaterExecutable() {
@@ -3589,11 +3588,24 @@ class _ErrorBox extends StatelessWidget {
   }
 }
 
-Future<void> exitAppFully() async {
+Future<void> exitAppFully(BuildContext context) async {
   if (kIsWeb) return;
 
   // Только desktop
   if (!(Platform.isWindows || Platform.isLinux || Platform.isMacOS)) return;
+
+  if (context.mounted) {
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        useRootNavigator: true,
+        builder: (_) => const _AppClosingDialog(),
+      ),
+    );
+    // Даём Flutter отрисовать индикатор до начала закрытия окна.
+    await WidgetsBinding.instance.endOfFrame;
+  }
 
   try {
     // Если окно в full-screen — сначала выйдем из него (иначе close/minimize может глючить)
@@ -3611,6 +3623,70 @@ Future<void> exitAppFully() async {
     exit(0);
   } catch (_) {
     exit(0);
+  }
+}
+
+class _AppClosingDialog extends StatelessWidget {
+  const _AppClosingDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: Container(
+          width: 320,
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 26),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x33000000),
+                blurRadius: 28,
+                offset: Offset(0, 12),
+              ),
+            ],
+          ),
+          child: const Row(
+            children: [
+              SizedBox(
+                width: 30,
+                height: 30,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Закрываем программу…',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    SizedBox(height: 5),
+                    Text(
+                      'Сохраняем данные',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

@@ -478,8 +478,8 @@ class _ExitAppButton extends StatelessWidget {
         ) ??
         false;
 
-    if (shouldExit) {
-      exitAppFully();
+    if (shouldExit && context.mounted) {
+      await exitAppFully(context);
     }
   }
 
