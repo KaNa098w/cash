@@ -11,6 +11,7 @@ class PosProvisionResponse {
   final bool allowBelowCostSalePrices;
   final bool allowRefundsWithoutSale;
   final String organizationId;
+  final PosFiscalizationConfig fiscalization;
 
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -30,6 +31,7 @@ class PosProvisionResponse {
     this.allowBelowCostSalePrices = false,
     this.allowRefundsWithoutSale = false,
     required this.organizationId,
+    this.fiscalization = const PosFiscalizationConfig.disabled(),
     required this.users,
     this.createdAt,
     this.updatedAt,
@@ -109,6 +111,7 @@ class PosProvisionResponse {
       allowBelowCostSalePrices: allowBelowCostSalePrices,
       allowRefundsWithoutSale: allowRefundsWithoutSale,
       organizationId: organizationId,
+      fiscalization: PosFiscalizationConfig.fromJson(data['fiscalization']),
       createdAt: parseDt(data['created']),
       updatedAt: parseDt(data['updated']),
       users: users,
@@ -128,6 +131,65 @@ class PosProvisionResponse {
       uniqueById[user.id] = user;
     }
     return uniqueById.values.toList();
+  }
+}
+
+class PosFiscalizationConfig {
+  const PosFiscalizationConfig({
+    required this.enabled,
+    this.provider,
+    this.asynchronous = true,
+    this.printLocalReceiptImmediately = true,
+    this.pollIntervalSeconds = 2,
+    this.posOfflineFiscalizationSupported = false,
+    this.providerAutonomousOfdModeSupported = false,
+  });
+
+  const PosFiscalizationConfig.disabled()
+      : enabled = false,
+        provider = null,
+        asynchronous = true,
+        printLocalReceiptImmediately = true,
+        pollIntervalSeconds = 2,
+        posOfflineFiscalizationSupported = false,
+        providerAutonomousOfdModeSupported = false;
+
+  final bool enabled;
+  final String? provider;
+  final bool asynchronous;
+  final bool printLocalReceiptImmediately;
+  final int pollIntervalSeconds;
+  final bool posOfflineFiscalizationSupported;
+  final bool providerAutonomousOfdModeSupported;
+
+  factory PosFiscalizationConfig.fromJson(dynamic raw) {
+    if (raw is! Map) return const PosFiscalizationConfig.disabled();
+    final json = Map<String, dynamic>.from(raw);
+    bool boolValue(String key, {bool fallback = false}) {
+      final value = json[key];
+      if (value is bool) return value;
+      if (value is num) return value != 0;
+      final normalized = (value ?? '').toString().toLowerCase();
+      if (normalized == 'true' || normalized == '1') return true;
+      if (normalized == 'false' || normalized == '0') return false;
+      return fallback;
+    }
+
+    final poll = int.tryParse(
+      (json['fiscal_receipt_poll_interval_seconds'] ?? '').toString(),
+    );
+    return PosFiscalizationConfig(
+      enabled: boolValue('enabled'),
+      provider: json['provider']?.toString(),
+      asynchronous: boolValue('asynchronous', fallback: true),
+      printLocalReceiptImmediately:
+          boolValue('print_local_receipt_immediately', fallback: true),
+      pollIntervalSeconds: (poll ?? 2).clamp(1, 30),
+      posOfflineFiscalizationSupported:
+          boolValue('pos_offline_fiscalization_supported'),
+      providerAutonomousOfdModeSupported:
+          boolValue('provider_autonomous_ofd_mode_supported'),
+    );
   }
 }
 

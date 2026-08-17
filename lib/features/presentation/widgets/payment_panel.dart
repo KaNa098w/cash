@@ -198,12 +198,14 @@ class _FiscalReceiptDialog extends StatefulWidget {
     required this.initial,
     required this.posKey,
     required this.deviceId,
+    required this.paperMm,
     this.printerName,
   });
 
   final FiscalReceipt initial;
   final String posKey;
   final String deviceId;
+  final int paperMm;
   final String? printerName;
 
   @override
@@ -216,6 +218,7 @@ class _FiscalReceiptDialogState extends State<_FiscalReceiptDialog> {
   bool _printing = false;
   String? _error;
   Timer? _timer;
+  bool _autoPrintStarted = false;
 
   FiscalReceiptService get _service => sl<FiscalReceiptService>();
 
@@ -223,6 +226,9 @@ class _FiscalReceiptDialogState extends State<_FiscalReceiptDialog> {
   void initState() {
     super.initState();
     _schedulePoll();
+    if (_receipt.canPrint) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _autoPrint());
+    }
   }
 
   @override
@@ -249,6 +255,7 @@ class _FiscalReceiptDialogState extends State<_FiscalReceiptDialog> {
         _receipt = updated;
         _error = null;
       });
+      if (updated.canPrint) unawaited(_autoPrint());
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = 'Не удалось обновить статус. Повторяем…');
@@ -262,13 +269,25 @@ class _FiscalReceiptDialogState extends State<_FiscalReceiptDialog> {
       _error = null;
     });
     try {
-      await _service.printTicket(_receipt, printerName: widget.printerName);
+      await _service.printTicket(
+        _receipt,
+        key: widget.posKey,
+        deviceId: widget.deviceId,
+        paperMm: widget.paperMm,
+        printerName: widget.printerName,
+      );
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
       if (mounted) setState(() => _error = 'Ошибка печати: $error');
     } finally {
       if (mounted) setState(() => _printing = false);
     }
+  }
+
+  Future<void> _autoPrint() async {
+    if (_autoPrintStarted || !_receipt.canPrint || !mounted) return;
+    _autoPrintStarted = true;
+    await _print();
   }
 
   @override
@@ -320,6 +339,25 @@ class _FiscalReceiptDialogState extends State<_FiscalReceiptDialog> {
               const SizedBox(height: 12),
               Text(_receipt.errorMessage!, textAlign: TextAlign.center),
             ],
+            if (_receipt.lastErrorCodes.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Коды Webkassa: ${_receipt.lastErrorCodes.join(', ')}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFFB42318),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+            if (_receipt.webkassaGuidance != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _receipt.webkassaGuidance!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Color(0xFF7A271A)),
+              ),
+            ],
             if (_receipt.offlineMode) ...[
               const SizedBox(height: 10),
               Text(
@@ -329,10 +367,10 @@ class _FiscalReceiptDialogState extends State<_FiscalReceiptDialog> {
                 textAlign: TextAlign.center,
               ),
             ],
-            if (_receipt.canPrint) ...[
+            if (_receipt.canPrint && !_printing && _error != null) ...[
               const SizedBox(height: 14),
               const Text(
-                'Хотите распечатать фискальный чек?',
+                'Автоматическая печать не удалась. Проверьте принтер и повторите.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
               ),
@@ -357,11 +395,7 @@ class _FiscalReceiptDialogState extends State<_FiscalReceiptDialog> {
               ? null
               : () => Navigator.of(context).pop(),
           child: Text(
-            _receipt.canPrint
-                ? 'Нет, не печатать'
-                : _receipt.isPending
-                    ? 'Продолжить без печати'
-                    : 'Закрыть',
+            _receipt.isPending ? 'Продолжить без печати' : 'Закрыть',
           ),
         ),
         FilledButton.icon(
@@ -372,7 +406,7 @@ class _FiscalReceiptDialogState extends State<_FiscalReceiptDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.print_rounded),
-          label: const Text('Печать фискального чека'),
+          label: Text(_error == null ? 'Печатаем…' : 'Повторить печать'),
         ),
       ],
     );
@@ -927,6 +961,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
               final isMixed = _isMixedPayment;
               final containsMarkedItems = posCubit.state.items
                   .any((item) => item.product.requiresMarking);
+              final fiscalizationEnabled = auth.fiscalizationEnabled;
               final totalAmountInt = posCubit.total.round();
               final customPricesOk = _validateCustomSalePrices(
                 posCubit.state.items,
@@ -1201,7 +1236,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   return;
                 }
 
-                if (!containsMarkedItems) {
+                if (!containsMarkedItems || !fiscalizationEnabled) {
                   final printedPaymentMethod =
                       printedSale.paymentMethod.trim().toLowerCase();
                   await _printService.print80mmSilently(
@@ -1262,12 +1297,14 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 }
 
                 final fiscalService = sl<FiscalReceiptService>();
-                final fiscalReceipt =
-                    fiscalService.fromSaleResponse(outcome.responseData);
-                if (fiscalReceipt != null) {
+                final fiscalReceipt = fiscalizationEnabled
+                    ? fiscalService.fromSaleResponse(outcome.responseData)
+                    : null;
+                if (fiscalizationEnabled && fiscalReceipt != null) {
                   await fiscalService.save(
                     fiscalReceipt,
-                    localReceiptPrinted: !containsMarkedItems,
+                    localReceiptPrinted:
+                        !containsMarkedItems || !fiscalizationEnabled,
                   );
                   fiscalService.startBackgroundPolling(
                     key: key,
@@ -1282,10 +1319,11 @@ class _PaymentPanelState extends State<PaymentPanel> {
                       initial: fiscalReceipt,
                       posKey: key,
                       deviceId: deviceId,
+                      paperMm: auth.receiptPaperMm,
                       printerName: auth.receiptPrinterName,
                     ),
                   );
-                } else if (containsMarkedItems) {
+                } else if (fiscalizationEnabled && containsMarkedItems) {
                   _showError(
                     'Продажа сохранена, но backend не вернул фискальный чек. Повторно продажу не создавайте — обратитесь к администратору.',
                   );

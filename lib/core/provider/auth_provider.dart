@@ -22,6 +22,8 @@ class AuthTokenProvider extends ChangeNotifier {
   static const _kAllowCustomSalePrices = 'allowCustomSalePrices';
   static const _kAllowBelowCostSalePrices = 'allowBelowCostSalePrices';
   static const _kAllowRefundsWithoutSale = 'allowRefundsWithoutSale';
+  static const _kFiscalizationEnabled = 'fiscalizationEnabled';
+  static const _kFiscalizationPollSeconds = 'fiscalizationPollSeconds';
   static const _kOrganizationId = 'organizationId';
   static const _kAccountId = 'accountId';
 
@@ -73,6 +75,10 @@ class AuthTokenProvider extends ChangeNotifier {
 
   bool _allowRefundsWithoutSale = false;
   bool get allowRefundsWithoutSale => _allowRefundsWithoutSale;
+  bool _fiscalizationEnabled = false;
+  bool get fiscalizationEnabled => _fiscalizationEnabled;
+  int _fiscalizationPollSeconds = 2;
+  int get fiscalizationPollSeconds => _fiscalizationPollSeconds;
 
   String? _organizationId;
   String? get organizationId => _organizationId;
@@ -141,6 +147,10 @@ class AuthTokenProvider extends ChangeNotifier {
       allowCustomSalePrices: _allowCustomSalePrices,
       allowBelowCostSalePrices: _allowBelowCostSalePrices,
       allowRefundsWithoutSale: _allowRefundsWithoutSale,
+      fiscalization: PosFiscalizationConfig(
+        enabled: _fiscalizationEnabled,
+        pollIntervalSeconds: _fiscalizationPollSeconds,
+      ),
       organizationId: _organizationId!,
       users: _users,
       createdAt: null,
@@ -171,6 +181,7 @@ class AuthTokenProvider extends ChangeNotifier {
       allowCustomSalePrices: provision.allowCustomSalePrices,
       allowBelowCostSalePrices: provision.allowBelowCostSalePrices,
       allowRefundsWithoutSale: provision.allowRefundsWithoutSale,
+      fiscalization: provision.fiscalization,
       organizationId: provision.organizationId,
       users: users,
       createdAt: provision.createdAt,
@@ -201,6 +212,9 @@ class AuthTokenProvider extends ChangeNotifier {
         prefs.getBool(_kAllowBelowCostSalePrices) ?? false;
     _allowRefundsWithoutSale =
         prefs.getBool(_kAllowRefundsWithoutSale) ?? false;
+    _fiscalizationEnabled = prefs.getBool(_kFiscalizationEnabled) ?? false;
+    _fiscalizationPollSeconds =
+        (prefs.getInt(_kFiscalizationPollSeconds) ?? 2).clamp(1, 30);
     _organizationId = prefs.getString(_kOrganizationId);
     _accountId = prefs.getString(_kAccountId);
 
@@ -289,6 +303,8 @@ class AuthTokenProvider extends ChangeNotifier {
     _allowCustomSalePrices = resp.allowCustomSalePrices;
     _allowBelowCostSalePrices = resp.allowBelowCostSalePrices;
     _allowRefundsWithoutSale = resp.allowRefundsWithoutSale;
+    _fiscalizationEnabled = resp.fiscalization.enabled;
+    _fiscalizationPollSeconds = resp.fiscalization.pollIntervalSeconds;
     _organizationId = resp.organizationId;
     _accountId = resp.accountId;
 
@@ -320,6 +336,11 @@ class AuthTokenProvider extends ChangeNotifier {
       _allowBelowCostSalePrices,
     );
     await prefs.setBool(_kAllowRefundsWithoutSale, _allowRefundsWithoutSale);
+    await prefs.setBool(_kFiscalizationEnabled, _fiscalizationEnabled);
+    await prefs.setInt(
+      _kFiscalizationPollSeconds,
+      _fiscalizationPollSeconds,
+    );
     await prefs.setString(_kOrganizationId, _organizationId ?? '');
     await prefs.setString(_kAccountId, _accountId ?? '');
 
@@ -337,6 +358,8 @@ class AuthTokenProvider extends ChangeNotifier {
     _allowCustomSalePrices = false;
     _allowBelowCostSalePrices = false;
     _allowRefundsWithoutSale = false;
+    _fiscalizationEnabled = false;
+    _fiscalizationPollSeconds = 2;
     _organizationId = null;
     _accountId = null;
     _users = [];
@@ -359,6 +382,8 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.remove(_kAllowCustomSalePrices);
     await prefs.remove(_kAllowBelowCostSalePrices);
     await prefs.remove(_kAllowRefundsWithoutSale);
+    await prefs.remove(_kFiscalizationEnabled);
+    await prefs.remove(_kFiscalizationPollSeconds);
     await prefs.remove(_kOrganizationId);
     await prefs.remove(_kAccountId);
     await prefs.remove(_kUsers);

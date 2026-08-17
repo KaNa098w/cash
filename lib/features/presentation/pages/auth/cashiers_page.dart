@@ -113,6 +113,7 @@ class _CashiersPageState extends State<CashiersPage> {
       allowCustomSalePrices: provision.allowCustomSalePrices,
       allowBelowCostSalePrices: provision.allowBelowCostSalePrices,
       allowRefundsWithoutSale: provision.allowRefundsWithoutSale,
+      fiscalization: provision.fiscalization,
       organizationId: provision.organizationId,
       users: users,
       createdAt: provision.createdAt,
