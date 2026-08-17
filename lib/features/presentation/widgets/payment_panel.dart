@@ -329,6 +329,14 @@ class _FiscalReceiptDialogState extends State<_FiscalReceiptDialog> {
                 textAlign: TextAlign.center,
               ),
             ],
+            if (_receipt.canPrint) ...[
+              const SizedBox(height: 14),
+              const Text(
+                'Хотите распечатать фискальный чек?',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(_error!, style: const TextStyle(color: Colors.red)),
@@ -345,8 +353,16 @@ class _FiscalReceiptDialogState extends State<_FiscalReceiptDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _printing ? null : () => Navigator.of(context).pop(),
-          child: Text(_receipt.isPending ? 'Продолжить без печати' : 'Закрыть'),
+          onPressed: _printing || (_receipt.isPending && activePolling)
+              ? null
+              : () => Navigator.of(context).pop(),
+          child: Text(
+            _receipt.canPrint
+                ? 'Нет, не печатать'
+                : _receipt.isPending
+                    ? 'Продолжить без печати'
+                    : 'Закрыть',
+          ),
         ),
         FilledButton.icon(
           onPressed: _receipt.canPrint && !_printing ? _print : null,
@@ -773,6 +789,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
             final change = cubit.change.clamp(0, double.infinity);
             final hasItems = state.items.isNotEmpty;
             final isDebtSale = state.paymentKind == PaymentKind.credit;
+            final hasMarkedItems =
+                state.items.any((item) => item.product.requiresMarking);
+            final markedDebtBlocked = isDebtSale && hasMarkedItems;
             final requiresBankAccount =
                 state.paymentKind == PaymentKind.card || _isMixedPayment;
             final hasSelectedBankAccount =
@@ -784,6 +803,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
             final canSubmitPayment = !_paying &&
                 !_saleQueued &&
                 hasItems &&
+                !markedDebtBlocked &&
                 hasSelectedPaymentMethod &&
                 hasSelectedBankAccount;
 
@@ -826,6 +846,14 @@ class _PaymentPanelState extends State<PaymentPanel> {
               }
               if (posCubit.state.items.isEmpty) {
                 _showError('Корзина пустая');
+                return;
+              }
+              if (isDebtSale &&
+                  posCubit.state.items
+                      .any((item) => item.product.requiresMarking)) {
+                _showError(
+                  'Маркированный товар нельзя продавать в долг. Выберите наличную или безналичную оплату.',
+                );
                 return;
               }
               final saleComment = _commentCtrl.text.trim();
@@ -1820,6 +1848,12 @@ class _PaymentPanelState extends State<PaymentPanel> {
                             text: 'В ДОЛГ',
                             onTap: hasItems
                                 ? () {
+                                    if (hasMarkedItems) {
+                                      _showError(
+                                        'Маркированный товар нельзя продавать в долг',
+                                      );
+                                      return;
+                                    }
                                     setState(() {
                                       _isMixedPayment = false;
                                       _mixedActiveIsCard = false;

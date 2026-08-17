@@ -59,44 +59,45 @@ class _IncomingOrdersDialogState extends State<_IncomingOrdersDialog> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    final compact = size.width < 1080;
+    final contentWidth = size.width < 1080 ? 1080.0 : size.width;
 
     return Material(
       color: const Color(0xFFF7F8FA),
       child: SizedBox(
         width: size.width,
         height: size.height,
-        child: SafeArea(
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, _) {
-              return Column(
-                children: [
-                  _Header(
-                    controller: _controller,
-                    onClose: () => Navigator.of(context).pop(),
-                  ),
-                  if (_controller.error != null)
-                    _ErrorStrip(
-                      text: _controller.error!,
-                      onRefresh: _controller.refreshVisibleOrders,
-                    ),
-                  Expanded(
-                    child: compact
-                        ? _CompactBody(
-                            controller: _controller,
-                            printingInvoiceOrderId: _printingInvoiceOrderId,
-                            onPrintInvoice: _printInvoice,
-                          )
-                        : _WideBody(
-                            controller: _controller,
-                            printingInvoiceOrderId: _printingInvoiceOrderId,
-                            onPrintInvoice: _printInvoice,
-                          ),
-                  ),
-                ],
-              );
-            },
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: contentWidth,
+            height: size.height,
+            child: SafeArea(
+              child: AnimatedBuilder(
+                animation: _controller,
+                builder: (context, _) {
+                  return Column(
+                    children: [
+                      _Header(
+                        controller: _controller,
+                        onClose: () => Navigator.of(context).pop(),
+                      ),
+                      if (_controller.error != null)
+                        _ErrorStrip(
+                          text: _controller.error!,
+                          onRefresh: _controller.refreshVisibleOrders,
+                        ),
+                      Expanded(
+                        child: _WideBody(
+                          controller: _controller,
+                          printingInvoiceOrderId: _printingInvoiceOrderId,
+                          onPrintInvoice: _printInvoice,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
           ),
         ),
       ),
@@ -317,35 +318,6 @@ class _WideBody extends StatelessWidget {
           child: _OrdersList(controller: controller),
         ),
         const VerticalDivider(width: 1, color: Color(0xFFE2E8F0)),
-        Expanded(
-          child: _OrderDetails(
-            controller: controller,
-            printingInvoiceOrderId: printingInvoiceOrderId,
-            onPrintInvoice: onPrintInvoice,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _CompactBody extends StatelessWidget {
-  const _CompactBody({
-    required this.controller,
-    required this.printingInvoiceOrderId,
-    required this.onPrintInvoice,
-  });
-
-  final MarketplaceOrdersController controller;
-  final String? printingInvoiceOrderId;
-  final ValueChanged<MarketplaceOrder> onPrintInvoice;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        SizedBox(height: 230, child: _OrdersList(controller: controller)),
-        const Divider(height: 1, color: Color(0xFFE2E8F0)),
         Expanded(
           child: _OrderDetails(
             controller: controller,
