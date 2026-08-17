@@ -2335,7 +2335,7 @@ Future<void> _showQtyDialog(
     setText(setState, text, selectionOffset: text.length);
   }
 
-  void submit(BuildContext dialogCtx) {
+  Future<void> submit(BuildContext dialogCtx) async {
     final value = parseValue();
     if (value == null || value < 0) return;
 
@@ -2354,7 +2354,12 @@ Future<void> _showQtyDialog(
       return;
     }
 
-    cubit.setQty(index, value);
+    final updated = await setCartItemQuantityWithMarking(
+      dialogCtx,
+      index: index,
+      quantity: value,
+    );
+    if (!updated || !dialogCtx.mounted) return;
     Navigator.of(dialogCtx).pop();
   }
 
@@ -2593,7 +2598,7 @@ Future<void> _showQtyDialog(
                               const SizedBox(width: 12),
                               Expanded(
                                 child: ElevatedButton(
-                                  onPressed: () {
+                                  onPressed: () async {
                                     final value = parseValue();
                                     if (value != null && value >= 0) {
                                       if (value <= 0) {
@@ -2611,7 +2616,15 @@ Future<void> _showQtyDialog(
                                         });
                                         return;
                                       }
-                                      cubit.setQty(index, value);
+                                      final updated =
+                                          await setCartItemQuantityWithMarking(
+                                        dialogCtx,
+                                        index: index,
+                                        quantity: value,
+                                      );
+                                      if (!updated || !dialogCtx.mounted) {
+                                        return;
+                                      }
                                       Navigator.of(dialogCtx).pop();
                                     }
                                   },

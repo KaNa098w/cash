@@ -9,6 +9,7 @@ class CartItem extends Equatable {
 
   /// Applied server discount for this line item.
   final bool discountApplied;
+  final List<String> markCodes;
 
   const CartItem({
     required this.product,
@@ -16,6 +17,7 @@ class CartItem extends Equatable {
     this.discount = 0,
     this.customUnitPrice,
     this.discountApplied = false,
+    this.markCodes = const <String>[],
   });
 
   factory CartItem.fromJson(Map<String, dynamic> json) => CartItem(
@@ -28,6 +30,11 @@ class CartItem extends Equatable {
         discount: (json['discount'] as num?)?.toDouble() ?? 0,
         customUnitPrice: (json['customUnitPrice'] as num?)?.toDouble(),
         discountApplied: json['discountApplied'] == true,
+        markCodes: (json['markCodes'] as List?)
+                ?.map((value) => value.toString())
+                .where((value) => value.isNotEmpty)
+                .toList(growable: false) ??
+            const <String>[],
       );
 
   /// Effective unit price: uses priceAfterDiscount when discount is applied.
@@ -69,6 +76,7 @@ class CartItem extends Equatable {
     double? customUnitPrice,
     bool clearCustomUnitPrice = false,
     bool? discountApplied,
+    List<String>? markCodes,
   }) =>
       CartItem(
         product: product ?? this.product,
@@ -78,6 +86,7 @@ class CartItem extends Equatable {
             ? null
             : (customUnitPrice ?? this.customUnitPrice),
         discountApplied: discountApplied ?? this.discountApplied,
+        markCodes: markCodes ?? this.markCodes,
       );
 
   Map<String, dynamic> toJson() => {
@@ -86,9 +95,10 @@ class CartItem extends Equatable {
         'discount': discount,
         'customUnitPrice': customUnitPrice,
         'discountApplied': discountApplied,
+        'markCodes': markCodes,
       };
 
   @override
   List<Object?> get props =>
-      [product, qty, discount, customUnitPrice, discountApplied];
+      [product, qty, discount, customUnitPrice, discountApplied, markCodes];
 }

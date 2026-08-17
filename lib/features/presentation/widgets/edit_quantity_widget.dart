@@ -8,6 +8,7 @@ import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 import 'package:leemon_app/features/presentation/widgets/dialog_primary_button.dart';
 import 'package:leemon_app/features/presentation/widgets/footer_status.dart'
     show TouchDeleteDialog;
+import 'package:leemon_app/features/presentation/widgets/conversion_product_dialog.dart';
 
 Future<void> editSelectedQty(BuildContext context) async {
   final cubit = context.read<PosCubit>();
@@ -188,7 +189,14 @@ Future<void> editSelectedQty(BuildContext context) async {
                                         if (!confirmed) return;
                                       }
 
-                                      cubit.setQty(idx, normalized);
+                                      if (!ctx.mounted) return;
+                                      final updated =
+                                          await setCartItemQuantityWithMarking(
+                                        ctx,
+                                        index: idx,
+                                        quantity: normalized,
+                                      );
+                                      if (!updated || !ctx.mounted) return;
                                       Navigator.of(ctx).pop();
                                     },
                                   ),

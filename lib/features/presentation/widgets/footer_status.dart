@@ -248,7 +248,24 @@ class _FooterDesktop extends StatelessWidget {
                                   if (!confirmed) return;
                                   cubit.removeAt(idx);
                                 },
-                                onPlus: cubit.incrementSelectedQty,
+                                onPlus: () async {
+                                  final idx = cubit.state.selectedItemIndex;
+                                  if (idx == null ||
+                                      idx < 0 ||
+                                      idx >= cubit.state.items.length) {
+                                    return;
+                                  }
+                                  final item = cubit.state.items[idx];
+                                  if (item.product.requiresMarking) {
+                                    await setCartItemQuantityWithMarking(
+                                      context,
+                                      index: idx,
+                                      quantity: item.qty + 1,
+                                    );
+                                    return;
+                                  }
+                                  cubit.incrementSelectedQty();
+                                },
                                 onQuick: () async {
                                   final auth =
                                       context.read<AuthTokenProvider>();

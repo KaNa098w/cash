@@ -160,6 +160,9 @@ class PosCubit extends Cubit<PosState> {
       conversionValue: m.conversionValue,
       conversionUnit: m.conversionUnit,
       isUniversal: m.isUniversal,
+      requiresMarking: m.requiresMarking,
+      gtin: m.gtin,
+      ntin: m.ntin,
       discountType: m.discountType,
       discountPercent: m.discountPercent,
       priceAfterDiscount: m.priceAfterDiscount,
@@ -222,7 +225,11 @@ class PosCubit extends Cubit<PosState> {
         product.priceAfterDiscount < product.price;
   }
 
-  void addWithQty(Product p, double qty) {
+  void addWithQty(
+    Product p,
+    double qty, {
+    List<String> markCodes = const <String>[],
+  }) {
     if (qty <= 0 || qty.isNaN || qty.isInfinite) return;
 
     int? selectedIndex; // какой индекс выбрать после добавления/увеличения
@@ -238,6 +245,7 @@ class PosCubit extends Cubit<PosState> {
         list[idx] = it.copyWith(
           qty: it.qty + qty,
           discountApplied: it.discountApplied || _shouldApplyServerDiscount(p),
+          markCodes: [...it.markCodes, ...markCodes],
         );
         updatedCartQty = list[idx].qty;
         updatedDiscountApplied = list[idx].discountApplied;
@@ -247,6 +255,7 @@ class PosCubit extends Cubit<PosState> {
           product: p,
           qty: qty,
           discountApplied: _shouldApplyServerDiscount(p),
+          markCodes: markCodes,
         ));
         updatedCartQty = list.last.qty;
         updatedDiscountApplied = list.last.discountApplied;
@@ -269,9 +278,13 @@ class PosCubit extends Cubit<PosState> {
     );
   }
 
-  void addFromProductModel(ProductModel m, {double qty = 1}) {
+  void addFromProductModel(
+    ProductModel m, {
+    double qty = 1,
+    List<String> markCodes = const <String>[],
+  }) {
     final product = _mapProductModelToProduct(m);
-    addWithQty(product, qty);
+    addWithQty(product, qty, markCodes: markCodes);
   }
 
   /// Replaces every cart line with the exact quantity in measurement_unit.
@@ -354,6 +367,20 @@ class PosCubit extends Cubit<PosState> {
       return list;
     });
 
+    _emitAndPersist(state.copyWith(tickets: tickets));
+  }
+
+  void setMarkCodes(int index, List<String> codes) {
+    if (index < 0 || index >= state.items.length) return;
+    final normalized = codes
+        .map((code) => code.trim())
+        .where((code) => code.isNotEmpty)
+        .toList(growable: false);
+    final tickets = _updateActiveTicketItems((items) {
+      final list = List<CartItem>.from(items);
+      list[index] = list[index].copyWith(markCodes: normalized);
+      return list;
+    });
     _emitAndPersist(state.copyWith(tickets: tickets));
   }
 
@@ -456,7 +483,17 @@ class PosCubit extends Cubit<PosState> {
                         current.product.conversionValue!,
                       )
                     : qty;
-        list[index] = current.copyWith(qty: normalizedQty);
+        if (current.product.requiresMarking &&
+            normalizedQty > current.markCodes.length) {
+          normalizedQty = current.markCodes.length.toDouble();
+        }
+        final retainedCodes = current.product.requiresMarking
+            ? current.markCodes.take(normalizedQty.round()).toList()
+            : current.markCodes;
+        list[index] = current.copyWith(
+          qty: normalizedQty,
+          markCodes: retainedCodes,
+        );
       }
       return list;
     });

@@ -2,6 +2,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
+import 'package:leemon_app/core/service/fiscal_receipt_service.dart';
+import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
 import 'package:leemon_app/features/data/datasources/payment_remote_datasource.dart';
 import 'package:leemon_app/features/data/datasources/app_update_remote_datasource.dart';
@@ -54,6 +56,9 @@ Future<void> initDependencies() async {
     sl.registerLazySingleton<PosDiagnosticsService>(
       () => PosDiagnosticsService(),
     );
+  }
+  if (!sl.isRegistered<PrintService>()) {
+    sl.registerLazySingleton<PrintService>(() => PrintService());
   }
 
   if (!sl.isRegistered<Dio>()) {
@@ -139,6 +144,11 @@ Future<void> initDependencies() async {
         sl<Dio>(),
         diagnostics: sl<PosDiagnosticsService>(),
       ),
+    );
+  }
+  if (!sl.isRegistered<FiscalReceiptService>()) {
+    sl.registerLazySingleton<FiscalReceiptService>(
+      () => FiscalReceiptService(sl<Dio>(), sl<PrintService>()),
     );
   }
 

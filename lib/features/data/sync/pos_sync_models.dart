@@ -101,6 +101,7 @@ class QueueOperationResult {
     required this.payload,
     this.errorCode,
     this.errorMessage,
+    this.responseData,
   });
 
   final String operationId;
@@ -110,6 +111,7 @@ class QueueOperationResult {
   final Map<String, dynamic> payload;
   final String? errorCode;
   final String? errorMessage;
+  final Map<String, dynamic>? responseData;
 }
 
 class SyncProgress {

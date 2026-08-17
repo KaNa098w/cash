@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:leemon_app/core/models/product_response.dart';
+import 'package:leemon_app/core/marking/gs1_datamatrix_validator.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/domain/entities/cart_item.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
@@ -13,6 +14,31 @@ Future<bool> addProductToCartWithConversionFlow(
   BuildContext context,
   ProductModel product,
 ) async {
+  if (product.requiresMarking) {
+    final markCode = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _SingleMarkCodeDialog(product: product),
+    );
+    if (markCode == null || !context.mounted) return false;
+    final posCubit = context.read<PosCubit>();
+    final alreadyScanned = posCubit.state.items
+        .expand((item) => item.markCodes)
+        .contains(markCode);
+    if (alreadyScanned) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Этот DataMatrix уже добавлен в чек')),
+      );
+      return false;
+    }
+    posCubit.addFromProductModel(
+      product,
+      qty: 1,
+      markCodes: [markCode],
+    );
+    return true;
+  }
+
   if (!product.hasConversion) {
     context.read<PosCubit>().addFromProductModel(product);
     return true;
@@ -40,6 +66,177 @@ Future<bool> addProductToCartWithConversionFlow(
   return true;
 }
 
+Future<bool> setCartItemQuantityWithMarking(
+  BuildContext context, {
+  required int index,
+  required double quantity,
+}) async {
+  final cubit = context.read<PosCubit>();
+  if (index < 0 || index >= cubit.state.items.length) return false;
+  final item = cubit.state.items[index];
+  if (!item.product.requiresMarking) {
+    cubit.setQty(index, quantity);
+    return true;
+  }
+
+  final target = quantity.round();
+  if ((quantity - target).abs() > 0.000001) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+          content: Text('Маркированный товар продаётся только поштучно')),
+    );
+    return false;
+  }
+  if (target <= item.markCodes.length) {
+    cubit.setMarkCodes(index, item.markCodes.take(target).toList());
+    cubit.setQty(index, target.toDouble());
+    return true;
+  }
+
+  final codes = List<String>.from(item.markCodes);
+  final product = ProductModel(
+    id: item.product.id,
+    name: item.product.name,
+    measurementUnit: item.product.measurementUnit,
+    arrivalCost: item.product.arrivalCost,
+    sellingPrice: item.product.price,
+    wholesalePrice: 0,
+    quantity: item.product.quantity,
+    requiresMarking: true,
+    gtin: item.product.gtin,
+    ntin: item.product.ntin,
+  );
+  while (codes.length < target) {
+    final code = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _SingleMarkCodeDialog(product: product),
+    );
+    if (code == null || !context.mounted) return false;
+    final usedInCart = cubit.state.items
+        .expand((cartItem) => cartItem.markCodes)
+        .contains(code);
+    if (usedInCart || codes.contains(code)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Этот DataMatrix уже добавлен в чек')),
+      );
+      continue;
+    }
+    codes.add(code);
+  }
+  cubit.setMarkCodes(index, codes);
+  cubit.setQty(index, target.toDouble());
+  return true;
+}
+
+class _SingleMarkCodeDialog extends StatefulWidget {
+  const _SingleMarkCodeDialog({required this.product});
+
+  final ProductModel product;
+
+  @override
+  State<_SingleMarkCodeDialog> createState() => _SingleMarkCodeDialogState();
+}
+
+class _SingleMarkCodeDialogState extends State<_SingleMarkCodeDialog> {
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode();
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _submit(String _) {
+    // Enter sent by a hardware scanner is not part of controller.text.
+    // Preserve all other characters, including the ASCII 29 GS separator.
+    final rawCode = _controller.text;
+    final validation = Gs1DataMatrixValidator.validate(
+      rawCode,
+      expectedGtin: widget.product.gtin,
+    );
+    if (!validation.isValid) {
+      setState(() => _error = validation.message);
+      _controller.clear();
+      _focusNode.requestFocus();
+      return;
+    }
+    Navigator.of(context).pop(rawCode);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final identifiers = [
+      if ((widget.product.gtin ?? '').isNotEmpty) 'GTIN ${widget.product.gtin}',
+      if ((widget.product.ntin ?? '').isNotEmpty) 'NTIN ${widget.product.ntin}',
+    ].join('  •  ');
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: const Row(
+        children: [
+          Icon(Icons.qr_code_scanner_rounded, color: Color(0xFF2563EB)),
+          SizedBox(width: 10),
+          Text('Маркированный товар'),
+        ],
+      ),
+      content: SizedBox(
+        width: 500,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.product.name,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            if (identifiers.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(identifiers,
+                  style: const TextStyle(color: Color(0xFF667085))),
+            ],
+            const SizedBox(height: 18),
+            const Text(
+              'Сначала отсканируйте DataMatrix. Товар добавится в чек только после успешного сканирования.',
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _controller,
+              focusNode: _focusNode,
+              autofocus: true,
+              obscureText: true,
+              obscuringCharacter: '•',
+              onSubmitted: _submit,
+              decoration: InputDecoration(
+                labelText: 'DataMatrix',
+                hintText: 'Ожидание сканера…',
+                errorText: _error,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+      ],
+    );
+  }
+}
+
 Future<void> editConvertedCartItem(
   BuildContext context, {
   required int index,
@@ -58,6 +255,9 @@ Future<void> editConvertedCartItem(
     discountType: item.product.discountType,
     discountPercent: item.product.discountPercent,
     priceAfterDiscount: item.product.priceAfterDiscount,
+    requiresMarking: item.product.requiresMarking,
+    gtin: item.product.gtin,
+    ntin: item.product.ntin,
   );
   final qty = await showDialog<double>(
     context: context,
@@ -68,7 +268,11 @@ Future<void> editConvertedCartItem(
     ),
   );
   if (qty == null || qty <= 0 || !context.mounted) return;
-  context.read<PosCubit>().setQty(index, qty);
+  await setCartItemQuantityWithMarking(
+    context,
+    index: index,
+    quantity: qty,
+  );
 }
 
 enum _InputTarget { measurement, pieces }

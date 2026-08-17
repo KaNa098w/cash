@@ -41,6 +41,8 @@ class SaleRepositoryImpl implements SaleRepository {
                 : CreateSaleResult.sent),
         sale: printedSale,
         errorMessage: queueResult.errorMessage,
+        responseData: queueResult.responseData,
+        retryScheduled: queueResult.result == QueueSendResult.queued,
       );
     } catch (error, stackTrace) {
       developer.log(

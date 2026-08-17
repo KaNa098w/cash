@@ -38,6 +38,9 @@ class ProductModel {
   final String? categoryId;
   final String? globalProductId;
   final bool isUniversal;
+  final bool requiresMarking;
+  final String? gtin;
+  final String? ntin;
 
   /// Сколько штук в 1 единице измерения.
   /// null — если measurement_unit == штуки (конвертация не нужна).
@@ -77,6 +80,9 @@ class ProductModel {
     this.categoryId,
     this.globalProductId,
     this.isUniversal = false,
+    this.requiresMarking = false,
+    this.gtin,
+    this.ntin,
     this.conversionValue,
     this.conversionUnit,
     this.discountType,
@@ -193,6 +199,11 @@ class ProductModel {
       isUniversal: json['is_universal'] == true ||
           json['is_universal'] == 1 ||
           json['is_universal']?.toString().trim() == '1',
+      requiresMarking: json['requires_marking'] == true ||
+          json['requires_marking'] == 1 ||
+          json['requires_marking']?.toString().trim() == '1',
+      gtin: _asString(json['gtin']),
+      ntin: _asString(json['ntin']),
       conversionValue: conversionValue,
       conversionUnit: _asString(json['conversion_unit']),
       discountType: _asString(json['discount_type']),
@@ -219,6 +230,9 @@ class ProductModel {
       'category_id': categoryId,
       'global_product_id': globalProductId,
       'is_universal': isUniversal ? 1 : 0,
+      'requires_marking': requiresMarking,
+      'gtin': gtin,
+      'ntin': ntin,
       'conversion_value': conversionValue,
       'conversion_unit': conversionUnit,
       'discount_type': discountType,

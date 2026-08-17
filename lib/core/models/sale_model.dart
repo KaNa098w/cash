@@ -450,6 +450,7 @@ class SaleItemModel {
   final double? conversionValue;
   final String? conversionUnit;
   final String? convertedQuantity;
+  final List<String> markCodes;
 
   /// ✅ сколько уже возвращено (может быть null/0)
   // ignore: non_constant_identifier_names
@@ -471,6 +472,7 @@ class SaleItemModel {
     this.conversionValue,
     this.conversionUnit,
     this.convertedQuantity,
+    this.markCodes = const <String>[],
     this.product,
     // ignore: non_constant_identifier_names
     this.refund_quantity,
@@ -513,6 +515,7 @@ class SaleItemModel {
     double? conversionValue,
     String? conversionUnit,
     String? convertedQuantity,
+    List<String>? markCodes,
     // ignore: non_constant_identifier_names
     int? refund_quantity,
   }) {
@@ -533,6 +536,7 @@ class SaleItemModel {
       conversionValue: conversionValue ?? this.conversionValue,
       conversionUnit: conversionUnit ?? this.conversionUnit,
       convertedQuantity: convertedQuantity ?? this.convertedQuantity,
+      markCodes: markCodes ?? this.markCodes,
       refund_quantity: refund_quantity ?? this.refund_quantity,
     );
   }
@@ -549,6 +553,7 @@ class SaleItemModel {
       "discount_amount": discountAmount,
       "total_discount": totalDiscount,
       "refund_quantity": refund_quantity,
+      if (markCodes.isNotEmpty) "mark_codes": markCodes,
     };
   }
 
@@ -579,6 +584,10 @@ class SaleItemModel {
           : SaleModel._toDouble(json["conversion_value"]),
       conversionUnit: json["conversion_unit"]?.toString(),
       convertedQuantity: json["converted_quantity"]?.toString(),
+      markCodes: (json['mark_codes'] as List?)
+              ?.map((value) => value.toString())
+              .toList(growable: false) ??
+          const <String>[],
       refund_quantity: json["refund_quantity"] == null
           ? null
           : SaleModel._toInt(json["refund_quantity"]),
@@ -604,6 +613,7 @@ class SaleItemModel {
       "conversionUnit": conversionUnit,
       "convertedQuantity": convertedQuantity,
       "refund_quantity": refund_quantity,
+      "markCodes": markCodes,
     };
   }
 
@@ -634,6 +644,10 @@ class SaleItemModel {
           : SaleModel._toDouble(json["conversionValue"]),
       conversionUnit: json["conversionUnit"]?.toString(),
       convertedQuantity: json["convertedQuantity"]?.toString(),
+      markCodes: ((json['markCodes'] ?? json['mark_codes']) as List?)
+              ?.map((value) => value.toString())
+              .toList(growable: false) ??
+          const <String>[],
       refund_quantity: json["refund_quantity"] == null
           ? null
           : SaleModel._toInt(json["refund_quantity"]),

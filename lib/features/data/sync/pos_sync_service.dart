@@ -845,6 +845,7 @@ class PosSyncService {
               'quantity': item.quantity,
               'price': item.price,
               'total_price': item.totalPrice,
+              if (item.markCodes.isNotEmpty) 'mark_codes': item.markCodes,
             },
           )
           .toList(growable: false),
@@ -866,9 +867,8 @@ class PosSyncService {
       payload: payload,
       tryImmediateSend: !sendInBackground,
     );
-    if (requireOnline && result.result != QueueSendResult.sent) {
-      await _localStore.deleteQueueOperation(result.operationId);
-    }
+    // Keep the original operation on timeout. Retrying must reuse the same
+    // client_sale_id, local_number and byte-for-byte marking payload.
     if (result.result == QueueSendResult.sent &&
         sale.paymentMethod.trim().toLowerCase() == 'debt') {
       _notifyDebtsChanged();
@@ -1464,6 +1464,7 @@ class PosSyncService {
         type: record.type,
         clientId: record.clientId,
         payload: payloadForSend,
+        responseData: responseData,
       );
     } catch (error) {
       if (error is _WaitingForServerSessionId ||

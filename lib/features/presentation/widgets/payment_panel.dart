@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
@@ -8,7 +9,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pdf/pdf.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
+import 'package:leemon_app/core/models/fiscal_receipt.dart';
+import 'package:leemon_app/core/marking/gs1_datamatrix_validator.dart';
 import 'package:leemon_app/core/print/print_service.dart';
+import 'package:leemon_app/core/service/fiscal_receipt_service.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart'
     show AuthTokenProvider;
@@ -34,6 +38,331 @@ class PaymentPanel extends StatefulWidget {
   State<PaymentPanel> createState() => _PaymentPanelState();
 }
 
+class _MarkCodesDialog extends StatefulWidget {
+  const _MarkCodesDialog({
+    required this.productName,
+    required this.requiredCount,
+    required this.initialCodes,
+    this.gtin,
+    this.ntin,
+  });
+
+  final String productName;
+  final int requiredCount;
+  final List<String> initialCodes;
+  final String? gtin;
+  final String? ntin;
+
+  @override
+  State<_MarkCodesDialog> createState() => _MarkCodesDialogState();
+}
+
+class _MarkCodesDialogState extends State<_MarkCodesDialog> {
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode();
+  late final List<String> _codes =
+      widget.initialCodes.take(widget.requiredCount).toList(growable: true);
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _focusNode.requestFocus());
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _acceptScan(String _) {
+    if (_codes.length >= widget.requiredCount) return;
+    // TextField does not include the scanner's Enter key. Keep every other
+    // character exactly as received (including the GS separator, ASCII 29).
+    final raw = _controller.text;
+    final validation = Gs1DataMatrixValidator.validate(
+      raw,
+      expectedGtin: widget.gtin,
+    );
+    if (!validation.isValid) {
+      setState(() => _error = validation.message);
+      _controller.clear();
+      _focusNode.requestFocus();
+      return;
+    }
+    if (_codes.contains(raw)) {
+      setState(() => _error = 'Этот код уже отсканирован');
+      _controller.clear();
+      _focusNode.requestFocus();
+      return;
+    }
+    setState(() {
+      _codes.add(raw);
+      _error = null;
+      _controller.clear();
+    });
+    _focusNode.requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final complete = _codes.length == widget.requiredCount;
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: const Text('Сканирование маркировки'),
+      content: SizedBox(
+        width: 520,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.productName,
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            if ((widget.gtin ?? '').isNotEmpty ||
+                (widget.ntin ?? '').isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text([
+                  if ((widget.gtin ?? '').isNotEmpty) 'GTIN ${widget.gtin}',
+                  if ((widget.ntin ?? '').isNotEmpty) 'NTIN ${widget.ntin}',
+                ].join('  •  ')),
+              ),
+            const SizedBox(height: 18),
+            LinearProgressIndicator(
+              value: widget.requiredCount == 0
+                  ? 1
+                  : _codes.length / widget.requiredCount,
+              minHeight: 8,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            const SizedBox(height: 8),
+            Text('Отсканировано ${_codes.length} из ${widget.requiredCount}'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _controller,
+              focusNode: _focusNode,
+              enabled: !complete,
+              autofocus: true,
+              obscureText: true,
+              obscuringCharacter: '•',
+              onSubmitted: _acceptScan,
+              decoration: InputDecoration(
+                labelText:
+                    complete ? 'Все коды получены' : 'Сканируйте DataMatrix',
+                hintText: 'Код не отображается в целях безопасности',
+                errorText: _error,
+                prefixIcon: const Icon(Icons.qr_code_scanner_rounded),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            if (_codes.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: List.generate(
+                  _codes.length,
+                  (index) => Chip(
+                    label: Text('Код ${index + 1}'),
+                    avatar: const Icon(Icons.check_circle, size: 18),
+                    onDeleted: () => setState(() => _codes.removeAt(index)),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton.icon(
+          onPressed: complete
+              ? () => Navigator.of(context).pop(List<String>.from(_codes))
+              : null,
+          icon: const Icon(Icons.check_rounded),
+          label: const Text('Продолжить'),
+        ),
+      ],
+    );
+  }
+}
+
+class _FiscalReceiptDialog extends StatefulWidget {
+  const _FiscalReceiptDialog({
+    required this.initial,
+    required this.posKey,
+    required this.deviceId,
+    this.printerName,
+  });
+
+  final FiscalReceipt initial;
+  final String posKey;
+  final String deviceId;
+  final String? printerName;
+
+  @override
+  State<_FiscalReceiptDialog> createState() => _FiscalReceiptDialogState();
+}
+
+class _FiscalReceiptDialogState extends State<_FiscalReceiptDialog> {
+  late FiscalReceipt _receipt = widget.initial;
+  final DateTime _activePollingStartedAt = DateTime.now();
+  bool _printing = false;
+  String? _error;
+  Timer? _timer;
+
+  FiscalReceiptService get _service => sl<FiscalReceiptService>();
+
+  @override
+  void initState() {
+    super.initState();
+    _schedulePoll();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _schedulePoll() {
+    _timer?.cancel();
+    if (!_receipt.isPending) return;
+    _timer = Timer(Duration(seconds: _receipt.pollAfterSeconds), _poll);
+  }
+
+  Future<void> _poll() async {
+    try {
+      final updated = await _service.refresh(
+        key: widget.posKey,
+        deviceId: widget.deviceId,
+        receiptId: _receipt.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _receipt = updated;
+        _error = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'Не удалось обновить статус. Повторяем…');
+    }
+    _schedulePoll();
+  }
+
+  Future<void> _print() async {
+    setState(() {
+      _printing = true;
+      _error = null;
+    });
+    try {
+      await _service.printTicket(_receipt, printerName: widget.printerName);
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Ошибка печати: $error');
+    } finally {
+      if (mounted) setState(() => _printing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final failed = _receipt.hasFailed;
+    final activePolling = DateTime.now().difference(_activePollingStartedAt) <
+        const Duration(seconds: 60);
+    final title = switch (_receipt.status) {
+      'succeeded' => 'Фискальный чек готов',
+      'failed' => 'Ошибка фискализации',
+      'needs_review' => 'Требуется проверка',
+      _ => 'Фискализация продажи',
+    };
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: Text(title),
+      content: SizedBox(
+        width: 470,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              failed
+                  ? Icons.error_outline_rounded
+                  : _receipt.canPrint
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.hourglass_top_rounded,
+              size: 54,
+              color: failed
+                  ? Colors.red
+                  : _receipt.canPrint
+                      ? Colors.green
+                      : const Color(0xFF2F80ED),
+            ),
+            const SizedBox(height: 12),
+            Text('Статус: ${_receipt.status}'),
+            if (_receipt.isPending) ...[
+              const SizedBox(height: 16),
+              if (activePolling) const LinearProgressIndicator(),
+              const SizedBox(height: 8),
+              Text(
+                activePolling
+                    ? 'Следующая проверка через ${_receipt.pollAfterSeconds} сек.'
+                    : 'Фискализация выполняется. Проверка продолжится в фоне.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+            if ((_receipt.errorMessage ?? '').isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(_receipt.errorMessage!, textAlign: TextAlign.center),
+            ],
+            if (_receipt.offlineMode) ...[
+              const SizedBox(height: 10),
+              Text(
+                _receipt.ofdDeliveryStatus == 'queued_by_webkassa'
+                    ? 'Чек создан в автономном режиме Webkassa и будет передан в ОФД после восстановления связи.'
+                    : 'Чек создан в автономном режиме Webkassa.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: const TextStyle(color: Colors.red)),
+            ],
+            if (failed) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'Продажа сохранена. Повторно создавать её не нужно.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _printing ? null : () => Navigator.of(context).pop(),
+          child: Text(_receipt.isPending ? 'Продолжить без печати' : 'Закрыть'),
+        ),
+        FilledButton.icon(
+          onPressed: _receipt.canPrint && !_printing ? _print : null,
+          icon: _printing
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.print_rounded),
+          label: const Text('Печать фискального чека'),
+        ),
+      ],
+    );
+  }
+}
+
 class _PaymentPanelState extends State<PaymentPanel> {
   final _cashCtrl = TextEditingController();
   final _cardCtrl = TextEditingController();
@@ -47,6 +376,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
   bool _loadingBankAccounts = false;
   bool _paying = false;
   bool _paymentSuccess = false;
+  bool _saleQueued = false;
   bool _openingCustomerPicker = false;
   bool _isMixedPayment = false;
   bool _mixedActiveIsCard = false;
@@ -322,6 +652,33 @@ class _PaymentPanelState extends State<PaymentPanel> {
     );
   }
 
+  Future<bool> _ensureMarkCodes(PosCubit cubit) async {
+    for (var index = 0; index < cubit.state.items.length; index++) {
+      final item = cubit.state.items[index];
+      if (!item.product.requiresMarking) continue;
+      final roundedQuantity = item.qty.round();
+      if ((item.qty - roundedQuantity).abs() > 0.000001) {
+        _showError('Маркированный товар продаётся только целыми единицами');
+        return false;
+      }
+      if (item.markCodes.length == roundedQuantity) continue;
+      final codes = await showDialog<List<String>>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _MarkCodesDialog(
+          productName: item.product.name,
+          gtin: item.product.gtin,
+          ntin: item.product.ntin,
+          requiredCount: roundedQuantity,
+          initialCodes: item.markCodes,
+        ),
+      );
+      if (!mounted || codes == null) return false;
+      cubit.setMarkCodes(index, codes);
+    }
+    return true;
+  }
+
   Future<void> _showMissingDebtCustomerDialog() async {
     if (!mounted) return;
 
@@ -425,6 +782,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     state.paymentKind == PaymentKind.credit ||
                     state.received > 0;
             final canSubmitPayment = !_paying &&
+                !_saleQueued &&
                 hasItems &&
                 hasSelectedPaymentMethod &&
                 hasSelectedBankAccount;
@@ -535,6 +893,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 }
               }
 
+              if (!await _ensureMarkCodes(posCubit)) return;
+
               // Capture amounts before async gap
               final isMixed = _isMixedPayment;
               final totalAmountInt = posCubit.total.round();
@@ -560,6 +920,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     totalPrice: totalPrice,
                     id: '',
                     saleId: '',
+                    markCodes: it.markCodes,
                   ),
                 );
               }
@@ -785,21 +1146,30 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   deviceId: deviceId,
                   sale: sale,
                   payments: payments,
-                  requireOnline: isDebtSale,
+                  requireOnline: isDebtSale ||
+                      posCubit.state.items
+                          .any((item) => item.product.requiresMarking),
                 );
                 final result = outcome.result;
                 final printedSale = outcome.sale;
 
                 if (result == CreateSaleResult.rejected) {
                   final message = (outcome.errorMessage ?? '').trim();
+                  final markedSale = posCubit.state.items
+                      .any((item) => item.product.requiresMarking);
+                  if (markedSale && outcome.retryScheduled && mounted) {
+                    setState(() => _saleQueued = true);
+                  }
                   developer.log(
                     'Sale rejected. method=${sale.paymentMethod}, requireOnline=$isDebtSale, message=$message',
                     name: 'PaymentPanel',
                   );
                   _showError(
-                    message.isEmpty
-                        ? 'Продажа в долг не прошла. Проверьте интернет и настройки клиента.'
-                        : message,
+                    markedSale && outcome.retryScheduled
+                        ? 'Продажа сохранена и будет повторена с тем же идентификатором. Повторно оплату не создавайте.'
+                        : message.isEmpty
+                            ? 'Продажа в долг не прошла. Проверьте интернет и настройки клиента.'
+                            : message,
                   );
                   return;
                 }
@@ -861,6 +1231,32 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   ),
                   printerName: auth.receiptPrinterName,
                 );
+
+                final fiscalService = sl<FiscalReceiptService>();
+                final fiscalReceipt =
+                    fiscalService.fromSaleResponse(outcome.responseData);
+                if (fiscalReceipt != null) {
+                  await fiscalService.save(
+                    fiscalReceipt,
+                    localReceiptPrinted: true,
+                  );
+                  fiscalService.startBackgroundPolling(
+                    key: key,
+                    deviceId: deviceId,
+                    receipt: fiscalReceipt,
+                  );
+                  if (!mounted) return;
+                  await showDialog<void>(
+                    context: this.context,
+                    barrierDismissible: false,
+                    builder: (_) => _FiscalReceiptDialog(
+                      initial: fiscalReceipt,
+                      posKey: key,
+                      deviceId: deviceId,
+                      printerName: auth.receiptPrinterName,
+                    ),
+                  );
+                }
 
                 if (!context.mounted) return;
                 saleCompleted = true;

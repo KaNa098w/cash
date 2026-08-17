@@ -436,7 +436,7 @@ class _SearchBarState extends State<SearchBar> {
   void _scheduleHardwareScanReset() {
     _hardwareScanResetTimer?.cancel();
     _hardwareScanResetTimer = Timer(
-      const Duration(milliseconds: 180),
+      const Duration(milliseconds: 500),
       _resetHardwareScanState,
     );
   }
@@ -451,6 +451,11 @@ class _SearchBarState extends State<SearchBar> {
 
   void _startHardwareScan() {
     final now = DateTime.now();
+    _scanDebounce?.cancel();
+    _typingDebounce?.cancel();
+    _missingProductDebounce?.cancel();
+    _removeChooser();
+    _setShowClearSearchButton(false);
     _lastHardwareDigitAt = now;
     _hardwareScanMode = true;
     _scheduleHardwareScanReset();
@@ -516,28 +521,38 @@ class _SearchBarState extends State<SearchBar> {
     }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
-    final digit = _digitFromPhysicalKey(event.physicalKey);
-    if (digit != null) {
+    final physicalDigit = _digitFromPhysicalKey(event.physicalKey);
+    final eventCharacter = event.character;
+    final scannedCharacter = physicalDigit ??
+        (eventCharacter != null &&
+                eventCharacter.length == 1 &&
+                eventCharacter.codeUnitAt(0) >= 32
+            ? eventCharacter
+            : null);
+    if (scannedCharacter != null) {
       final now = DateTime.now();
       final last = _lastHardwareDigitAt;
       final isRapidContinuation = last != null &&
-          now.difference(last) <= const Duration(milliseconds: 45);
+          now.difference(last) <= const Duration(milliseconds: 120);
 
       if (_hardwareScanMode) {
         _lastHardwareDigitAt = now;
         _scheduleHardwareScanReset();
-        _insertSearchText(digit);
+        _insertSearchText(scannedCharacter);
         return KeyEventResult.handled;
       }
 
       if (isRapidContinuation && _pendingHardwareDigit != null) {
         _startHardwareScan();
-        _replaceSearchText('${_pendingHardwareDigit!}$digit');
+        // The first two fast characters identify a hardware scanner. Replace
+        // the whole search value so a barcode is never appended to a name or
+        // query typed by the cashier.
+        _replaceSearchText('$_pendingHardwareDigit$scannedCharacter');
         _pendingHardwareDigit = null;
         return KeyEventResult.handled;
       }
 
-      _pendingHardwareDigit = digit;
+      _pendingHardwareDigit = scannedCharacter;
       _lastHardwareDigitAt = now;
       _scheduleHardwareScanReset();
       return KeyEventResult.ignored;

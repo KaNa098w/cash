@@ -5,6 +5,8 @@ import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pdf/pdf.dart';
 import 'package:leemon_app/core/print/print_service.dart';
+import 'package:leemon_app/core/service/fiscal_receipt_service.dart';
+import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
@@ -231,6 +233,35 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
   Future<void> _submit() async {
     if (_submitting) return;
 
+    final auth = context.read<AuthTokenProvider>();
+    final fiscalService = sl<FiscalReceiptService>();
+    var unfinished = await fiscalService.loadUnfinished();
+    for (final receipt in unfinished) {
+      try {
+        await fiscalService.refresh(
+          key: auth.posKey ?? '',
+          deviceId: auth.deviceId ?? '',
+          receiptId: receipt.id,
+        );
+      } catch (_) {
+        // A connection failure means completion cannot be proven, so closing
+        // remains blocked.
+      }
+    }
+    unfinished = await fiscalService.loadUnfinished();
+    if (unfinished.isNotEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Смена не закрыта: ожидается фискализация чеков (${unfinished.length})',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
     final amount = _parseAmount(_ctrl.text);
     if (amount == null || amount < 0) {
       ScaffoldMessenger.of(context).showSnackBar(

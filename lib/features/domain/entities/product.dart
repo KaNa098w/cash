@@ -25,6 +25,9 @@ class Product extends Equatable {
   }
 
   final bool isUniversal;
+  final bool requiresMarking;
+  final String? gtin;
+  final String? ntin;
 
   /// "automatic" | "fixed" | "forbidden" | null
   final String? discountType;
@@ -44,6 +47,9 @@ class Product extends Equatable {
     this.conversionValue,
     this.conversionUnit,
     this.isUniversal = false,
+    this.requiresMarking = false,
+    this.gtin,
+    this.ntin,
     this.discountType,
     this.discountPercent = 0,
     this.priceAfterDiscount = 0,
@@ -62,6 +68,9 @@ class Product extends Equatable {
         conversionValue: (json['conversionValue'] as num?)?.toDouble(),
         conversionUnit: json['conversionUnit']?.toString(),
         isUniversal: json['isUniversal'] == true,
+        requiresMarking: json['requiresMarking'] == true,
+        gtin: json['gtin']?.toString(),
+        ntin: json['ntin']?.toString(),
         discountType: json['discountType']?.toString(),
         discountPercent: (json['discountPercent'] as num?)?.toDouble() ?? 0,
         priceAfterDiscount:
@@ -79,6 +88,9 @@ class Product extends Equatable {
         'conversionValue': conversionValue,
         'conversionUnit': conversionUnit,
         'isUniversal': isUniversal,
+        'requiresMarking': requiresMarking,
+        'gtin': gtin,
+        'ntin': ntin,
         'discountType': discountType,
         'discountPercent': discountPercent,
         'priceAfterDiscount': priceAfterDiscount,
@@ -96,6 +108,9 @@ class Product extends Equatable {
         conversionValue,
         conversionUnit,
         isUniversal,
+        requiresMarking,
+        gtin,
+        ntin,
         discountType,
         discountPercent,
         priceAfterDiscount,
@@ -114,6 +129,9 @@ class Product extends Equatable {
     bool clearConversionValue = false,
     bool clearConversionUnit = false,
     bool? isUniversal,
+    bool? requiresMarking,
+    String? gtin,
+    String? ntin,
     String? discountType,
     double? discountPercent,
     double? priceAfterDiscount,
@@ -132,6 +150,9 @@ class Product extends Equatable {
       conversionUnit:
           clearConversionUnit ? null : (conversionUnit ?? this.conversionUnit),
       isUniversal: isUniversal ?? this.isUniversal,
+      requiresMarking: requiresMarking ?? this.requiresMarking,
+      gtin: gtin ?? this.gtin,
+      ntin: ntin ?? this.ntin,
       discountType: discountType ?? this.discountType,
       discountPercent: discountPercent ?? this.discountPercent,
       priceAfterDiscount: priceAfterDiscount ?? this.priceAfterDiscount,

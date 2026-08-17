@@ -92,8 +92,8 @@ class AuthTokenProvider extends ChangeNotifier {
   bool get hasShiftUserId =>
       _shiftUserId != null && _shiftUserId!.trim().isNotEmpty;
 
-  int _receiptPaperMm = 80;
-  int get receiptPaperMm => _receiptPaperMm == 57 ? 57 : 80;
+  int _receiptPaperMm = 57;
+  int get receiptPaperMm => _receiptPaperMm == 80 ? 80 : 57;
   bool get isReceipt57mm => receiptPaperMm == 57;
 
   String? _receiptPrinterName;
@@ -214,7 +214,8 @@ class AuthTokenProvider extends ChangeNotifier {
       _shiftUserId = _activeUserId;
       await prefs.setString(_kShiftUserId, _shiftUserId!);
     }
-    _receiptPaperMm = (prefs.getInt(_kReceiptPaperMm) == 57) ? 57 : 80;
+    final savedReceiptPaperMm = prefs.getInt(_kReceiptPaperMm);
+    _receiptPaperMm = savedReceiptPaperMm == 80 ? 80 : 57;
     _receiptPrinterName = prefs.getString(_kReceiptPrinterName);
     _invoicePrinterName = prefs.getString(_kInvoicePrinterName);
     final pricingPlanStatusStr = prefs.getString(_kPricingPlanStatus);
@@ -344,7 +345,6 @@ class AuthTokenProvider extends ChangeNotifier {
     _shiftUserId = null;
     _activeUserId = null;
     _activeUserName = null;
-    _receiptPaperMm = 80;
     _pricingPlanStatus = null;
 
     if (!keepDeviceId) _deviceId = null;
@@ -367,7 +367,6 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.remove(_kShiftUserId);
     await prefs.remove(_kActiveUserId);
     await prefs.remove(_kActiveUserName);
-    await prefs.remove(_kReceiptPaperMm);
     await prefs.remove(_kPricingPlanStatus);
 
     if (!keepDeviceId) {
