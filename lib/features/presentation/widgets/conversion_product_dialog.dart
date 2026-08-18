@@ -22,9 +22,12 @@ Future<bool> addProductToCartWithConversionFlow(
     );
     if (markCode == null || !context.mounted) return false;
     final posCubit = context.read<PosCubit>();
-    final alreadyScanned = posCubit.state.items
-        .expand((item) => item.markCodes)
-        .contains(markCode);
+    final alreadyScanned =
+        posCubit.state.items.expand((item) => item.markCodes).any(
+              (code) =>
+                  Gs1DataMatrixValidator.canonicalCode(code) ==
+                  Gs1DataMatrixValidator.canonicalCode(markCode),
+            );
     if (alreadyScanned) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Этот DataMatrix уже добавлен в чек')),
@@ -113,10 +116,18 @@ Future<bool> setCartItemQuantityWithMarking(
       builder: (_) => _SingleMarkCodeDialog(product: product),
     );
     if (code == null || !context.mounted) return false;
-    final usedInCart = cubit.state.items
-        .expand((cartItem) => cartItem.markCodes)
-        .contains(code);
-    if (usedInCart || codes.contains(code)) {
+    final usedInCart =
+        cubit.state.items.expand((cartItem) => cartItem.markCodes).any(
+              (existing) =>
+                  Gs1DataMatrixValidator.canonicalCode(existing) ==
+                  Gs1DataMatrixValidator.canonicalCode(code),
+            );
+    final usedInPending = codes.any(
+      (existing) =>
+          Gs1DataMatrixValidator.canonicalCode(existing) ==
+          Gs1DataMatrixValidator.canonicalCode(code),
+    );
+    if (usedInCart || usedInPending) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Этот DataMatrix уже добавлен в чек')),
       );

@@ -43,6 +43,7 @@ class _MarkCodesDialog extends StatefulWidget {
     required this.productName,
     required this.requiredCount,
     required this.initialCodes,
+    required this.usedCodes,
     this.gtin,
     this.ntin,
   });
@@ -50,6 +51,7 @@ class _MarkCodesDialog extends StatefulWidget {
   final String productName;
   final int requiredCount;
   final List<String> initialCodes;
+  final Set<String> usedCodes;
   final String? gtin;
   final String? ntin;
 
@@ -94,8 +96,15 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
       _focusNode.requestFocus();
       return;
     }
-    if (_codes.contains(raw)) {
-      setState(() => _error = 'Этот код уже отсканирован');
+    final canonical = Gs1DataMatrixValidator.canonicalCode(raw);
+    final duplicate = widget.usedCodes.contains(canonical) ||
+        _codes.any(
+          (code) => Gs1DataMatrixValidator.canonicalCode(code) == canonical,
+        );
+    if (duplicate) {
+      setState(
+        () => _error = 'Этот Data Matrix уже добавлен в продажу.',
+      );
       _controller.clear();
       _focusNode.requestFocus();
       return;
@@ -400,11 +409,11 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _printing || (_receipt.isPending && activePolling)
+          onPressed: _printing || _receipt.isPending
               ? null
               : () => Navigator.of(context).pop(),
           child: Text(
-            _receipt.isPending ? 'Продолжить без печати' : 'Закрыть',
+            _receipt.isPending ? 'Ожидание Webkassa…' : 'Закрыть',
           ),
         ),
         FilledButton.icon(
@@ -732,6 +741,14 @@ class _PaymentPanelState extends State<PaymentPanel> {
           ntin: item.product.ntin,
           requiredCount: roundedQuantity,
           initialCodes: item.markCodes,
+          usedCodes: {
+            for (var otherIndex = 0;
+                otherIndex < cubit.state.items.length;
+                otherIndex++)
+              if (otherIndex != index)
+                for (final code in cubit.state.items[otherIndex].markCodes)
+                  Gs1DataMatrixValidator.canonicalCode(code),
+          },
         ),
       );
       if (!mounted || codes == null) return false;
@@ -1223,7 +1240,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   deviceId: deviceId,
                   sale: sale,
                   payments: payments,
-                  requireOnline: isDebtSale || containsMarkedItems,
+                  requireOnline: isDebtSale ||
+                      containsMarkedItems ||
+                      fiscalizationExpected,
                 );
                 final result = outcome.result;
                 final printedSale = outcome.sale;

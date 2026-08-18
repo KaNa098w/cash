@@ -9,6 +9,7 @@ import 'package:leemon_app/features/presentation/pages/sales_history/sales_histo
 import 'package:leemon_app/features/presentation/widgets/app_update_background_check.dart';
 import 'package:leemon_app/features/presentation/widgets/footer_status.dart';
 import 'package:leemon_app/features/presentation/widgets/order_notification_demo.dart';
+import 'package:leemon_app/features/presentation/widgets/shift_close_warning_banner.dart';
 import 'package:leemon_app/features/presentation/widgets/top_bar.dart';
 import 'package:leemon_app/features/presentation/pages/search/search_bar.dart'
     as sb;
@@ -53,6 +54,7 @@ class _PosPageState extends State<PosPage> {
             Column(
               children: [
                 const TopBar(),
+                const ShiftCloseWarningBanner(),
                 Expanded(
                   child: BlocBuilder<PosCubit, PosState>(
                     builder: (context, state) {

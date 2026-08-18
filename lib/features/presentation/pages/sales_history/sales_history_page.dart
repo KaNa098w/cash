@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' show min;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -948,78 +947,71 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       for (final p in picks)
         (p.saleItemId.isNotEmpty ? p.saleItemId : p.productId): p.quantity,
     };
+    final activeUserId = (auth.activeUserId ?? '').trim();
+    final isDirector = auth.users.any(
+      (user) =>
+          user.id == activeUserId &&
+          user.roles.any((role) => role.toLowerCase() == 'director'),
+    );
 
-    // 🔍 Debug: Log saved return_access_key
-    try {
-      final sync = sl<PosSyncService>();
-      final savedKeys = await sync.getAllActiveReturnAccessKeys();
-      print('✅ [REFUND DEBUG] Refund initiated for sale: $saleId');
-      print('   Saved return_access_keys count: ${savedKeys.length}');
-      if (savedKeys.isNotEmpty) {
-        for (var i = 0; i < savedKeys.length; i++) {
-          print(
-              '   Key[$i]: ${savedKeys[i].substring(0, min(10, savedKeys[i].length))}...${savedKeys[i].length > 10 ? ' (length: ${savedKeys[i].length})' : ''}');
+    Future<bool> sendRefund(String? accessKey) async {
+      try {
+        final result = await sync.createRefund(
+          key: key,
+          deviceId: deviceId,
+          posSessionId: posSessionId,
+          saleId: isSynced ? saleId : '',
+          clientSaleId: isSynced ? null : saleId,
+          totalAmount: totalAmount,
+          paymentMethod: refundPaymentMethod,
+          payments: refundPayments,
+          items: items,
+          date: DateTime.now(),
+          returnAccessKey: accessKey,
+          reasonCode: reasonCode,
+        );
+        if (result.result == QueueSendResult.manual) {
+          throw Exception(
+            result.errorMessage ?? 'Возврат требует ручной обработки',
+          );
         }
-      } else {
-        print('   ⚠️ No active return_access_keys found');
+        effectiveRefundId = result.clientId;
+        completedRefund = result;
+        return true;
+      } catch (e) {
+        if (_statusCodeOf(e) == 401) return false;
+        rethrow;
       }
-    } catch (e) {
-      print('❌ [DEBUG] Error checking return_access_keys: $e');
     }
 
     try {
-      final ok = await _runWithDialogFocus(() async {
-        return showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => RefundAccessDialog(
-            onScanned: (barcode) async {
-              final accessKey = barcode.trim();
-              if (accessKey.isEmpty) return false;
+      final bool ok;
+      if (isDirector) {
+        ok = await sendRefund(null);
+      } else {
+        ok = await _runWithDialogFocus(() async {
+              return showDialog<bool>(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => RefundAccessDialog(
+                  onScanned: (barcode) async {
+                    final accessKey = barcode.trim();
+                    if (accessKey.isEmpty) return false;
+                    final validLocally =
+                        await sync.checkReturnAccessKey(accessKey);
+                    if (!validLocally) return false;
+                    return sendRefund(accessKey);
+                  },
+                ),
+              );
+            }) ??
+            false;
+      }
 
-              try {
-                print(
-                    '🔐 [REFUND] Sending refund with accessKey: ${accessKey.substring(0, min(10, accessKey.length))}...${accessKey.length > 10 ? ' (length: ${accessKey.length})' : ''}');
-                final result = await sync.createRefund(
-                  key: key,
-                  deviceId: deviceId,
-                  posSessionId: posSessionId,
-                  saleId: isSynced ? saleId : '',
-                  clientSaleId: isSynced ? null : saleId,
-                  totalAmount: totalAmount,
-                  paymentMethod: refundPaymentMethod,
-                  payments: refundPayments,
-                  items: items,
-                  date: DateTime.now(),
-                  returnAccessKey: accessKey,
-                  reasonCode: reasonCode,
-                );
-                print(
-                    '✅ [REFUND] Success! Result: ${result.result}, ClientId: ${result.clientId}');
-                if (result.result == QueueSendResult.manual) {
-                  throw Exception(
-                    result.errorMessage ?? 'Возврат требует ручной обработки',
-                  );
-                }
-                effectiveRefundId = result.clientId;
-                completedRefund = result;
-                return true; // 200 — доступ есть
-              } catch (e) {
-                // 401 — доступ нет, диалог покажет ошибку и попросит перескан
-                if (_statusCodeOf(e) == 401) {
-                  print(
-                      '❌ [REFUND] Access denied (401) for key: ${accessKey.substring(0, min(10, accessKey.length))}...');
-                  return false;
-                }
-                print('❌ [REFUND] Error: $e');
-                rethrow; // остальные ошибки покажем как "Ошибка запроса"
-              }
-            },
-          ),
-        );
-      });
-
-      if (ok != true) return false; // отмена/закрытие/нет доступа
+      if (!ok) {
+        if (isDirector) _snack('Backend не разрешил возврат директору');
+        return false;
+      }
 
       if (!mounted) return false;
       _cubit.applyRefundOptimistic(
@@ -1107,10 +1099,10 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       BuildContext context, SaleModel sale) async {
     final saleId = sale.localId.trim();
     if (saleId.isEmpty) return _snack('saleId пустой (sale.localId)');
-    final cashierName = (context.read<AuthTokenProvider>().activeUserName ?? '')
-            .trim()
-            .isNotEmpty
-        ? context.read<AuthTokenProvider>().activeUserName!.trim()
+    final auth = context.read<AuthTokenProvider>();
+    unawaited(_logRefundAccessContext(auth));
+    final cashierName = (auth.activeUserName ?? '').trim().isNotEmpty
+        ? auth.activeUserName!.trim()
         : cashierLabel(sale);
 
     _controller.clearPicksForSale(saleId, () => setState(() {}));
@@ -1308,6 +1300,30 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     } finally {
       _historyIdlePaused = false;
       if (mounted) _resetHistoryIdleTimer();
+    }
+  }
+
+  Future<void> _logRefundAccessContext(AuthTokenProvider auth) async {
+    const yellow = '\x1B[33m';
+    const reset = '\x1B[0m';
+    final activeUserId = (auth.activeUserId ?? '').trim();
+    final roles = auth.users
+        .where((user) => user.id == activeUserId)
+        .expand((user) => user.roles)
+        .toSet()
+        .join(', ');
+    debugPrint(
+      '$yellow[REFUND] Роль пользователя: ${roles.isEmpty ? 'не указана' : roles}$reset',
+    );
+
+    final keys = await sl<PosSyncService>().getAllActiveReturnAccessKeys();
+    if (keys.isEmpty) {
+      debugPrint('$yellow[REFUND] Return access key: не найден$reset');
+      return;
+    }
+    for (final key in keys) {
+      final suffix = key.length <= 4 ? key : key.substring(key.length - 4);
+      debugPrint('$yellow[REFUND] Return access key: ••••$suffix$reset');
     }
   }
 

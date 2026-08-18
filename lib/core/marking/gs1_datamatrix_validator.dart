@@ -104,6 +104,17 @@ class Gs1DataMatrixValidation {
 }
 
 class Gs1DataMatrixValidator {
+  static String removeAimPrefix(String value) =>
+      value.startsWith(']d2') ? value.substring(3) : value;
+
+  static String canonicalCode(String rawValue) => removeAimPrefix(rawValue);
+
+  static String? normalizeGtin14(String? value) {
+    final raw = value?.trim();
+    if (raw == null || !RegExp(r'^\d{1,14}$').hasMatch(raw)) return null;
+    return raw.padLeft(14, '0');
+  }
+
   static Gs1DataMatrixValidation validate(
     String raw, {
     String? expectedGtin,
@@ -117,55 +128,48 @@ class Gs1DataMatrixValidator {
       );
     }
 
-    final data = raw.startsWith(']d2') ? raw.substring(3) : raw;
+    final data = removeAimPrefix(raw);
     if (data.startsWith('http://') || data.startsWith('https://')) {
       return Gs1DataMatrixValidation.invalid(
-        'Ссылка или QR Code не является кодом маркировки',
+        'Это QR-код. Отсканируйте Data Matrix маркировки товара.',
       );
     }
     if (!data.startsWith('01') || data.length < 18) {
       return Gs1DataMatrixValidation.invalid(
-        'В DataMatrix отсутствует обязательное поле (01) GTIN',
+        'Код не содержит обязательный идентификатор GTIN (01).',
       );
     }
 
     final gtin = data.substring(2, 16);
     if (!RegExp(r'^\d{14}$').hasMatch(gtin) || !_hasValidCheckDigit(gtin)) {
       return Gs1DataMatrixValidation.invalid(
-        'Некорректный GTIN или его контрольная цифра',
+        'Контрольная цифра GTIN некорректна.',
       );
     }
 
-    final remainder = data.substring(16);
-    final serialStart = remainder.startsWith('21')
-        ? 0
-        : remainder.indexOf('${String.fromCharCode(29)}21');
-    if (serialStart < 0) {
+    if (data.length < 18 || data.substring(16, 18) != '21') {
       return Gs1DataMatrixValidation.invalid(
-        'В DataMatrix отсутствует обязательное поле (21) серийного номера',
+        'Код не содержит серийный номер (21).',
       );
     }
-    final serial =
-        remainder.substring(serialStart + (serialStart == 0 ? 2 : 3));
+    final serial = data.substring(18);
     final serialValue = serial.split(String.fromCharCode(29)).first;
     if (serialValue.isEmpty) {
-      return Gs1DataMatrixValidation.invalid('Серийный номер (21) пуст');
+      return Gs1DataMatrixValidation.invalid(
+        'Код не содержит серийный номер (21).',
+      );
     }
 
-    var expected = (expectedGtin ?? '').replaceAll(RegExp(r'\D'), '');
-    if (expected.length == 16 && expected.startsWith('01')) {
-      expected = expected.substring(2);
-    }
-    if (expected.isNotEmpty) {
-      if (expected.length > 14) {
+    if ((expectedGtin ?? '').trim().isNotEmpty) {
+      final normalizedExpected = normalizeGtin14(expectedGtin);
+      if (normalizedExpected == null) {
         return Gs1DataMatrixValidation.invalid(
-          'Некорректный GTIN в карточке товара',
+          'Некорректный GTIN в карточке товара.',
         );
       }
-      final normalizedExpected = expected.padLeft(14, '0');
       if (normalizedExpected != gtin) {
         return Gs1DataMatrixValidation.invalid(
-          'GTIN кода не совпадает с карточкой товара',
+          'GTIN маркировки не совпадает с выбранным товаром.',
         );
       }
     }

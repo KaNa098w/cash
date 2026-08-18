@@ -105,7 +105,7 @@ class _RefundAccessDialogState extends State<RefundAccessDialog> {
       if (ok) {
         Navigator.of(context).pop(true);
       } else {
-        _reset('Нет доступа (401). Сканируй снова.');
+        _reset('Ключ возврата неправильный или просрочен. Сканируйте снова.');
       }
     } catch (_) {
       if (!mounted) return;

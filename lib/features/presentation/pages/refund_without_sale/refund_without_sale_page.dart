@@ -484,8 +484,14 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
       return;
     }
 
-    final returnAccessKey = await _requestReturnAccessKey();
-    if ((returnAccessKey ?? '').trim().isEmpty) {
+    final activeUserId = (auth.activeUserId ?? '').trim();
+    final isDirector = auth.users.any(
+      (user) =>
+          user.id == activeUserId &&
+          user.roles.any((role) => role.toLowerCase() == 'director'),
+    );
+    final returnAccessKey = isDirector ? null : await _requestReturnAccessKey();
+    if (!isDirector && (returnAccessKey ?? '').trim().isEmpty) {
       _logRefund('blocked: return access key not provided');
       setState(() => _error = 'Введите ключ доступа для возврата');
       return;
