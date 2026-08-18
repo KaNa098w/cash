@@ -5,10 +5,13 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/core/service/fiscal_receipt_service.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/presentation/utils/comment_text_controller.dart';
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
+import 'package:leemon_app/features/presentation/widgets/payment_panel.dart'
+    show FiscalReceiptDialog;
 
 /// type: true = ВЗНОС, false = РАСХОД
 Future<bool> showDepositToCashSheet(BuildContext context, bool type) async {
@@ -415,6 +418,43 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
       if (result.result == QueueSendResult.manual) {
         throw Exception(
             result.errorMessage ?? 'Операция требует ручной обработки');
+      }
+
+      if (provider.fiscalizationEnabled &&
+          result.result == QueueSendResult.sent) {
+        final fiscalService = sl<FiscalReceiptService>();
+        final fiscalReceipt =
+            fiscalService.fromSaleResponse(result.responseData);
+        if (fiscalReceipt == null) {
+          throw StateError(
+            'Операция сохранена, но backend не вернул фискальный чек. Повторно операцию не создавайте.',
+          );
+        }
+        await fiscalService.save(
+          fiscalReceipt,
+          localReceiptPrinted: false,
+          saleIds: {
+            result.clientId,
+            (result.responseData?['id'] ?? '').toString(),
+          },
+        );
+        fiscalService.startBackgroundPolling(
+          key: key,
+          deviceId: deviceId,
+          receipt: fiscalReceipt,
+        );
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => FiscalReceiptDialog(
+            initial: fiscalReceipt,
+            posKey: key,
+            deviceId: deviceId,
+            paperMm: provider.receiptPaperMm,
+            printerName: provider.receiptPrinterName,
+          ),
+        );
       }
 
       if (!mounted) return;

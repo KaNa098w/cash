@@ -22,6 +22,8 @@ class SaleCard extends StatelessWidget {
     required this.invoicePrintDisabled,
     required this.onSubmitRefund,
     required this.onPrintReceipt,
+    required this.showFiscalPrint,
+    required this.onPrintFiscalReceipt,
     required this.onPrintInvoice,
     required this.selectedCount,
     required this.selectedTotal,
@@ -44,6 +46,8 @@ class SaleCard extends StatelessWidget {
   final bool invoicePrintDisabled;
   final VoidCallback onSubmitRefund;
   final VoidCallback onPrintReceipt;
+  final bool showFiscalPrint;
+  final VoidCallback onPrintFiscalReceipt;
   final VoidCallback onPrintInvoice;
 
   final int selectedCount;
@@ -347,6 +351,19 @@ class SaleCard extends StatelessWidget {
                             onTap: receiptPrintDisabled ? null : onPrintReceipt,
                             loading: receiptPrintLoading,
                           ),
+                          if (showFiscalPrint) ...[
+                            const SizedBox(height: 12),
+                            BottomActionButton(
+                              label: 'Фискальный чек',
+                              width: actionWidth,
+                              fontSize: 16,
+                              bg: actionBlueMuted,
+                              onTap: receiptPrintDisabled
+                                  ? null
+                                  : onPrintFiscalReceipt,
+                              loading: receiptPrintLoading,
+                            ),
+                          ],
                         ] else
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
@@ -380,6 +397,19 @@ class SaleCard extends StatelessWidget {
                                       ? null
                                       : onPrintReceipt,
                                   loading: receiptPrintLoading),
+                              if (showFiscalPrint) ...[
+                                const SizedBox(width: 12),
+                                BottomActionButton(
+                                  label: 'Фискальный чек',
+                                  width: printBtnWidth,
+                                  fontSize: 16,
+                                  bg: actionBlueMuted,
+                                  onTap: receiptPrintDisabled
+                                      ? null
+                                      : onPrintFiscalReceipt,
+                                  loading: receiptPrintLoading,
+                                ),
+                              ],
                             ],
                           ),
                       ],

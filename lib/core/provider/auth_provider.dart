@@ -24,6 +24,7 @@ class AuthTokenProvider extends ChangeNotifier {
   static const _kAllowRefundsWithoutSale = 'allowRefundsWithoutSale';
   static const _kFiscalizationEnabled = 'fiscalizationEnabled';
   static const _kFiscalizationPollSeconds = 'fiscalizationPollSeconds';
+  static const _kPrintLocalReceiptImmediately = 'printLocalReceiptImmediately';
   static const _kOrganizationId = 'organizationId';
   static const _kAccountId = 'accountId';
 
@@ -79,6 +80,8 @@ class AuthTokenProvider extends ChangeNotifier {
   bool get fiscalizationEnabled => _fiscalizationEnabled;
   int _fiscalizationPollSeconds = 2;
   int get fiscalizationPollSeconds => _fiscalizationPollSeconds;
+  bool _printLocalReceiptImmediately = true;
+  bool get printLocalReceiptImmediately => _printLocalReceiptImmediately;
 
   String? _organizationId;
   String? get organizationId => _organizationId;
@@ -150,6 +153,7 @@ class AuthTokenProvider extends ChangeNotifier {
       fiscalization: PosFiscalizationConfig(
         enabled: _fiscalizationEnabled,
         pollIntervalSeconds: _fiscalizationPollSeconds,
+        printLocalReceiptImmediately: _printLocalReceiptImmediately,
       ),
       organizationId: _organizationId!,
       users: _users,
@@ -215,6 +219,8 @@ class AuthTokenProvider extends ChangeNotifier {
     _fiscalizationEnabled = prefs.getBool(_kFiscalizationEnabled) ?? false;
     _fiscalizationPollSeconds =
         (prefs.getInt(_kFiscalizationPollSeconds) ?? 2).clamp(1, 30);
+    _printLocalReceiptImmediately =
+        prefs.getBool(_kPrintLocalReceiptImmediately) ?? true;
     _organizationId = prefs.getString(_kOrganizationId);
     _accountId = prefs.getString(_kAccountId);
 
@@ -305,6 +311,8 @@ class AuthTokenProvider extends ChangeNotifier {
     _allowRefundsWithoutSale = resp.allowRefundsWithoutSale;
     _fiscalizationEnabled = resp.fiscalization.enabled;
     _fiscalizationPollSeconds = resp.fiscalization.pollIntervalSeconds;
+    _printLocalReceiptImmediately =
+        resp.fiscalization.printLocalReceiptImmediately;
     _organizationId = resp.organizationId;
     _accountId = resp.accountId;
 
@@ -341,6 +349,10 @@ class AuthTokenProvider extends ChangeNotifier {
       _kFiscalizationPollSeconds,
       _fiscalizationPollSeconds,
     );
+    await prefs.setBool(
+      _kPrintLocalReceiptImmediately,
+      _printLocalReceiptImmediately,
+    );
     await prefs.setString(_kOrganizationId, _organizationId ?? '');
     await prefs.setString(_kAccountId, _accountId ?? '');
 
@@ -360,6 +372,7 @@ class AuthTokenProvider extends ChangeNotifier {
     _allowRefundsWithoutSale = false;
     _fiscalizationEnabled = false;
     _fiscalizationPollSeconds = 2;
+    _printLocalReceiptImmediately = true;
     _organizationId = null;
     _accountId = null;
     _users = [];
@@ -384,6 +397,7 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.remove(_kAllowRefundsWithoutSale);
     await prefs.remove(_kFiscalizationEnabled);
     await prefs.remove(_kFiscalizationPollSeconds);
+    await prefs.remove(_kPrintLocalReceiptImmediately);
     await prefs.remove(_kOrganizationId);
     await prefs.remove(_kAccountId);
     await prefs.remove(_kUsers);

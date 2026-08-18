@@ -1,5 +1,6 @@
 // lib/core/models/sale_model.dart
 import 'refund_model.dart';
+import 'fiscal_receipt.dart';
 
 class SaleModel {
   final String localId; // id продажи
@@ -28,6 +29,7 @@ class SaleModel {
 
   final List<SaleItemModel> items;
   final List<SalePaymentModel> payments;
+  final FiscalReceipt? fiscalReceipt;
 
   /// ✅ Возврат по этому чеку (если был)
   final RefundModel? refund;
@@ -53,6 +55,7 @@ class SaleModel {
     this.posSessionId,
     required this.items,
     this.payments = const <SalePaymentModel>[],
+    this.fiscalReceipt,
     this.customerId,
     this.refund,
   });
@@ -79,6 +82,7 @@ class SaleModel {
     String? customerId,
     List<SaleItemModel>? items,
     List<SalePaymentModel>? payments,
+    FiscalReceipt? fiscalReceipt,
     RefundModel? refund,
   }) {
     return SaleModel(
@@ -103,6 +107,7 @@ class SaleModel {
       customerId: customerId ?? this.customerId,
       items: items ?? this.items,
       payments: payments ?? this.payments,
+      fiscalReceipt: fiscalReceipt ?? this.fiscalReceipt,
       refund: refund ?? this.refund,
     );
   }
@@ -156,6 +161,10 @@ class SaleModel {
         : null;
 
     final enrichedItems = _applyRefundQty(items, refund);
+    final fiscalReceiptRaw = json["fiscal_receipt"];
+    final fiscalReceipt = fiscalReceiptRaw is Map
+        ? FiscalReceipt.fromJson(Map<String, dynamic>.from(fiscalReceiptRaw))
+        : null;
 
     return SaleModel(
       localId: (json["id"] ?? "").toString(),
@@ -179,6 +188,7 @@ class SaleModel {
       posSessionId: json["pos_session_id"]?.toString(),
       items: enrichedItems,
       payments: payments,
+      fiscalReceipt: fiscalReceipt,
       refund: refund,
     );
   }
@@ -207,6 +217,7 @@ class SaleModel {
       "customerId": customerId,
       "items": items.map((e) => e.toJson()).toList(),
       "payments": payments.map((e) => e.toJson()).toList(),
+      "fiscalReceipt": fiscalReceipt?.toJson(),
       "refund": refund?.toJson(),
     };
   }
@@ -227,6 +238,10 @@ class SaleModel {
         : null;
 
     final enrichedItems = _applyRefundQty(items, refund);
+    final fiscalReceiptRaw = json["fiscalReceipt"] ?? json["fiscal_receipt"];
+    final fiscalReceipt = fiscalReceiptRaw is Map
+        ? FiscalReceipt.fromJson(Map<String, dynamic>.from(fiscalReceiptRaw))
+        : null;
 
     return SaleModel(
       localId: (json["localId"] ?? "").toString(),
@@ -251,6 +266,7 @@ class SaleModel {
       customerId: (json["customerId"] as String?),
       items: enrichedItems,
       payments: payments,
+      fiscalReceipt: fiscalReceipt,
       refund: refund,
     );
   }

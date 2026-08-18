@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:leemon_app/core/service/app_build_info.dart';
 import 'package:leemon_app/core/models/pos_pricing_plan_status.dart';
 import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
+import 'package:leemon_app/core/service/fiscal_receipt_service.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:leemon_app/core/models/product_response.dart';
@@ -14,12 +15,15 @@ import 'package:leemon_app/features/data/sync/pos_sync_remote_datasource.dart';
 
 class PosSyncService {
   PosSyncService(this._localStore, this._remote,
-      {PosDiagnosticsService? diagnostics})
-      : _diagnostics = diagnostics;
+      {PosDiagnosticsService? diagnostics,
+      FiscalReceiptService? fiscalReceiptService})
+      : _fiscalReceiptService = fiscalReceiptService,
+        _diagnostics = diagnostics;
 
   final PosSyncLocalStore _localStore;
   final PosSyncRemoteDataSource _remote;
   final PosDiagnosticsService? _diagnostics;
+  final FiscalReceiptService? _fiscalReceiptService;
   final _uuid = const Uuid();
 
   static const int _maxRetryCount = 50;
@@ -337,8 +341,8 @@ class PosSyncService {
     await initialize();
     final serverSessionId = await _resolveReportSessionId(sessionId);
     final cleanDeviceId = (deviceId ?? '').trim();
-    if (includeProducts && cleanDeviceId.isEmpty) {
-      throw Exception('x-report: deviceId is required');
+    if (cleanDeviceId.isEmpty) {
+      throw Exception('shift report: deviceId is required');
     }
     final data = includeProducts
         ? await _remote.fetchXReport(
@@ -346,7 +350,11 @@ class PosSyncService {
             sessionId: serverSessionId,
             deviceId: cleanDeviceId,
           )
-        : await _remote.fetchZReport(key: key, sessionId: serverSessionId);
+        : await _remote.fetchZReport(
+            key: key,
+            sessionId: serverSessionId,
+            deviceId: cleanDeviceId,
+          );
     return _mapRemoteShiftReport(
       data,
       fallbackSessionId: serverSessionId,
@@ -1031,7 +1039,7 @@ class PosSyncService {
       'client_payment_id': clientId,
       'date': _formatDate(date),
       'is_expense': isExpense,
-      'amount': amount.round(),
+      'amount': double.parse(amount.toStringAsFixed(2)),
       'pos_session_id': localPosSessionId,
       'account_id': accountId,
       if ((comment ?? '').trim().isNotEmpty) 'comment': comment!.trim(),
@@ -1321,6 +1329,8 @@ class PosSyncService {
     final cardTotal = _numFromMap(summary, 'sales_card_total');
     final grandTotal = _numFromMap(summary, 'sales_total');
     final debtTotal = _numFromMap(summary, 'debt_total');
+    final webkassa = _asMap(data['webkassa']);
+    final webkassaReport = _asMap(webkassa['report']);
 
     return ShiftReportData(
       sessionId:
@@ -1340,6 +1350,13 @@ class PosSyncService {
       expenseTotal: _numFromMap(summary, 'expense_total'),
       expectedCashAmount: _numFromMap(summary, 'expected_cash_amount'),
       items: items,
+      webkassaStatus: _stringFromMap(webkassa, 'status'),
+      webkassaError: _stringFromMap(webkassa, 'last_error'),
+      webkassaShiftNumber: _stringFromMap(webkassaReport, 'shift_number'),
+      webkassaReportNumber: _stringFromMap(webkassaReport, 'report_number'),
+      webkassaFormedAt: _parseRemoteDate(
+        webkassaReport['formed_at'] ?? webkassaReport['created_at'],
+      ),
     );
   }
 
@@ -1455,7 +1472,12 @@ class PosSyncService {
           'device_id': deviceId,
         },
       );
-      await _applySuccessfulResponse(record, responseData);
+      await _applySuccessfulResponse(
+        record,
+        responseData,
+        key: key,
+        deviceId: deviceId,
+      );
       await _localStore.markOperationAcked(record.id);
       _markDedicatedTableSynced(record);
       return QueueOperationResult(
@@ -1552,8 +1574,32 @@ class PosSyncService {
 
   Future<void> _applySuccessfulResponse(
     OutboxOperationRecord record,
-    Map<String, dynamic>? responseData,
-  ) async {
+    Map<String, dynamic>? responseData, {
+    required String key,
+    required String deviceId,
+  }) async {
+    if (record.type == OutboxOperationType.sale ||
+        record.type == OutboxOperationType.refund ||
+        record.type == OutboxOperationType.payment) {
+      final fiscalService = _fiscalReceiptService;
+      final fiscalReceipt = fiscalService?.fromSaleResponse(responseData);
+      if (fiscalService != null && fiscalReceipt != null) {
+        await fiscalService.save(
+          fiscalReceipt,
+          saleIds: {
+            record.clientId,
+            (responseData?['id'] ?? '').toString(),
+            (record.payload['sale_id'] ?? '').toString(),
+            (record.payload['client_sale_id'] ?? '').toString(),
+          },
+        );
+        fiscalService.startBackgroundPolling(
+          key: key,
+          deviceId: deviceId,
+          receipt: fiscalReceipt,
+        );
+      }
+    }
     if (record.type == OutboxOperationType.productCreate) {
       final response = responseData;
       if (response == null) {

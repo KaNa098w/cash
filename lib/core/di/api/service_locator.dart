@@ -158,6 +158,7 @@ Future<void> initDependencies() async {
         sl<PosSyncLocalStore>(),
         sl<PosSyncRemoteDataSource>(),
         diagnostics: sl<PosDiagnosticsService>(),
+        fiscalReceiptService: sl<FiscalReceiptService>(),
       ),
     );
   }

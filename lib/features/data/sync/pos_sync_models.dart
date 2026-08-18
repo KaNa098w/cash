@@ -330,6 +330,11 @@ class ShiftReportData {
     required this.expenseTotal,
     required this.expectedCashAmount,
     required this.items,
+    this.webkassaStatus,
+    this.webkassaError,
+    this.webkassaShiftNumber,
+    this.webkassaReportNumber,
+    this.webkassaFormedAt,
   });
 
   final String sessionId;
@@ -348,6 +353,11 @@ class ShiftReportData {
   final num expenseTotal;
   final num expectedCashAmount;
   final List<ShiftReportItem> items;
+  final String? webkassaStatus;
+  final String? webkassaError;
+  final String? webkassaShiftNumber;
+  final String? webkassaReportNumber;
+  final DateTime? webkassaFormedAt;
 }
 
 class ShiftClosureSummaryData {

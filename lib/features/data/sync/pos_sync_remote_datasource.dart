@@ -73,9 +73,11 @@ class PosSyncRemoteDataSource {
   Future<Map<String, dynamic>> fetchZReport({
     required String key,
     required String sessionId,
+    required String deviceId,
   }) async {
     final response = await _dio.get(
       '/organizations/pos/$key/sessions/$sessionId/z-report',
+      queryParameters: {'device_id': deviceId},
       options: _silentOptions,
     );
     final body = _asMap(response.data);

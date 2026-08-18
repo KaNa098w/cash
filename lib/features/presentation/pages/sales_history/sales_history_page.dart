@@ -14,9 +14,10 @@ import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/core/service/fiscal_receipt_service.dart';
 import 'package:leemon_app/features/data/datasources/refunds_remote_datasource.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart'
-    show LocalAccount, LocalSession, QueueSendResult;
+    show LocalAccount, LocalSession, QueueOperationResult, QueueSendResult;
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
@@ -26,6 +27,8 @@ import 'package:leemon_app/features/presentation/pages/sales_history/widgets/ref
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sales_history_controller.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sales_search_bar.dart';
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
+import 'package:leemon_app/features/presentation/widgets/payment_panel.dart'
+    show FiscalReceiptDialog;
 import 'package:leemon_app/features/presentation/widgets/refund_reason_selector.dart';
 
 import 'state/sales_cubit.dart';
@@ -416,6 +419,55 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     } catch (e) {
       if (!mounted) return;
       _snack('Ошибка печати: $e');
+    } finally {
+      _controller.startReceiptPrintCooldownAfterLoading(
+        saleKey,
+        _printLoadingDuration,
+        _printCooldownDuration,
+        _notifyPrintStateChanged,
+      );
+    }
+  }
+
+  Future<void> _printFiscalSaleReceipt(SaleModel sale) async {
+    final saleKey = _salePrintKey(sale);
+    if (_controller.isReceiptPrintDisabled(saleKey)) return;
+    _controller.setReceiptPrintLoading(saleKey, true, _notifyPrintStateChanged);
+    final auth = context.read<AuthTokenProvider>();
+    try {
+      final service = GetIt.I<FiscalReceiptService>();
+      var receipt =
+          sale.fiscalReceipt ?? await service.findBySaleId(sale.localId);
+      if (receipt == null) {
+        throw StateError('Для этой продажи не найден фискальный чек Webkassa');
+      }
+      final posKey = (auth.posKey ?? '').trim();
+      final deviceId = (auth.deviceId ?? '').trim();
+      if (posKey.isEmpty || deviceId.isEmpty) {
+        throw StateError('Не найдены данные подключения кассы');
+      }
+      if (receipt.isPending) {
+        receipt = await service.refresh(
+          key: posKey,
+          deviceId: deviceId,
+          receiptId: receipt.id,
+        );
+      }
+      if (!receipt.canPrint) {
+        throw StateError(
+          receipt.errorMessage ?? 'Фискальный чек ещё не готов к печати',
+        );
+      }
+      await service.printTicket(
+        receipt,
+        key: posKey,
+        deviceId: deviceId,
+        paperMm: auth.receiptPaperMm,
+        printerName: auth.receiptPrinterName,
+      );
+      if (mounted) _snack('Фискальный чек отправлен на печать');
+    } catch (e) {
+      if (mounted) _snack('Ошибка печати: $e');
     } finally {
       _controller.startReceiptPrintCooldownAfterLoading(
         saleKey,
@@ -890,6 +942,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
     final refundId = (sale.refund?.id ?? '').trim();
     var effectiveRefundId = refundId;
+    QueueOperationResult? completedRefund;
     // Key: server item id for synced sales, productId for offline sales.
     final pickedBySaleItemId = <String, int>{
       for (final p in picks)
@@ -949,6 +1002,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                   );
                 }
                 effectiveRefundId = result.clientId;
+                completedRefund = result;
                 return true; // 200 — доступ есть
               } catch (e) {
                 // 401 — доступ нет, диалог покажет ошибку и попросит перескан
@@ -973,17 +1027,61 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         refundId: effectiveRefundId,
         pickedBySaleItemId: pickedBySaleItemId,
       );
-      try {
-        await _printRefundReceipt(
-          sale: sale,
-          picks: picks,
-          totalAmount: totalAmount,
-          paymentMethod: refundPaymentMethod,
-        );
-      } catch (e) {
-        if (mounted) {
-          _snack('Ошибка печати чека возврата: $e');
+      final auth = context.read<AuthTokenProvider>();
+      if (!auth.fiscalizationEnabled || auth.printLocalReceiptImmediately) {
+        try {
+          await _printRefundReceipt(
+            sale: sale,
+            picks: picks,
+            totalAmount: totalAmount,
+            paymentMethod: refundPaymentMethod,
+          );
+        } catch (e) {
+          if (mounted) {
+            _snack('Ошибка печати чека возврата: $e');
+          }
         }
+      }
+      final fiscalService = GetIt.I<FiscalReceiptService>();
+      final fiscalReceipt = auth.fiscalizationEnabled
+          ? fiscalService.fromSaleResponse(completedRefund?.responseData)
+          : null;
+      if (fiscalReceipt != null) {
+        await fiscalService.save(
+          fiscalReceipt,
+          localReceiptPrinted: auth.printLocalReceiptImmediately,
+          saleIds: {
+            completedRefund?.clientId ?? '',
+            effectiveRefundId,
+            (completedRefund?.responseData?['id'] ?? '').toString(),
+          },
+        );
+        fiscalService.startBackgroundPolling(
+          key: key,
+          deviceId: deviceId,
+          receipt: fiscalReceipt,
+        );
+        if (!mounted) return false;
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => FiscalReceiptDialog(
+            initial: fiscalReceipt,
+            posKey: key,
+            deviceId: deviceId,
+            paperMm: auth.receiptPaperMm,
+            printerName: auth.receiptPrinterName,
+          ),
+        );
+      } else if (auth.fiscalizationEnabled &&
+          completedRefund?.result == QueueSendResult.queued) {
+        _snack(
+          'Возврат сохранён локально. Фискальный чек станет доступен после синхронизации.',
+        );
+      } else if (auth.fiscalizationEnabled) {
+        _snack(
+          'Возврат сохранён, но backend не вернул фискальный чек. Повторно возврат не создавайте.',
+        );
       }
       await _showRefundSuccessDialog(
         updated: refundId.isNotEmpty,
@@ -1544,6 +1642,15 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                                                       onPrintReceipt: () {
                                                         _trackUserActivity();
                                                         _printSaleReceipt(sale);
+                                                      },
+                                                      showFiscalPrint: context
+                                                          .read<
+                                                              AuthTokenProvider>()
+                                                          .fiscalizationEnabled,
+                                                      onPrintFiscalReceipt: () {
+                                                        _trackUserActivity();
+                                                        _printFiscalSaleReceipt(
+                                                            sale);
                                                       },
                                                       onPrintInvoice: () {
                                                         _trackUserActivity();

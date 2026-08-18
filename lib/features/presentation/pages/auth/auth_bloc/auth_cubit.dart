@@ -399,6 +399,7 @@ class AuthCubit extends Cubit<AuthState> {
           report = await sync.loadShiftReportFromBackend(
             key: key,
             sessionId: sessionId,
+            deviceId: deviceId,
             includeProducts: false,
           );
         } catch (_) {

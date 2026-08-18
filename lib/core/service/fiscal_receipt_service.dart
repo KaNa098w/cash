@@ -85,6 +85,7 @@ class FiscalReceiptService {
   Future<void> save(
     FiscalReceipt receipt, {
     bool? localReceiptPrinted,
+    Iterable<String> saleIds = const <String>[],
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final stored = <String, dynamic>{};
@@ -96,14 +97,41 @@ class FiscalReceiptService {
     final previous = stored[receipt.id] is Map
         ? Map<String, dynamic>.from(stored[receipt.id] as Map)
         : const <String, dynamic>{};
+    final knownSaleIds = <String>{
+      ...((previous['sale_ids'] as List?) ?? const <dynamic>[])
+          .map((value) => value.toString().trim())
+          .where((value) => value.isNotEmpty),
+      ...saleIds
+          .map((value) => value.trim())
+          .where((value) => value.isNotEmpty),
+    };
     stored[receipt.id] = {
       ...previous,
       ...receipt.toJson(),
       'last_checked_at': DateTime.now().toIso8601String(),
       if (localReceiptPrinted != null)
         'local_receipt_printed': localReceiptPrinted,
+      if (knownSaleIds.isNotEmpty) 'sale_ids': knownSaleIds.toList(),
     };
     await prefs.setString(_storageKey, jsonEncode(stored));
+  }
+
+  Future<FiscalReceipt?> findBySaleId(String saleId) async {
+    final id = saleId.trim();
+    if (id.isEmpty) return null;
+    final prefs = await SharedPreferences.getInstance();
+    final current = prefs.getString(_storageKey);
+    if (current == null || current.isEmpty) return null;
+    final decoded = jsonDecode(current);
+    if (decoded is! Map) return null;
+    for (final raw in decoded.values.whereType<Map>()) {
+      final data = Map<String, dynamic>.from(raw);
+      final saleIds = (data['sale_ids'] as List?) ?? const <dynamic>[];
+      if (saleIds.any((value) => value.toString().trim() == id)) {
+        return FiscalReceipt.fromJson(data);
+      }
+    }
+    return null;
   }
 
   Future<List<FiscalReceipt>> loadUnfinished() async {

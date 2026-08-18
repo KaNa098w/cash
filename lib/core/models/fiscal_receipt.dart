@@ -10,6 +10,8 @@ class FiscalReceipt {
     this.offlineMode = false,
     this.ofdDeliveryStatus,
     this.lastErrorCodes = const <int>[],
+    this.provider,
+    this.operation,
   });
 
   final String id;
@@ -22,6 +24,8 @@ class FiscalReceipt {
   final bool offlineMode;
   final String? ofdDeliveryStatus;
   final List<int> lastErrorCodes;
+  final String? provider;
+  final String? operation;
 
   bool get isPending => status == 'pending' || status == 'processing';
   bool get canPrint => status == 'succeeded' && printable;
@@ -62,6 +66,8 @@ class FiscalReceipt {
               .whereType<int>()
               .toList(growable: false) ??
           const <int>[],
+      provider: json['provider']?.toString(),
+      operation: json['operation']?.toString(),
     );
   }
 
@@ -76,5 +82,7 @@ class FiscalReceipt {
         'offline_mode': offlineMode,
         'ofd_delivery_status': ofdDeliveryStatus,
         'last_error_codes': lastErrorCodes,
+        'provider': provider,
+        'operation': operation,
       };
 }
