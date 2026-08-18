@@ -161,10 +161,12 @@ class _SingleMarkCodeDialogState extends State<_SingleMarkCodeDialog> {
   void _submit(String _) {
     // Enter sent by a hardware scanner is not part of controller.text.
     // Preserve all other characters, including the ASCII 29 GS separator.
-    final rawCode = _controller.text;
+    final rawCode = MarkingKeyboardInputFormatter.normalize(_controller.text);
     final validation = Gs1DataMatrixValidator.validate(
       rawCode,
-      expectedGtin: widget.product.gtin,
+      expectedGtin: (widget.product.gtin ?? '').trim().isNotEmpty
+          ? widget.product.gtin
+          : widget.product.ntin,
     );
     if (!validation.isValid) {
       setState(() => _error = validation.message);
@@ -213,6 +215,13 @@ class _SingleMarkCodeDialogState extends State<_SingleMarkCodeDialog> {
             TextField(
               controller: _controller,
               focusNode: _focusNode,
+              inputFormatters: const [MarkingKeyboardInputFormatter()],
+              keyboardType: TextInputType.visiblePassword,
+              textCapitalization: TextCapitalization.none,
+              autocorrect: false,
+              enableSuggestions: false,
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
               autofocus: true,
               obscureText: true,
               obscuringCharacter: '•',

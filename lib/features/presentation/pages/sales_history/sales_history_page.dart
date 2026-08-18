@@ -1028,7 +1028,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         pickedBySaleItemId: pickedBySaleItemId,
       );
       final auth = context.read<AuthTokenProvider>();
-      if (!auth.fiscalizationEnabled || auth.printLocalReceiptImmediately) {
+      if (!auth.fiscalizationEnabled) {
         try {
           await _printRefundReceipt(
             sale: sale,
@@ -1049,7 +1049,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       if (fiscalReceipt != null) {
         await fiscalService.save(
           fiscalReceipt,
-          localReceiptPrinted: auth.printLocalReceiptImmediately,
+          localReceiptPrinted: false,
           saleIds: {
             completedRefund?.clientId ?? '',
             effectiveRefundId,
@@ -1643,6 +1643,10 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                                                         _trackUserActivity();
                                                         _printSaleReceipt(sale);
                                                       },
+                                                      showLocalPrint: !context
+                                                          .read<
+                                                              AuthTokenProvider>()
+                                                          .fiscalizationEnabled,
                                                       showFiscalPrint: context
                                                           .read<
                                                               AuthTokenProvider>()

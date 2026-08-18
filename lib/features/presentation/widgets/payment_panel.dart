@@ -82,10 +82,11 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
     if (_codes.length >= widget.requiredCount) return;
     // TextField does not include the scanner's Enter key. Keep every other
     // character exactly as received (including the GS separator, ASCII 29).
-    final raw = _controller.text;
+    final raw = MarkingKeyboardInputFormatter.normalize(_controller.text);
     final validation = Gs1DataMatrixValidator.validate(
       raw,
-      expectedGtin: widget.gtin,
+      expectedGtin:
+          (widget.gtin ?? '').trim().isNotEmpty ? widget.gtin : widget.ntin,
     );
     if (!validation.isValid) {
       setState(() => _error = validation.message);
@@ -144,6 +145,13 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
             TextField(
               controller: _controller,
               focusNode: _focusNode,
+              inputFormatters: const [MarkingKeyboardInputFormatter()],
+              keyboardType: TextInputType.visiblePassword,
+              textCapitalization: TextCapitalization.none,
+              autocorrect: false,
+              enableSuggestions: false,
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
               enabled: !complete,
               autofocus: true,
               obscureText: true,
@@ -219,6 +227,7 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
   bool _printing = false;
   String? _error;
   Timer? _timer;
+  bool _autoPrintStarted = false;
 
   FiscalReceiptService get _service => sl<FiscalReceiptService>();
 
@@ -226,6 +235,9 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
   void initState() {
     super.initState();
     _schedulePoll();
+    if (_receipt.canPrint) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _autoPrint());
+    }
   }
 
   @override
@@ -252,6 +264,7 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
         _receipt = updated;
         _error = null;
       });
+      if (updated.canPrint) unawaited(_autoPrint());
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = 'Не удалось обновить статус. Повторяем…');
@@ -278,6 +291,12 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
     } finally {
       if (mounted) setState(() => _printing = false);
     }
+  }
+
+  Future<void> _autoPrint() async {
+    if (_autoPrintStarted || !_receipt.canPrint || !mounted) return;
+    _autoPrintStarted = true;
+    await _print();
   }
 
   @override
@@ -1229,8 +1248,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   return;
                 }
 
-                if (!fiscalizationExpected ||
-                    auth.printLocalReceiptImmediately) {
+                if (!fiscalizationExpected) {
                   final printedPaymentMethod =
                       printedSale.paymentMethod.trim().toLowerCase();
                   await _printService.print80mmSilently(
@@ -1297,7 +1315,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 if (fiscalizationExpected && fiscalReceipt != null) {
                   await fiscalService.save(
                     fiscalReceipt,
-                    localReceiptPrinted: auth.printLocalReceiptImmediately,
+                    localReceiptPrinted: false,
                     saleIds: {
                       sale.localId,
                       printedSale.localId,

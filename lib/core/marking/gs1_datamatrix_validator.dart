@@ -1,3 +1,95 @@
+import 'package:flutter/services.dart';
+
+class MarkingKeyboardInputFormatter extends TextInputFormatter {
+  const MarkingKeyboardInputFormatter();
+
+  static const _russianToEnglish = <String, String>{
+    'й': 'q',
+    'ц': 'w',
+    'у': 'e',
+    'к': 'r',
+    'е': 't',
+    'н': 'y',
+    'г': 'u',
+    'ш': 'i',
+    'щ': 'o',
+    'з': 'p',
+    'х': '[',
+    'ъ': ']',
+    'ф': 'a',
+    'ы': 's',
+    'в': 'd',
+    'а': 'f',
+    'п': 'g',
+    'р': 'h',
+    'о': 'j',
+    'л': 'k',
+    'д': 'l',
+    'ж': ';',
+    'э': "'",
+    'я': 'z',
+    'ч': 'x',
+    'с': 'c',
+    'м': 'v',
+    'и': 'b',
+    'т': 'n',
+    'ь': 'm',
+    'б': ',',
+    'ю': '.',
+    'Й': 'Q',
+    'Ц': 'W',
+    'У': 'E',
+    'К': 'R',
+    'Е': 'T',
+    'Н': 'Y',
+    'Г': 'U',
+    'Ш': 'I',
+    'Щ': 'O',
+    'З': 'P',
+    'Х': '{',
+    'Ъ': '}',
+    'Ф': 'A',
+    'Ы': 'S',
+    'В': 'D',
+    'А': 'F',
+    'П': 'G',
+    'Р': 'H',
+    'О': 'J',
+    'Л': 'K',
+    'Д': 'L',
+    'Ж': ':',
+    'Э': '"',
+    'Я': 'Z',
+    'Ч': 'X',
+    'С': 'C',
+    'М': 'V',
+    'И': 'B',
+    'Т': 'N',
+    'Ь': 'M',
+    'Б': '<',
+    'Ю': '>',
+  };
+
+  static String normalize(String value) => value
+      .split('')
+      .map((character) => _russianToEnglish[character] ?? character)
+      .join();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final normalized = normalize(newValue.text);
+    if (normalized == newValue.text) return newValue;
+    return newValue.copyWith(
+      text: normalized,
+      selection: TextSelection.collapsed(offset: normalized.length),
+      composing: TextRange.empty,
+    );
+  }
+}
+
 class Gs1DataMatrixValidation {
   const Gs1DataMatrixValidation._(this.isValid, this.message);
 
@@ -60,8 +152,16 @@ class Gs1DataMatrixValidator {
       return Gs1DataMatrixValidation.invalid('Серийный номер (21) пуст');
     }
 
-    final expected = (expectedGtin ?? '').replaceAll(RegExp(r'\D'), '');
+    var expected = (expectedGtin ?? '').replaceAll(RegExp(r'\D'), '');
+    if (expected.length == 16 && expected.startsWith('01')) {
+      expected = expected.substring(2);
+    }
     if (expected.isNotEmpty) {
+      if (expected.length > 14) {
+        return Gs1DataMatrixValidation.invalid(
+          'Некорректный GTIN в карточке товара',
+        );
+      }
       final normalizedExpected = expected.padLeft(14, '0');
       if (normalizedExpected != gtin) {
         return Gs1DataMatrixValidation.invalid(

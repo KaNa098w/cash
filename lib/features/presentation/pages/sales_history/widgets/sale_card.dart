@@ -22,6 +22,7 @@ class SaleCard extends StatelessWidget {
     required this.invoicePrintDisabled,
     required this.onSubmitRefund,
     required this.onPrintReceipt,
+    required this.showLocalPrint,
     required this.showFiscalPrint,
     required this.onPrintFiscalReceipt,
     required this.onPrintInvoice,
@@ -46,6 +47,7 @@ class SaleCard extends StatelessWidget {
   final bool invoicePrintDisabled;
   final VoidCallback onSubmitRefund;
   final VoidCallback onPrintReceipt;
+  final bool showLocalPrint;
   final bool showFiscalPrint;
   final VoidCallback onPrintFiscalReceipt;
   final VoidCallback onPrintInvoice;
@@ -343,14 +345,16 @@ class SaleCard extends StatelessWidget {
                             loading: invoicePrintLoading,
                           ),
                           const SizedBox(height: 12),
-                          BottomActionButton(
-                            label: 'Распечатать чек',
-                            width: actionWidth,
-                            fontSize: 16,
-                            bg: actionBlueMuted,
-                            onTap: receiptPrintDisabled ? null : onPrintReceipt,
-                            loading: receiptPrintLoading,
-                          ),
+                          if (showLocalPrint)
+                            BottomActionButton(
+                              label: 'Распечатать чек',
+                              width: actionWidth,
+                              fontSize: 16,
+                              bg: actionBlueMuted,
+                              onTap:
+                                  receiptPrintDisabled ? null : onPrintReceipt,
+                              loading: receiptPrintLoading,
+                            ),
                           if (showFiscalPrint) ...[
                             const SizedBox(height: 12),
                             BottomActionButton(
@@ -387,16 +391,18 @@ class SaleCard extends StatelessWidget {
                                       ? null
                                       : onPrintInvoice,
                                   loading: invoicePrintLoading),
-                              const SizedBox(width: 12),
-                              BottomActionButton(
-                                  label: 'Распечатать чек',
-                                  width: printBtnWidth,
-                                  fontSize: 16,
-                                  bg: actionBlueMuted,
-                                  onTap: receiptPrintDisabled
-                                      ? null
-                                      : onPrintReceipt,
-                                  loading: receiptPrintLoading),
+                              if (showLocalPrint) ...[
+                                const SizedBox(width: 12),
+                                BottomActionButton(
+                                    label: 'Распечатать чек',
+                                    width: printBtnWidth,
+                                    fontSize: 16,
+                                    bg: actionBlueMuted,
+                                    onTap: receiptPrintDisabled
+                                        ? null
+                                        : onPrintReceipt,
+                                    loading: receiptPrintLoading),
+                              ],
                               if (showFiscalPrint) ...[
                                 const SizedBox(width: 12),
                                 BottomActionButton(

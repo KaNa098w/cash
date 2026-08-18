@@ -189,7 +189,9 @@ class FiscalReceiptService {
       if (value.isEmpty) continue;
       if (type == 0) {
         widgets.add(
-          pw.Padding(
+          pw.Container(
+            width: double.infinity,
+            alignment: pw.Alignment.center,
             padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
             child: pw.Text(
               value,
@@ -211,7 +213,11 @@ class FiscalReceiptService {
           pw.Padding(
             padding: const pw.EdgeInsets.symmetric(vertical: 4),
             child: pw.Center(
-              child: pw.Image(pw.MemoryImage(bytes), fit: pw.BoxFit.contain),
+              child: pw.Image(
+                pw.MemoryImage(bytes),
+                fit: pw.BoxFit.contain,
+                width: paperMm == 80 ? 190 : 130,
+              ),
             ),
           ),
         );
@@ -238,9 +244,11 @@ class FiscalReceiptService {
           pageFormat:
               paperMm == 80 ? PdfPageFormat.roll80 : PdfPageFormat.roll57,
           margin: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-          build: (_) => pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-            children: widgets,
+          build: (_) => pw.Center(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              children: widgets,
+            ),
           ),
         ),
       );
