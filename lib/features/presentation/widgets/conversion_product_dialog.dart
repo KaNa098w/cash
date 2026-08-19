@@ -8,7 +8,82 @@ import 'package:leemon_app/core/marking/gs1_datamatrix_validator.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/domain/entities/cart_item.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/search/search_keyboard_controller.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
+
+Future<void> _showDuplicateMarkCodeDialog(BuildContext context) async {
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) => AlertDialog(
+      backgroundColor: const Color(0xFFF8FAFC),
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      titlePadding: const EdgeInsets.fromLTRB(24, 24, 16, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 14, 24, 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF3E6),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(
+              Icons.warning_amber_rounded,
+              color: Color(0xFFEA8A16),
+              size: 27,
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Text(
+              'Код уже использован',
+              style: TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Закрыть',
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B)),
+          ),
+        ],
+      ),
+      content: const SizedBox(
+        width: 430,
+        child: Text(
+          'Этот код маркировки уже добавлен в чек. Отсканируйте код с другой упаковки.',
+          style: TextStyle(
+            fontSize: 16,
+            height: 1.45,
+            color: Color(0xFF475569),
+          ),
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF22B982),
+            minimumSize: const Size(130, 48),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          child: const Text('ОК'),
+        ),
+      ],
+    ),
+  );
+  requestSearchResetAndFocus();
+}
 
 Future<bool> addProductToCartWithConversionFlow(
   BuildContext context,
@@ -20,7 +95,11 @@ Future<bool> addProductToCartWithConversionFlow(
       barrierDismissible: false,
       builder: (_) => _SingleMarkCodeDialog(product: product),
     );
-    if (markCode == null || !context.mounted) return false;
+    if (markCode == null) {
+      requestSearchResetAndFocus();
+      return false;
+    }
+    if (!context.mounted) return false;
     final posCubit = context.read<PosCubit>();
     final alreadyScanned =
         posCubit.state.items.expand((item) => item.markCodes).any(
@@ -29,9 +108,7 @@ Future<bool> addProductToCartWithConversionFlow(
                   Gs1DataMatrixValidator.canonicalCode(markCode),
             );
     if (alreadyScanned) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Этот DataMatrix уже добавлен в чек')),
-      );
+      await _showDuplicateMarkCodeDialog(context);
       return false;
     }
     posCubit.addFromProductModel(
@@ -62,7 +139,10 @@ Future<bool> addProductToCartWithConversionFlow(
     ),
   );
 
-  if (qtyToAdd == null || qtyToAdd <= 0) return false;
+  if (qtyToAdd == null || qtyToAdd <= 0) {
+    requestSearchResetAndFocus();
+    return false;
+  }
 
   if (!context.mounted) return false;
   context.read<PosCubit>().setConvertedProductQuantity(product, qtyToAdd);
@@ -115,7 +195,11 @@ Future<bool> setCartItemQuantityWithMarking(
       barrierDismissible: false,
       builder: (_) => _SingleMarkCodeDialog(product: product),
     );
-    if (code == null || !context.mounted) return false;
+    if (code == null) {
+      requestSearchResetAndFocus();
+      return false;
+    }
+    if (!context.mounted) return false;
     final usedInCart =
         cubit.state.items.expand((cartItem) => cartItem.markCodes).any(
               (existing) =>
@@ -128,10 +212,8 @@ Future<bool> setCartItemQuantityWithMarking(
           Gs1DataMatrixValidator.canonicalCode(code),
     );
     if (usedInCart || usedInPending) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Этот DataMatrix уже добавлен в чек')),
-      );
-      continue;
+      await _showDuplicateMarkCodeDialog(context);
+      return false;
     }
     codes.add(code);
   }
@@ -153,6 +235,35 @@ class _SingleMarkCodeDialogState extends State<_SingleMarkCodeDialog> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   String? _error;
+
+  KeyEventResult _handleScannerKey(FocusNode _, KeyEvent event) {
+    if (event is! KeyDownEvent || !_focusNode.hasFocus) {
+      return KeyEventResult.ignored;
+    }
+    if (event.physicalKey == PhysicalKeyboardKey.enter ||
+        event.physicalKey == PhysicalKeyboardKey.numpadEnter) {
+      _submit(_controller.text);
+      return KeyEventResult.handled;
+    }
+    if (event.physicalKey == PhysicalKeyboardKey.backspace) {
+      if (_controller.text.isNotEmpty) {
+        final text = _controller.text.substring(0, _controller.text.length - 1);
+        _controller.value = TextEditingValue(
+          text: text,
+          selection: TextSelection.collapsed(offset: text.length),
+        );
+      }
+      return KeyEventResult.handled;
+    }
+    final character = MarkingKeyboardInputFormatter.englishCharacter(event);
+    if (character == null) return KeyEventResult.ignored;
+    final text = '${_controller.text}$character';
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    return KeyEventResult.handled;
+  }
 
   @override
   void initState() {
@@ -195,53 +306,151 @@ class _SingleMarkCodeDialogState extends State<_SingleMarkCodeDialog> {
       if ((widget.product.ntin ?? '').isNotEmpty) 'NTIN ${widget.product.ntin}',
     ].join('  •  ');
     return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      title: const Row(
+      backgroundColor: const Color(0xFFF8FAFC),
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      titlePadding: const EdgeInsets.fromLTRB(24, 24, 16, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: Row(
         children: [
-          Icon(Icons.qr_code_scanner_rounded, color: Color(0xFF2563EB)),
-          SizedBox(width: 10),
-          Text('Маркированный товар'),
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F8F2),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(
+              Icons.qr_code_scanner_rounded,
+              color: Color(0xFF15966A),
+              size: 26,
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Сканирование маркировки',
+                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Отсканируйте код с упаковки',
+                  style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Закрыть',
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B)),
+          ),
         ],
       ),
       content: SizedBox(
-        width: 500,
+        width: 540,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              widget.product.name,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.product.name,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  if (identifiers.isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    Text(
+                      identifiers,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
-            if (identifiers.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(identifiers,
-                  style: const TextStyle(color: Color(0xFF667085))),
-            ],
-            const SizedBox(height: 18),
-            const Text(
-              'Сначала отсканируйте DataMatrix. Товар добавится в чек только после успешного сканирования.',
+            const SizedBox(height: 16),
+            const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 19,
+                  color: Color(0xFF2563EB),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Наведите сканер на квадратный код. Товар добавится в чек автоматически.',
+                    style: TextStyle(color: Color(0xFF475569), height: 1.4),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 14),
-            TextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              inputFormatters: const [MarkingKeyboardInputFormatter()],
-              keyboardType: TextInputType.visiblePassword,
-              textCapitalization: TextCapitalization.none,
-              autocorrect: false,
-              enableSuggestions: false,
-              smartDashesType: SmartDashesType.disabled,
-              smartQuotesType: SmartQuotesType.disabled,
-              autofocus: true,
-              obscureText: true,
-              obscuringCharacter: '•',
-              onSubmitted: _submit,
-              decoration: InputDecoration(
-                labelText: 'DataMatrix',
-                hintText: 'Ожидание сканера…',
-                errorText: _error,
-                border: const OutlineInputBorder(),
+            Focus(
+              onKeyEvent: _handleScannerKey,
+              child: TextField(
+                controller: _controller,
+                focusNode: _focusNode,
+                inputFormatters: const [MarkingKeyboardInputFormatter()],
+                keyboardType: TextInputType.visiblePassword,
+                textCapitalization: TextCapitalization.none,
+                autocorrect: false,
+                enableSuggestions: false,
+                smartDashesType: SmartDashesType.disabled,
+                smartQuotesType: SmartQuotesType.disabled,
+                autofocus: true,
+                obscureText: true,
+                obscuringCharacter: '•',
+                onSubmitted: _submit,
+                decoration: InputDecoration(
+                  labelText: 'Код маркировки',
+                  hintText: 'Ожидание сканера…',
+                  errorText: _error,
+                  filled: true,
+                  fillColor: Colors.white,
+                  prefixIcon: const Icon(
+                    Icons.center_focus_strong_rounded,
+                    color: Color(0xFF15966A),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF22B982),
+                      width: 2,
+                    ),
+                  ),
+                ),
               ),
             ),
           ],
@@ -250,6 +459,10 @@ class _SingleMarkCodeDialogState extends State<_SingleMarkCodeDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF475569),
+            minimumSize: const Size(120, 48),
+          ),
           child: const Text('Отмена'),
         ),
       ],
@@ -287,7 +500,11 @@ Future<void> editConvertedCartItem(
       initialPhysicalQuantity: item.qty,
     ),
   );
-  if (qty == null || qty <= 0 || !context.mounted) return;
+  if (qty == null || qty <= 0) {
+    requestSearchResetAndFocus();
+    return;
+  }
+  if (!context.mounted) return;
   await setCartItemQuantityWithMarking(
     context,
     index: index,
@@ -506,8 +723,8 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
         12 + MediaQuery.viewPaddingOf(context).bottom,
       ),
       decoration: const BoxDecoration(
-        color: Color(0xFFF9FBFA),
-        border: Border(top: BorderSide(color: Color(0xFFE1E8E4))),
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
       ),
       child: Row(
         children: [
@@ -516,15 +733,13 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
               onPressed: () => Navigator.of(context).maybePop(),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size.fromHeight(50),
-                side: const BorderSide(color: Color(0xFFD1D9D4)),
+                foregroundColor: const Color(0xFF475569),
+                side: const BorderSide(color: Color(0xFFCBD5E1)),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              child: const Text(
-                'Отмена',
-                style: TextStyle(color: Colors.black),
-              ),
+              child: const Text('Отмена'),
             ),
           ),
           const SizedBox(width: 12),
@@ -541,10 +756,10 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                   : null,
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(50),
-                backgroundColor: const Color(0xFF1F7A55),
-                disabledBackgroundColor: const Color(0xFF9CB7AA),
+                backgroundColor: const Color(0xFF22B982),
+                disabledBackgroundColor: const Color(0xFFCBD5E1),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
               child: const Text('Добавить в чек'),
@@ -576,12 +791,12 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 540),
+          constraints: const BoxConstraints(maxWidth: 580, maxHeight: 760),
           child: Container(
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-              color: const Color(0xFFF9FBFA),
-              borderRadius: BorderRadius.circular(22),
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.18),
@@ -595,9 +810,9 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                 SingleChildScrollView(
                   physics: const ClampingScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(
-                    18,
-                    16,
-                    18,
+                    24,
+                    24,
+                    24,
                     88 + MediaQuery.viewPaddingOf(context).bottom,
                   ),
                   child: Column(
@@ -608,16 +823,16 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            width: 44,
-                            height: 44,
+                            width: 48,
+                            height: 48,
                             decoration: BoxDecoration(
-                              color: const Color(0xFFE8F3ED),
+                              color: const Color(0xFFE8F8F2),
                               borderRadius: BorderRadius.circular(14),
                             ),
                             child: const Icon(
-                              Icons.grid_view_rounded,
-                              size: 22,
-                              color: Color(0xFF1F7A55),
+                              Icons.inventory_2_outlined,
+                              size: 24,
+                              color: Color(0xFF15966A),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -625,15 +840,24 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                const Text(
+                                  'Количество товара',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF64748B),
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
                                 Text(
                                   product.name,
                                   style: theme.textTheme.titleLarge?.copyWith(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF15231A),
+                                    fontSize: 21,
+                                    fontWeight: FontWeight.w800,
+                                    color: const Color(0xFF0F172A),
                                   ),
                                 ),
-                                const SizedBox(height: 4),
+                                const SizedBox(height: 10),
                                 Wrap(
                                   spacing: 8,
                                   runSpacing: 8,
@@ -661,11 +885,15 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                           ),
                           IconButton(
                             onPressed: () => Navigator.of(context).maybePop(),
-                            icon: const Icon(Icons.close_rounded),
+                            tooltip: 'Закрыть',
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              color: Color(0xFF64748B),
+                            ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 20),
                       Row(
                         children: [
                           Expanded(
@@ -741,11 +969,11 @@ class _ConversionProductDialogState extends State<_ConversionProductDialog> {
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
-                            colors: [Color(0xFF163F2C), Color(0xFF1F7A55)],
+                            colors: [Color(0xFF0F766E), Color(0xFF22B982)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(16),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -824,14 +1052,22 @@ class _LinkedInputCard extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: selected ? const Color(0xFF1F7A55) : const Color(0xFFD6E0DA),
-            width: selected ? 1.4 : 1,
+            color: selected ? const Color(0xFF22B982) : const Color(0xFFE2E8F0),
+            width: selected ? 2 : 1,
           ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF22B982).withValues(alpha: 0.10),
+                    blurRadius: 12,
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -840,6 +1076,9 @@ class _LinkedInputCard extends StatelessWidget {
               label,
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w700,
+                    color: selected
+                        ? const Color(0xFF15966A)
+                        : const Color(0xFF475569),
                   ),
             ),
             const SizedBox(height: 8),
@@ -882,18 +1121,18 @@ class _InfoChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFDDE6E1)),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: const Color(0xFF1F7A55)),
+          Icon(icon, size: 14, color: const Color(0xFF15966A)),
           const SizedBox(width: 4),
           Text(
             label,
             style: const TextStyle(
               fontSize: 12,
-              color: Color(0xFF243B2E),
+              color: Color(0xFF475569),
               fontWeight: FontWeight.w600,
             ),
           ),

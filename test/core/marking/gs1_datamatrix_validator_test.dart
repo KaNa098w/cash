@@ -26,7 +26,7 @@ void main() {
       final result = Gs1DataMatrixValidator.validate(']Q301${gtin}21ABC');
 
       expect(result.isValid, isFalse);
-      expect(result.message, contains('символика ]d2'));
+      expect(result.message, contains('не является кодом маркировки'));
     });
 
     test('rejects invalid GTIN check digit', () {
@@ -44,7 +44,7 @@ void main() {
       );
 
       expect(result.isValid, isFalse);
-      expect(result.message, contains('не совпадает'));
+      expect(result.message, contains('код другого товара'));
     });
 
     test('canonical removes suffix line breaks, AIM prefix and leading GS', () {

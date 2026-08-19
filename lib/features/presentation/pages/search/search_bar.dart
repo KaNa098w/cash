@@ -202,6 +202,7 @@ class _SearchBarState extends State<SearchBar> {
     _controller.clear();
     _removeChooser();
     _allowAutoRefocus = true;
+    _scheduleSearchFocusRestore();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _disableSearchFieldForIpad || _isHistoryMode) return;
       _focusNode.requestFocus();

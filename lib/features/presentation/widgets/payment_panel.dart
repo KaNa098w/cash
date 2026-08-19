@@ -66,6 +66,35 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
       widget.initialCodes.take(widget.requiredCount).toList(growable: true);
   String? _error;
 
+  KeyEventResult _handleScannerKey(FocusNode _, KeyEvent event) {
+    if (event is! KeyDownEvent || !_focusNode.hasFocus) {
+      return KeyEventResult.ignored;
+    }
+    if (event.physicalKey == PhysicalKeyboardKey.enter ||
+        event.physicalKey == PhysicalKeyboardKey.numpadEnter) {
+      _acceptScan(_controller.text);
+      return KeyEventResult.handled;
+    }
+    if (event.physicalKey == PhysicalKeyboardKey.backspace) {
+      if (_controller.text.isNotEmpty) {
+        final text = _controller.text.substring(0, _controller.text.length - 1);
+        _controller.value = TextEditingValue(
+          text: text,
+          selection: TextSelection.collapsed(offset: text.length),
+        );
+      }
+      return KeyEventResult.handled;
+    }
+    final character = MarkingKeyboardInputFormatter.englishCharacter(event);
+    if (character == null) return KeyEventResult.ignored;
+    final text = '${_controller.text}$character';
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    return KeyEventResult.handled;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -103,7 +132,7 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
         );
     if (duplicate) {
       setState(
-        () => _error = 'Этот Data Matrix уже добавлен в продажу.',
+        () => _error = 'Этот код маркировки уже добавлен в продажу.',
       );
       _controller.clear();
       _focusNode.requestFocus();
@@ -154,7 +183,7 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
                 ),
                 SizedBox(height: 3),
                 Text(
-                  'Сканируйте код Data Matrix',
+                  'Отсканируйте код с упаковки',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w400,
@@ -219,46 +248,51 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
               ),
             ),
             const SizedBox(height: 16),
-            TextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              inputFormatters: const [MarkingKeyboardInputFormatter()],
-              keyboardType: TextInputType.visiblePassword,
-              textCapitalization: TextCapitalization.none,
-              autocorrect: false,
-              enableSuggestions: false,
-              smartDashesType: SmartDashesType.disabled,
-              smartQuotesType: SmartQuotesType.disabled,
-              enabled: !complete,
-              autofocus: true,
-              obscureText: true,
-              obscuringCharacter: '•',
-              onSubmitted: _acceptScan,
-              onTapOutside: (_) => _focusNode.requestFocus(),
-              decoration: InputDecoration(
-                labelText:
-                    complete ? 'Все коды получены' : 'Сканируйте DataMatrix',
-                hintText: 'Код не отображается в целях безопасности',
-                errorText: _error,
-                filled: true,
-                fillColor: Colors.white,
-                prefixIcon: const Icon(
-                  Icons.qr_code_scanner_rounded,
-                  color: Color(0xFF15966A),
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(
-                    color: Color(0xFF22B982),
-                    width: 2,
+            Focus(
+              onKeyEvent: _handleScannerKey,
+              child: TextField(
+                controller: _controller,
+                focusNode: _focusNode,
+                inputFormatters: const [MarkingKeyboardInputFormatter()],
+                keyboardType: TextInputType.visiblePassword,
+                textCapitalization: TextCapitalization.none,
+                autocorrect: false,
+                enableSuggestions: false,
+                smartDashesType: SmartDashesType.disabled,
+                smartQuotesType: SmartQuotesType.disabled,
+                enabled: !complete,
+                autofocus: true,
+                obscureText: true,
+                obscuringCharacter: '•',
+                onSubmitted: _acceptScan,
+                onTapOutside: (_) => _focusNode.requestFocus(),
+                decoration: InputDecoration(
+                  labelText:
+                      complete ? 'Все коды отсканированы' : 'Код маркировки',
+                  hintText: complete
+                      ? null
+                      : 'Сканируйте маркировку',
+                  errorText: _error,
+                  filled: true,
+                  fillColor: Colors.white,
+                  prefixIcon: const Icon(
+                    Icons.qr_code_scanner_rounded,
+                    color: Color(0xFF15966A),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF22B982),
+                      width: 2,
+                    ),
                   ),
                 ),
               ),

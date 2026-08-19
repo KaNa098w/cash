@@ -75,6 +75,106 @@ class MarkingKeyboardInputFormatter extends TextInputFormatter {
       .map((character) => _russianToEnglish[character] ?? character)
       .join();
 
+  /// Returns the character for the physical key as if the US English layout
+  /// were active. Hardware scanners emulate a keyboard, so this prevents the
+  /// current Russian/Kazakh system layout from changing barcode characters.
+  static String? englishCharacter(KeyEvent event) {
+    if (event.character == '\x1D') return event.character;
+
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+    final letters = <PhysicalKeyboardKey, String>{
+      PhysicalKeyboardKey.keyA: 'a',
+      PhysicalKeyboardKey.keyB: 'b',
+      PhysicalKeyboardKey.keyC: 'c',
+      PhysicalKeyboardKey.keyD: 'd',
+      PhysicalKeyboardKey.keyE: 'e',
+      PhysicalKeyboardKey.keyF: 'f',
+      PhysicalKeyboardKey.keyG: 'g',
+      PhysicalKeyboardKey.keyH: 'h',
+      PhysicalKeyboardKey.keyI: 'i',
+      PhysicalKeyboardKey.keyJ: 'j',
+      PhysicalKeyboardKey.keyK: 'k',
+      PhysicalKeyboardKey.keyL: 'l',
+      PhysicalKeyboardKey.keyM: 'm',
+      PhysicalKeyboardKey.keyN: 'n',
+      PhysicalKeyboardKey.keyO: 'o',
+      PhysicalKeyboardKey.keyP: 'p',
+      PhysicalKeyboardKey.keyQ: 'q',
+      PhysicalKeyboardKey.keyR: 'r',
+      PhysicalKeyboardKey.keyS: 's',
+      PhysicalKeyboardKey.keyT: 't',
+      PhysicalKeyboardKey.keyU: 'u',
+      PhysicalKeyboardKey.keyV: 'v',
+      PhysicalKeyboardKey.keyW: 'w',
+      PhysicalKeyboardKey.keyX: 'x',
+      PhysicalKeyboardKey.keyY: 'y',
+      PhysicalKeyboardKey.keyZ: 'z',
+    };
+    final letter = letters[event.physicalKey];
+    if (letter != null) return shift ? letter.toUpperCase() : letter;
+
+    final plain = <PhysicalKeyboardKey, String>{
+      PhysicalKeyboardKey.digit0: '0',
+      PhysicalKeyboardKey.digit1: '1',
+      PhysicalKeyboardKey.digit2: '2',
+      PhysicalKeyboardKey.digit3: '3',
+      PhysicalKeyboardKey.digit4: '4',
+      PhysicalKeyboardKey.digit5: '5',
+      PhysicalKeyboardKey.digit6: '6',
+      PhysicalKeyboardKey.digit7: '7',
+      PhysicalKeyboardKey.digit8: '8',
+      PhysicalKeyboardKey.digit9: '9',
+      PhysicalKeyboardKey.numpad0: '0',
+      PhysicalKeyboardKey.numpad1: '1',
+      PhysicalKeyboardKey.numpad2: '2',
+      PhysicalKeyboardKey.numpad3: '3',
+      PhysicalKeyboardKey.numpad4: '4',
+      PhysicalKeyboardKey.numpad5: '5',
+      PhysicalKeyboardKey.numpad6: '6',
+      PhysicalKeyboardKey.numpad7: '7',
+      PhysicalKeyboardKey.numpad8: '8',
+      PhysicalKeyboardKey.numpad9: '9',
+      PhysicalKeyboardKey.bracketLeft: '[',
+      PhysicalKeyboardKey.bracketRight: ']',
+      PhysicalKeyboardKey.semicolon: ';',
+      PhysicalKeyboardKey.quote: "'",
+      PhysicalKeyboardKey.comma: ',',
+      PhysicalKeyboardKey.period: '.',
+      PhysicalKeyboardKey.slash: '/',
+      PhysicalKeyboardKey.backslash: r'\',
+      PhysicalKeyboardKey.minus: '-',
+      PhysicalKeyboardKey.equal: '=',
+      PhysicalKeyboardKey.backquote: '`',
+      PhysicalKeyboardKey.space: ' ',
+    };
+    final shifted = <PhysicalKeyboardKey, String>{
+      PhysicalKeyboardKey.digit0: ')',
+      PhysicalKeyboardKey.digit1: '!',
+      PhysicalKeyboardKey.digit2: '@',
+      PhysicalKeyboardKey.digit3: '#',
+      PhysicalKeyboardKey.digit4: r'$',
+      PhysicalKeyboardKey.digit5: '%',
+      PhysicalKeyboardKey.digit6: '^',
+      PhysicalKeyboardKey.digit7: '&',
+      PhysicalKeyboardKey.digit8: '*',
+      PhysicalKeyboardKey.digit9: '(',
+      PhysicalKeyboardKey.bracketLeft: '{',
+      PhysicalKeyboardKey.bracketRight: '}',
+      PhysicalKeyboardKey.semicolon: ':',
+      PhysicalKeyboardKey.quote: '"',
+      PhysicalKeyboardKey.comma: '<',
+      PhysicalKeyboardKey.period: '>',
+      PhysicalKeyboardKey.slash: '?',
+      PhysicalKeyboardKey.backslash: '|',
+      PhysicalKeyboardKey.minus: '_',
+      PhysicalKeyboardKey.equal: '+',
+      PhysicalKeyboardKey.backquote: '~',
+    };
+    return shift
+        ? shifted[event.physicalKey] ?? plain[event.physicalKey]
+        : plain[event.physicalKey];
+  }
+
   @override
   TextEditingValue formatEditUpdate(
     TextEditingValue oldValue,
@@ -131,7 +231,7 @@ class Gs1DataMatrixValidator {
     final value = _trimTrailingLineBreaks(raw);
     if (value.isEmpty) {
       return Gs1DataMatrixValidation.invalid(
-        'Отсканируйте код маркировки GS1 DataMatrix.',
+        'Отсканируйте код маркировки с упаковки.',
       );
     }
 
@@ -143,7 +243,7 @@ class Gs1DataMatrixValidator {
 
     if (value.startsWith(']') && !value.startsWith(gs1DataMatrixSymbology)) {
       return Gs1DataMatrixValidation.invalid(
-        'Отсканирован не GS1 DataMatrix. Ожидается символика ]d2.',
+        'Этот код не является кодом маркировки товара. Попробуйте ещё раз.',
       );
     }
 
@@ -152,7 +252,7 @@ class Gs1DataMatrixValidator {
         RegExp(r'^01(\d{14})21(.+)$', dotAll: true).firstMatch(content);
     if (match == null) {
       return Gs1DataMatrixValidation.invalid(
-        'Код маркировки должен содержать GS1-поля (01) GTIN и (21) серийный номер.',
+        'Код маркировки не распознан. Попробуйте отсканировать ещё раз.',
       );
     }
 
@@ -166,7 +266,7 @@ class Gs1DataMatrixValidator {
     final normalizedExpected = normalizeGtin14(expectedGtin);
     if (normalizedExpected != null && normalizedExpected != gtin) {
       return Gs1DataMatrixValidation.invalid(
-        'GTIN $gtin из DataMatrix не совпадает с GTIN $normalizedExpected товара.',
+        'Отсканирован код другого товара. Выберите код с нужной упаковки.',
       );
     }
     return Gs1DataMatrixValidation.valid();
