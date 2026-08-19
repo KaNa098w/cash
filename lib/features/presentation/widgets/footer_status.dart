@@ -386,12 +386,23 @@ class _FooterDesktop extends StatelessWidget {
               color: Colors.transparent,
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final w = constraints.maxWidth;
-                  final panelWidth =
-                      w >= 625 ? 573.0 : (w - 32).clamp(280.0, 573.0);
+                  const baseWidth = PaymentPanel.designWidth;
+                  const baseHeight = PaymentPanel.designHeight;
+                  const preferredScale = 1.18;
+                  final availableWidth = constraints.maxWidth - 32;
+                  final availableHeight = constraints.maxHeight - 32;
+                  var panelScale = preferredScale;
+                  final widthScale = availableWidth / baseWidth;
+                  final heightScale = availableHeight / baseHeight;
+                  if (widthScale < panelScale) panelScale = widthScale;
+                  if (heightScale < panelScale) panelScale = heightScale;
+                  if (panelScale <= 0) panelScale = 1;
+                  final panelWidth = baseWidth * panelScale;
+                  final panelHeight = baseHeight * panelScale;
 
                   return Container(
                     width: panelWidth,
+                    height: panelHeight,
                     margin: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: Colors.transparent,
@@ -405,7 +416,10 @@ class _FooterDesktop extends StatelessWidget {
                       ],
                     ),
                     clipBehavior: Clip.antiAlias,
-                    child: const PaymentPanel(),
+                    child: const FittedBox(
+                      fit: BoxFit.fill,
+                      child: PaymentPanel(),
+                    ),
                   );
                 },
               ),

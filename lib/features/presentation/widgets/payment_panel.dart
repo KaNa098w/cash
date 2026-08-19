@@ -34,6 +34,9 @@ import '../../domain/entities/payment.dart';
 class PaymentPanel extends StatefulWidget {
   const PaymentPanel({super.key});
 
+  static const designWidth = 573.0;
+  static const designHeight = 540.0;
+
   @override
   State<PaymentPanel> createState() => _PaymentPanelState();
 }
@@ -269,9 +272,7 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
                 decoration: InputDecoration(
                   labelText:
                       complete ? 'Все коды отсканированы' : 'Код маркировки',
-                  hintText: complete
-                      ? null
-                      : 'Сканируйте маркировку',
+                  hintText: complete ? null : 'Сканируйте маркировку',
                   errorText: _error,
                   filled: true,
                   fillColor: Colors.white,
@@ -1068,8 +1069,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 540,
-      width: 573,
+      height: PaymentPanel.designHeight,
+      width: PaymentPanel.designWidth,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 0),
         child: BlocConsumer<PosCubit, PosState>(
