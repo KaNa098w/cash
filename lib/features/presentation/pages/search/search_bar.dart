@@ -9,6 +9,7 @@ import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/core/marking/gs1_datamatrix_validator.dart';
 import 'package:leemon_app/core/models/product_response.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/data/datasources/customers_remote_datasource.dart';
@@ -149,9 +150,7 @@ class _SearchBarState extends State<SearchBar> {
       return;
     }
 
-    if (_showClearSearchButton) {
-      _setShowClearSearchButton(false);
-    }
+    _setShowClearSearchButton(true);
 
     // Цифровой ввод может быть и ручным. Ищем быстро, но не
     // добавляем товар до Enter/суффикса сканера.
@@ -429,7 +428,10 @@ class _SearchBarState extends State<SearchBar> {
     );
   }
 
-  void _setShowClearSearchButton(bool value) {
+  void _setShowClearSearchButton(bool _) {
+    // The button reflects the actual field value. Search results and scanner
+    // state must not be able to hide it while text is still present.
+    final value = _controller.text.isNotEmpty;
     if (_showClearSearchButton == value) return;
     if (!mounted) {
       _showClearSearchButton = value;
@@ -537,8 +539,11 @@ class _SearchBarState extends State<SearchBar> {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
     final physicalDigit = _digitFromPhysicalKey(event.physicalKey);
+    final englishPhysicalCharacter =
+        MarkingKeyboardInputFormatter.englishCharacter(event);
     final eventCharacter = event.character;
     final scannedCharacter = physicalDigit ??
+        englishPhysicalCharacter ??
         (eventCharacter != null &&
                 eventCharacter.length == 1 &&
                 eventCharacter.codeUnitAt(0) >= 32
@@ -670,9 +675,106 @@ class _SearchBarState extends State<SearchBar> {
     if (!mounted) return;
     if (added != true) return;
 
+    _finishSuccessfulProductAdd();
+  }
+
+  void _finishSuccessfulProductAdd() {
+    if (!mounted) return;
+    _scanDebounce?.cancel();
+    _typingDebounce?.cancel();
+    _missingProductDebounce?.cancel();
+    _resetHardwareScanState();
     _controller.clear();
     _removeChooser();
+    _setShowClearSearchButton(false);
     _restoreSearchFocus();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _controller.clear();
+      _restoreSearchFocus();
+    });
+  }
+
+  Future<bool> _tryAddProductByMarkingCode(
+    String rawCode,
+    List<ProductModel> products,
+  ) async {
+    final normalizedCode = MarkingKeyboardInputFormatter.normalize(rawCode);
+    final scannedGtin = Gs1DataMatrixValidator.gtin(normalizedCode);
+    if (scannedGtin == null) return false;
+
+    _scanDebounce?.cancel();
+    _typingDebounce?.cancel();
+    _missingProductDebounce?.cancel();
+    _removeChooser();
+    _closeKeyboard();
+
+    final matches = products.where((product) {
+      if (product.isUniversal) return false;
+      final productGtin = Gs1DataMatrixValidator.normalizeGtin14(product.gtin);
+      final productNtin = Gs1DataMatrixValidator.normalizeGtin14(product.ntin);
+      return productGtin == scannedGtin || productNtin == scannedGtin;
+    }).toList(growable: false);
+
+    if (matches.isEmpty) {
+      _controller.clear();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Товар с таким кодом маркировки не найден'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        _restoreSearchFocus();
+      }
+      return true;
+    }
+
+    final product = matches.first;
+    final validation = Gs1DataMatrixValidator.validate(
+      normalizedCode,
+      expectedGtin:
+          (product.gtin ?? '').trim().isNotEmpty ? product.gtin : product.ntin,
+    );
+    if (!validation.isValid) {
+      _controller.clear();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(validation.message ?? 'Код маркировки не распознан'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        _restoreSearchFocus();
+      }
+      return true;
+    }
+
+    final canonicalCode = Gs1DataMatrixValidator.canonicalCode(normalizedCode);
+    final posCubit = context.read<PosCubit>();
+    final alreadyScanned =
+        posCubit.state.items.expand((item) => item.markCodes).any(
+              (code) =>
+                  Gs1DataMatrixValidator.canonicalCode(code) == canonicalCode,
+            );
+    if (alreadyScanned) {
+      _controller.clear();
+      await showDuplicateMarkCodeDialog(context);
+      return true;
+    }
+
+    final added = await _runWithDialogFocus(
+      () => addMarkedProductToCart(
+        context,
+        product,
+        initialMarkCode: normalizedCode,
+      ),
+      restoreFocus: false,
+    );
+    if (!mounted || added != true) return true;
+    _finishSuccessfulProductAdd();
+    return true;
   }
 
   Future<void> _doSearch({bool submitted = false}) async {
@@ -699,6 +801,12 @@ class _SearchBarState extends State<SearchBar> {
     }
 
     final all = state.products;
+    // A marking code contains a variable-length serial and service fields.
+    // Never process its partial value from live-search debounce: wait for the
+    // scanner's Enter suffix so trailing characters cannot refill the field
+    // after a successful add and clear.
+    if (submitted && await _tryAddProductByMarkingCode(query, all)) return;
+    if (!mounted) return;
     final q = query.toLowerCase();
     final isBarcodeLike = RegExp(r'^\d{8,}$').hasMatch(query);
 
@@ -752,8 +860,7 @@ class _SearchBarState extends State<SearchBar> {
             created,
           );
           if (!mounted || !added) return;
-          _controller.clear();
-          _removeChooser();
+          _finishSuccessfulProductAdd();
         } finally {
           _creatingMissingProduct = false;
           if (mounted) _restoreSearchFocus();
@@ -781,9 +888,7 @@ class _SearchBarState extends State<SearchBar> {
       if (!mounted) return;
       if (added != true) return;
 
-      _controller.clear();
-      _removeChooser();
-      _restoreSearchFocus();
+      _finishSuccessfulProductAdd();
       return;
     }
 

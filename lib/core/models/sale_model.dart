@@ -443,6 +443,34 @@ class SalePaymentModel {
   }
 }
 
+class MarkingPartModel {
+  const MarkingPartModel({
+    required this.code,
+    required this.quantity,
+    required this.packageQuantity,
+  });
+
+  final String code;
+  final double quantity;
+  final double packageQuantity;
+
+  factory MarkingPartModel.fromJson(Map<String, dynamic> json) {
+    double number(dynamic value) =>
+        value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
+    return MarkingPartModel(
+      code: (json['code'] ?? '').toString(),
+      quantity: number(json['quantity']),
+      packageQuantity: number(json['package_quantity']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'code': code,
+        'quantity': quantity,
+        'package_quantity': packageQuantity,
+      };
+}
+
 class SaleItemModel {
   static const universalProductDisplayName = 'Универсальный продукт';
 
@@ -467,6 +495,9 @@ class SaleItemModel {
   final String? conversionUnit;
   final String? convertedQuantity;
   final List<String> markCodes;
+  final String? markingGtin;
+  final String? markingNtin;
+  final List<MarkingPartModel> markingParts;
 
   /// ✅ сколько уже возвращено (может быть null/0)
   // ignore: non_constant_identifier_names
@@ -489,6 +520,9 @@ class SaleItemModel {
     this.conversionUnit,
     this.convertedQuantity,
     this.markCodes = const <String>[],
+    this.markingGtin,
+    this.markingNtin,
+    this.markingParts = const <MarkingPartModel>[],
     this.product,
     // ignore: non_constant_identifier_names
     this.refund_quantity,
@@ -532,6 +566,9 @@ class SaleItemModel {
     String? conversionUnit,
     String? convertedQuantity,
     List<String>? markCodes,
+    String? markingGtin,
+    String? markingNtin,
+    List<MarkingPartModel>? markingParts,
     // ignore: non_constant_identifier_names
     int? refund_quantity,
   }) {
@@ -553,6 +590,9 @@ class SaleItemModel {
       conversionUnit: conversionUnit ?? this.conversionUnit,
       convertedQuantity: convertedQuantity ?? this.convertedQuantity,
       markCodes: markCodes ?? this.markCodes,
+      markingGtin: markingGtin ?? this.markingGtin,
+      markingNtin: markingNtin ?? this.markingNtin,
+      markingParts: markingParts ?? this.markingParts,
       refund_quantity: refund_quantity ?? this.refund_quantity,
     );
   }
@@ -570,6 +610,10 @@ class SaleItemModel {
       "total_discount": totalDiscount,
       "refund_quantity": refund_quantity,
       if (markCodes.isNotEmpty) "mark_codes": markCodes,
+      if ((markingGtin ?? '').isNotEmpty) "marking_gtin": markingGtin,
+      if ((markingNtin ?? '').isNotEmpty) "marking_ntin": markingNtin,
+      if (markingParts.isNotEmpty)
+        "marking_parts": markingParts.map((part) => part.toJson()).toList(),
     };
   }
 
@@ -604,6 +648,15 @@ class SaleItemModel {
               ?.map((value) => value.toString())
               .toList(growable: false) ??
           const <String>[],
+      markingGtin: json['marking_gtin']?.toString(),
+      markingNtin: json['marking_ntin']?.toString(),
+      markingParts: (json['marking_parts'] as List?)
+              ?.whereType<Map>()
+              .map((part) => MarkingPartModel.fromJson(
+                    Map<String, dynamic>.from(part),
+                  ))
+              .toList(growable: false) ??
+          const <MarkingPartModel>[],
       refund_quantity: json["refund_quantity"] == null
           ? null
           : SaleModel._toInt(json["refund_quantity"]),
@@ -630,6 +683,9 @@ class SaleItemModel {
       "convertedQuantity": convertedQuantity,
       "refund_quantity": refund_quantity,
       "markCodes": markCodes,
+      "markingGtin": markingGtin,
+      "markingNtin": markingNtin,
+      "markingParts": markingParts.map((part) => part.toJson()).toList(),
     };
   }
 
@@ -664,6 +720,15 @@ class SaleItemModel {
               ?.map((value) => value.toString())
               .toList(growable: false) ??
           const <String>[],
+      markingGtin: (json['markingGtin'] ?? json['marking_gtin'])?.toString(),
+      markingNtin: (json['markingNtin'] ?? json['marking_ntin'])?.toString(),
+      markingParts: ((json['markingParts'] ?? json['marking_parts']) as List?)
+              ?.whereType<Map>()
+              .map((part) => MarkingPartModel.fromJson(
+                    Map<String, dynamic>.from(part),
+                  ))
+              .toList(growable: false) ??
+          const <MarkingPartModel>[],
       refund_quantity: json["refund_quantity"] == null
           ? null
           : SaleModel._toInt(json["refund_quantity"]),

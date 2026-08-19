@@ -77,6 +77,43 @@ class SaleItemRow extends StatelessWidget {
                       height: 1.4,
                       fontWeight: FontWeight.w500,
                     )),
+                if (item.markCodes.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE8F8F2),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: const Text(
+                            'Маркированный товар',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF15966A),
+                            ),
+                          ),
+                        ),
+                        Text(
+                          'Кодов: ${pick?.markCodes.length ?? 0} / $qty',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 if (refundedQty > 0)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
@@ -116,9 +153,7 @@ class SaleItemRow extends StatelessWidget {
               children: [
                 QtyBtn(
                   icon: Icons.remove,
-                  onTap: (maxQty == 0 || qty >= maxQty)
-                      ? null
-                      : () => onQtyChanged(qty + 1),
+                  onTap: qty <= 0 ? null : () => onQtyChanged(qty - 1),
                 ),
                 const SizedBox(width: 8),
                 InkWell(
@@ -156,7 +191,9 @@ class SaleItemRow extends StatelessWidget {
                 const SizedBox(width: 8),
                 QtyBtn(
                   icon: Icons.add,
-                  onTap: qty <= 0 ? null : () => onQtyChanged(qty - 1),
+                  onTap: (maxQty == 0 || qty >= maxQty)
+                      ? null
+                      : () => onQtyChanged(qty + 1),
                 ),
               ],
             ),

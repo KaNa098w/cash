@@ -114,6 +114,7 @@ class SalesHistoryController {
   RefundPick ensurePick({
     required String saleId,
     required SaleItemModel item,
+    List<String> previouslyReturnedMarkCodes = const <String>[],
   }) {
     final saleMap = salePickMap(saleId);
     // For synced items use server-assigned id; for offline (id empty) fall back to productId.
@@ -136,6 +137,9 @@ class SalesHistoryController {
         totalQuantity: totalQty,
         refundedQuantity: refundedQty,
         price: toNum(item.price),
+        originalMarkCodes: List<String>.from(item.markCodes),
+        previouslyReturnedMarkCodes:
+            List<String>.from(previouslyReturnedMarkCodes),
       ),
     );
 
@@ -167,8 +171,13 @@ class SalesHistoryController {
     required SaleItemModel item,
     required bool checked,
     required VoidCallback notify,
+    List<String> previouslyReturnedMarkCodes = const <String>[],
   }) {
-    final pick = ensurePick(saleId: saleId, item: item);
+    final pick = ensurePick(
+      saleId: saleId,
+      item: item,
+      previouslyReturnedMarkCodes: previouslyReturnedMarkCodes,
+    );
 
     if (pick.maxQuantity <= 0) {
       pick.checked = false;
@@ -193,12 +202,20 @@ class SalesHistoryController {
     required SaleItemModel item,
     required int newQty,
     required VoidCallback notify,
+    List<String> previouslyReturnedMarkCodes = const <String>[],
   }) {
-    final pick = ensurePick(saleId: saleId, item: item);
+    final pick = ensurePick(
+      saleId: saleId,
+      item: item,
+      previouslyReturnedMarkCodes: previouslyReturnedMarkCodes,
+    );
 
     final q = newQty.clamp(0, pick.maxQuantity);
     pick.quantity = q;
     pick.checked = q > 0;
+    if (pick.markCodes.length > q) {
+      pick.markCodes = pick.markCodes.take(q).toList(growable: true);
+    }
 
     notify();
   }
@@ -207,6 +224,14 @@ class SalesHistoryController {
     final m = _refundPicks[saleId];
     if (m == null) return 0;
     return m.values.where((e) => e.checked && e.quantity > 0).length;
+  }
+
+  bool hasCompleteMarkCodes(String saleId) {
+    final picks = _refundPicks[saleId];
+    if (picks == null) return true;
+    return picks.values
+        .where((pick) => pick.checked && pick.quantity > 0)
+        .every((pick) => pick.hasRequiredMarkCodes);
   }
 
   num selectedTotal(String saleId) {

@@ -11,7 +11,7 @@ import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.
 import 'package:leemon_app/features/presentation/pages/search/search_keyboard_controller.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 
-Future<void> _showDuplicateMarkCodeDialog(BuildContext context) async {
+Future<void> showDuplicateMarkCodeDialog(BuildContext context) async {
   await showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -90,33 +90,7 @@ Future<bool> addProductToCartWithConversionFlow(
   ProductModel product,
 ) async {
   if (product.requiresMarking) {
-    final markCode = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _SingleMarkCodeDialog(product: product),
-    );
-    if (markCode == null) {
-      requestSearchResetAndFocus();
-      return false;
-    }
-    if (!context.mounted) return false;
-    final posCubit = context.read<PosCubit>();
-    final alreadyScanned =
-        posCubit.state.items.expand((item) => item.markCodes).any(
-              (code) =>
-                  Gs1DataMatrixValidator.canonicalCode(code) ==
-                  Gs1DataMatrixValidator.canonicalCode(markCode),
-            );
-    if (alreadyScanned) {
-      await _showDuplicateMarkCodeDialog(context);
-      return false;
-    }
-    posCubit.addFromProductModel(
-      product,
-      qty: 1,
-      markCodes: [markCode],
-    );
-    return true;
+    return addMarkedProductToCart(context, product);
   }
 
   if (!product.hasConversion) {
@@ -149,6 +123,85 @@ Future<bool> addProductToCartWithConversionFlow(
   return true;
 }
 
+Future<bool> addMarkedProductToCart(
+  BuildContext context,
+  ProductModel product, {
+  String? initialMarkCode,
+}) async {
+  var quantity = 1.0;
+  final partialMarkedPackage = product.hasConversion &&
+      product.allowsPartialPackages &&
+      (product.conversionValue ?? 0) > 0;
+
+  if (partialMarkedPackage) {
+    final selectedQuantity = await showDialog<double>(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => _ConversionProductDialog(product: product),
+    );
+    if (selectedQuantity == null || selectedQuantity <= 0) {
+      requestSearchResetAndFocus();
+      return false;
+    }
+    quantity = selectedQuantity.roundToDouble();
+  }
+
+  if (!context.mounted) return false;
+  final posCubit = context.read<PosCubit>();
+  final codes = <String>[
+    if ((initialMarkCode ?? '').isNotEmpty) initialMarkCode!,
+  ];
+  final packageQuantity = partialMarkedPackage ? product.conversionValue! : 1.0;
+  final requiredCodes = partialMarkedPackage
+      ? (quantity / packageQuantity).ceil()
+      : quantity.round();
+
+  bool isUsedInCurrentCheck(String candidate) {
+    final canonical = Gs1DataMatrixValidator.canonicalCode(candidate);
+    return codes.any(
+          (code) => Gs1DataMatrixValidator.canonicalCode(code) == canonical,
+        ) ||
+        posCubit.state.items.expand((item) => item.markCodes).any(
+              (code) => Gs1DataMatrixValidator.canonicalCode(code) == canonical,
+            );
+  }
+
+  if (codes.isNotEmpty &&
+      posCubit.state.items.expand((item) => item.markCodes).any(
+            (code) =>
+                Gs1DataMatrixValidator.canonicalCode(code) ==
+                Gs1DataMatrixValidator.canonicalCode(codes.first),
+          )) {
+    await showDuplicateMarkCodeDialog(context);
+    return false;
+  }
+
+  while (codes.length < requiredCodes) {
+    final markCode = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _SingleMarkCodeDialog(product: product),
+    );
+    if (markCode == null) {
+      requestSearchResetAndFocus();
+      return false;
+    }
+    if (!context.mounted) return false;
+    if (isUsedInCurrentCheck(markCode)) {
+      await showDuplicateMarkCodeDialog(context);
+      return false;
+    }
+    codes.add(markCode);
+  }
+
+  posCubit.addFromProductModel(
+    product,
+    qty: quantity,
+    markCodes: codes,
+  );
+  return true;
+}
+
 Future<bool> setCartItemQuantityWithMarking(
   BuildContext context, {
   required int index,
@@ -170,8 +223,14 @@ Future<bool> setCartItemQuantityWithMarking(
     );
     return false;
   }
-  if (target <= item.markCodes.length) {
-    cubit.setMarkCodes(index, item.markCodes.take(target).toList());
+  final partialMarkedPackage = item.product.hasConversion &&
+      item.product.allowsPartialPackages &&
+      (item.product.conversionValue ?? 0) > 0;
+  final requiredCodes = partialMarkedPackage
+      ? (target / item.product.conversionValue!).ceil()
+      : target;
+  if (requiredCodes <= item.markCodes.length) {
+    cubit.setMarkCodes(index, item.markCodes.take(requiredCodes).toList());
     cubit.setQty(index, target.toDouble());
     return true;
   }
@@ -188,8 +247,10 @@ Future<bool> setCartItemQuantityWithMarking(
     requiresMarking: true,
     gtin: item.product.gtin,
     ntin: item.product.ntin,
+    conversionValue: item.product.conversionValue,
+    conversionUnit: item.product.conversionUnit,
   );
-  while (codes.length < target) {
+  while (codes.length < requiredCodes) {
     final code = await showDialog<String>(
       context: context,
       barrierDismissible: false,
@@ -212,7 +273,7 @@ Future<bool> setCartItemQuantityWithMarking(
           Gs1DataMatrixValidator.canonicalCode(code),
     );
     if (usedInCart || usedInPending) {
-      await _showDuplicateMarkCodeDialog(context);
+      await showDuplicateMarkCodeDialog(context);
       return false;
     }
     codes.add(code);

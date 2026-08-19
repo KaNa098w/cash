@@ -483,12 +483,24 @@ class PosCubit extends Cubit<PosState> {
                         current.product.conversionValue!,
                       )
                     : qty;
-        if (current.product.requiresMarking &&
-            normalizedQty > current.markCodes.length) {
-          normalizedQty = current.markCodes.length.toDouble();
+        final partialMarkedPackage = current.product.requiresMarking &&
+            current.product.hasConversion &&
+            current.product.allowsPartialPackages;
+        final markedCapacity = partialMarkedPackage
+            ? current.markCodes.length * current.product.conversionValue!
+            : current.markCodes.length.toDouble();
+        if (current.product.requiresMarking && normalizedQty > markedCapacity) {
+          normalizedQty = markedCapacity;
         }
         final retainedCodes = current.product.requiresMarking
-            ? current.markCodes.take(normalizedQty.round()).toList()
+            ? current.markCodes
+                .take(
+                  partialMarkedPackage
+                      ? (normalizedQty / current.product.conversionValue!)
+                          .ceil()
+                      : normalizedQty.round(),
+                )
+                .toList()
             : current.markCodes;
         list[index] = current.copyWith(
           qty: normalizedQty,

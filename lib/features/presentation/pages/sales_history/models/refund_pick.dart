@@ -8,6 +8,10 @@ class RefundPick {
     required this.totalQuantity,
     required this.refundedQuantity,
     required this.price,
+    this.originalMarkCodes = const <String>[],
+    this.previouslyReturnedMarkCodes = const <String>[],
+    this.markCodes = const <String>[],
+    this.requiredMarkCodeCount = 0,
   });
 
   final String saleItemId;
@@ -21,4 +25,16 @@ class RefundPick {
   int refundedQuantity;
 
   final num price;
+  final List<String> originalMarkCodes;
+  final List<String> previouslyReturnedMarkCodes;
+  List<String> markCodes;
+  int requiredMarkCodeCount;
+
+  bool get isMarked => originalMarkCodes.isNotEmpty;
+  bool get hasRequiredMarkCodes {
+    if (!isMarked) return true;
+    final required =
+        requiredMarkCodeCount > 0 ? requiredMarkCodeCount : quantity;
+    return markCodes.length >= required;
+  }
 }

@@ -23,6 +23,7 @@ import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.
 import 'package:leemon_app/features/presentation/pages/sales_history/models/refund_pick.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/error_bloc.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/refund_access_dialog.dart';
+import 'package:leemon_app/features/presentation/pages/sales_history/widgets/refund_mark_code_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sales_history_controller.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sales_search_bar.dart';
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
@@ -842,6 +843,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         'product_id': e.productId,
         'quantity': e.quantity,
         'price': e.price,
+        if (e.markCodes.isNotEmpty)
+          'mark_codes': List<String>.from(e.markCodes),
         if (isSynced && e.saleItemId.isNotEmpty) 'sale_item_id': e.saleItemId,
       };
     }).toList();
@@ -1018,7 +1021,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         return false;
       }
 
-      if (!mounted) return false;
+      if (!context.mounted) return false;
       _cubit.applyRefundOptimistic(
         saleId: saleId,
         refundId: effectiveRefundId,
@@ -1058,7 +1061,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
           deviceId: deviceId,
           receipt: fiscalReceipt,
         );
-        if (!mounted) return false;
+        if (!context.mounted) return false;
         await showDialog<void>(
           context: context,
           barrierDismissible: false,
@@ -1131,8 +1134,114 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
                 final selectedCount = _controller.selectedItemsCount(saleId);
                 final selectedTotal = _controller.selectedTotal(saleId);
-                final canSubmit =
-                    selectedCount > 0 && !_controller.isRefundLoading(saleId);
+                final canSubmit = selectedCount > 0 &&
+                    _controller.hasCompleteMarkCodes(saleId) &&
+                    !_controller.isRefundLoading(saleId);
+
+                List<String> returnedMarkCodes(SaleItemModel item) {
+                  final refund = sale.refund;
+                  if (refund == null) return const <String>[];
+                  return refund.items
+                      .where((refundItem) =>
+                          (item.id.isNotEmpty &&
+                              refundItem.saleItemId == item.id) ||
+                          (item.id.isEmpty &&
+                              refundItem.productId == item.productId))
+                      .expand((refundItem) => refundItem.markCodes)
+                      .toList(growable: false);
+                }
+
+                List<MarkingPartModel> returnedMarkingParts(
+                  SaleItemModel item,
+                ) {
+                  final refund = sale.refund;
+                  if (refund == null) return const <MarkingPartModel>[];
+                  return refund.items
+                      .where((refundItem) =>
+                          (item.id.isNotEmpty &&
+                              refundItem.saleItemId == item.id) ||
+                          (item.id.isEmpty &&
+                              refundItem.productId == item.productId))
+                      .expand((refundItem) => refundItem.markingParts)
+                      .toList(growable: false);
+                }
+
+                int requiredMarkCodeCount(
+                  SaleItemModel item,
+                  int quantity,
+                ) {
+                  if (quantity <= 0 || item.markCodes.isEmpty) return 0;
+                  if (item.markingParts.isEmpty) return quantity;
+
+                  final returnedByCode = <String, double>{};
+                  for (final part in returnedMarkingParts(item)) {
+                    returnedByCode[part.code] =
+                        (returnedByCode[part.code] ?? 0) + part.quantity;
+                  }
+                  var covered = 0.0;
+                  var count = 0;
+                  for (final code in item.markCodes) {
+                    final soldPart = item.markingParts
+                        .where((part) => part.code == code)
+                        .fold<double>(0, (sum, part) => sum + part.quantity);
+                    final available = soldPart - (returnedByCode[code] ?? 0.0);
+                    if (available <= 0) continue;
+                    covered += available;
+                    count++;
+                    if (covered >= quantity) break;
+                  }
+                  return count == 0 ? 1 : count;
+                }
+
+                Future<void> changeQuantity(
+                  SaleItemModel item,
+                  int quantity,
+                ) async {
+                  final previouslyReturned = returnedMarkCodes(item);
+                  final pick = _controller.ensurePick(
+                    saleId: saleId,
+                    item: item,
+                    previouslyReturnedMarkCodes: previouslyReturned,
+                  );
+                  final neededCodes = requiredMarkCodeCount(item, quantity);
+                  pick.requiredMarkCodeCount = neededCodes;
+                  if (!pick.isMarked || neededCodes <= pick.markCodes.length) {
+                    _controller.changeQty(
+                      saleId: saleId,
+                      item: item,
+                      newQty: quantity,
+                      previouslyReturnedMarkCodes: previouslyReturned,
+                      notify: refresh,
+                    );
+                    return;
+                  }
+
+                  final scannedCodes = List<String>.from(pick.markCodes);
+                  final partialMarking = item.markingParts.isNotEmpty;
+                  final availableCodes = item.markCodes
+                      .where((code) =>
+                          partialMarking || !previouslyReturned.contains(code))
+                      .toSet();
+                  while (scannedCodes.length < neededCodes) {
+                    final code = await showRefundMarkCodeDialog(
+                      dialogContext,
+                      item: item,
+                      availableCodes: availableCodes,
+                      currentCodes: scannedCodes.toSet(),
+                      requiredCount: neededCodes,
+                    );
+                    if (code == null || !dialogContext.mounted) return;
+                    scannedCodes.add(code);
+                  }
+                  pick.markCodes = scannedCodes;
+                  _controller.changeQty(
+                    saleId: saleId,
+                    item: item,
+                    newQty: quantity,
+                    previouslyReturnedMarkCodes: previouslyReturned,
+                    notify: refresh,
+                  );
+                }
 
                 return Dialog(
                   insetPadding:
@@ -1163,21 +1272,18 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                                       items: sale.items,
                                       picks: _controller.salePickMap(saleId),
                                       onToggleItem: (item, checked) {
+                                        final returned =
+                                            returnedMarkCodes(item);
                                         _controller.toggleItem(
                                           saleId: saleId,
                                           item: item,
                                           checked: checked,
+                                          previouslyReturnedMarkCodes: returned,
                                           notify: refresh,
                                         );
                                       },
-                                      onQtyChanged: (item, q) {
-                                        _controller.changeQty(
-                                          saleId: saleId,
-                                          item: item,
-                                          newQty: q,
-                                          notify: refresh,
-                                        );
-                                      },
+                                      onQtyChanged: (item, q) =>
+                                          changeQuantity(item, q),
                                       refundedQtyOf: _controller.refundedQtyOf,
                                       availableQtyOf:
                                           _controller.availableQtyOf,

@@ -8,6 +8,7 @@ class CreateSaleOutcome {
     required this.result,
     required this.sale,
     this.errorMessage,
+    this.errorCode,
     this.responseData,
     this.retryScheduled = false,
   });
@@ -15,6 +16,7 @@ class CreateSaleOutcome {
   final CreateSaleResult result;
   final SaleModel sale;
   final String? errorMessage;
+  final String? errorCode;
   final Map<String, dynamic>? responseData;
   final bool retryScheduled;
 }

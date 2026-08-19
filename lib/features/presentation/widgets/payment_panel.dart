@@ -696,6 +696,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
   bool _openingCustomerPicker = false;
   bool _isMixedPayment = false;
   bool _mixedActiveIsCard = false;
+  bool _markingConflictNeedsExtraCode = false;
 
   @override
   void initState() {
@@ -969,6 +970,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
   }
 
   Future<bool> _ensureMarkCodes(PosCubit cubit) async {
+    var assignedConflictExtraCode = false;
     for (var index = 0; index < cubit.state.items.length; index++) {
       final item = cubit.state.items[index];
       if (!item.product.requiresMarking) continue;
@@ -977,7 +979,19 @@ class _PaymentPanelState extends State<PaymentPanel> {
         _showError('Маркированный товар продаётся только целыми единицами');
         return false;
       }
-      if (item.markCodes.length == roundedQuantity) continue;
+      final partialMarkedPackage = item.product.hasConversion &&
+          item.product.allowsPartialPackages &&
+          (item.product.conversionValue ?? 0) > 0;
+      var requiredCodes = partialMarkedPackage
+          ? (item.qty / item.product.conversionValue!).ceil()
+          : roundedQuantity;
+      if (_markingConflictNeedsExtraCode &&
+          partialMarkedPackage &&
+          !assignedConflictExtraCode) {
+        requiredCodes = item.markCodes.length + 1;
+        assignedConflictExtraCode = true;
+      }
+      if (item.markCodes.length >= requiredCodes) continue;
       final codes = await showDialog<List<String>>(
         context: context,
         barrierDismissible: false,
@@ -985,7 +999,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
           productName: item.product.name,
           gtin: item.product.gtin,
           ntin: item.product.ntin,
-          requiredCount: roundedQuantity,
+          requiredCount: requiredCodes,
           initialCodes: item.markCodes,
           usedCodes: {
             for (var otherIndex = 0;
@@ -999,6 +1013,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
       );
       if (!mounted || codes == null) return false;
       cubit.setMarkCodes(index, codes);
+    }
+    if (assignedConflictExtraCode) {
+      _markingConflictNeedsExtraCode = false;
     }
     return true;
   }
@@ -1496,6 +1513,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 if (result == CreateSaleResult.rejected) {
                   final message = (outcome.errorMessage ?? '').trim();
                   final markedSale = containsMarkedItems;
+                  if (outcome.errorCode == 'MARKING_CONFLICT' && mounted) {
+                    setState(() => _markingConflictNeedsExtraCode = true);
+                  }
                   if (markedSale && outcome.retryScheduled && mounted) {
                     setState(() => _saleQueued = true);
                   }

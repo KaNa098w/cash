@@ -1,6 +1,7 @@
 // lib/core/models/refund_model.dart
 
-import 'package:leemon_app/core/models/sale_model.dart' show ProductModel;
+import 'package:leemon_app/core/models/sale_model.dart'
+    show MarkingPartModel, ProductModel;
 
 class RefundModel {
   final String id;
@@ -158,6 +159,8 @@ class RefundItemModel {
   final int price;
   final int maxQuantity;
   final ProductModel? product;
+  final List<String> markCodes;
+  final List<MarkingPartModel> markingParts;
 
   const RefundItemModel({
     required this.id,
@@ -168,6 +171,8 @@ class RefundItemModel {
     required this.price,
     required this.maxQuantity,
     this.product,
+    this.markCodes = const <String>[],
+    this.markingParts = const <MarkingPartModel>[],
   });
 
   RefundItemModel copyWith({
@@ -179,6 +184,8 @@ class RefundItemModel {
     int? price,
     int? maxQuantity,
     ProductModel? product,
+    List<String>? markCodes,
+    List<MarkingPartModel>? markingParts,
   }) {
     return RefundItemModel(
       id: id ?? this.id,
@@ -189,6 +196,8 @@ class RefundItemModel {
       price: price ?? this.price,
       maxQuantity: maxQuantity ?? this.maxQuantity,
       product: product ?? this.product,
+      markCodes: markCodes ?? this.markCodes,
+      markingParts: markingParts ?? this.markingParts,
     );
   }
 
@@ -207,6 +216,17 @@ class RefundItemModel {
       price: _asInt(json['price']),
       maxQuantity: _asInt(json['max_quantity']),
       product: product,
+      markCodes: (json['mark_codes'] as List?)
+              ?.map((value) => value.toString())
+              .toList(growable: false) ??
+          const <String>[],
+      markingParts: (json['marking_parts'] as List?)
+              ?.whereType<Map>()
+              .map((part) => MarkingPartModel.fromJson(
+                    Map<String, dynamic>.from(part),
+                  ))
+              .toList(growable: false) ??
+          const <MarkingPartModel>[],
     );
   }
 
@@ -220,6 +240,9 @@ class RefundItemModel {
       'price': price,
       'max_quantity': maxQuantity,
       'product': product?.toJson(),
+      if (markCodes.isNotEmpty) 'mark_codes': markCodes,
+      if (markingParts.isNotEmpty)
+        'marking_parts': markingParts.map((part) => part.toJson()).toList(),
     };
   }
 

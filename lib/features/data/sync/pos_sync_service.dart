@@ -880,6 +880,14 @@ class PosSyncService {
       payload: payload,
       tryImmediateSend: !sendInBackground,
     );
+    if (requireOnline &&
+        result.result == QueueSendResult.manual &&
+        result.errorCode == 'MARKING_CONFLICT') {
+      // A marking conflict is correctable in the open cart. Do not leave a
+      // rejected sale in local history or in the service queue.
+      await _localStore.deleteQueueOperation(result.operationId);
+      _notifySalesHistoryChanged();
+    }
     // Keep the original operation on timeout. Retrying must reuse the same
     // client_sale_id, local_number and byte-for-byte marking payload.
     if (result.result == QueueSendResult.sent &&
