@@ -104,10 +104,19 @@ class Gs1DataMatrixValidation {
 }
 
 class Gs1DataMatrixValidator {
-  static String removeAimPrefix(String value) =>
-      value.startsWith(']d2') ? value.substring(3) : value;
+  static const gs1DataMatrixSymbology = ']d2';
+  static const _groupSeparator = '\x1D';
 
-  static String canonicalCode(String rawValue) => removeAimPrefix(rawValue);
+  static String _trimTrailingLineBreaks(String value) =>
+      value.replaceFirst(RegExp(r'[\r\n]+$'), '');
+
+  static String canonicalCode(String rawValue) {
+    var value = _trimTrailingLineBreaks(rawValue);
+    if (value.startsWith(gs1DataMatrixSymbology)) {
+      value = value.substring(gs1DataMatrixSymbology.length);
+    }
+    return value.startsWith(_groupSeparator) ? value.substring(1) : value;
+  }
 
   static String? normalizeGtin14(String? value) {
     final raw = value?.trim();
@@ -119,64 +128,56 @@ class Gs1DataMatrixValidator {
     String raw, {
     String? expectedGtin,
   }) {
-    if (raw.isEmpty) {
-      return Gs1DataMatrixValidation.invalid('Сканируйте DataMatrix');
-    }
-    if (raw.startsWith(']') && !raw.startsWith(']d2')) {
+    final value = _trimTrailingLineBreaks(raw);
+    if (value.isEmpty) {
       return Gs1DataMatrixValidation.invalid(
-        'Нужен GS1 DataMatrix (AIM-префикс ]d2). QR Code не принимается',
+        'Отсканируйте код маркировки GS1 DataMatrix.',
       );
     }
 
-    final data = removeAimPrefix(raw);
-    if (data.startsWith('http://') || data.startsWith('https://')) {
+    if (RegExp(r'^(?:https?://|www\.)', caseSensitive: false).hasMatch(value)) {
       return Gs1DataMatrixValidation.invalid(
-        'Это QR-код. Отсканируйте Data Matrix маркировки товара.',
-      );
-    }
-    if (!data.startsWith('01') || data.length < 18) {
-      return Gs1DataMatrixValidation.invalid(
-        'Код не содержит обязательный идентификатор GTIN (01).',
+        'Отсканирована ссылка на сайт, а не код маркировки товара.',
       );
     }
 
-    final gtin = data.substring(2, 16);
-    if (!RegExp(r'^\d{14}$').hasMatch(gtin) || !_hasValidCheckDigit(gtin)) {
+    if (value.startsWith(']') && !value.startsWith(gs1DataMatrixSymbology)) {
       return Gs1DataMatrixValidation.invalid(
-        'Контрольная цифра GTIN некорректна.',
+        'Отсканирован не GS1 DataMatrix. Ожидается символика ]d2.',
       );
     }
 
-    if (data.length < 18 || data.substring(16, 18) != '21') {
+    final content = canonicalCode(value);
+    final match =
+        RegExp(r'^01(\d{14})21(.+)$', dotAll: true).firstMatch(content);
+    if (match == null) {
       return Gs1DataMatrixValidation.invalid(
-        'Код не содержит серийный номер (21).',
-      );
-    }
-    final serial = data.substring(18);
-    final serialValue = serial.split(String.fromCharCode(29)).first;
-    if (serialValue.isEmpty) {
-      return Gs1DataMatrixValidation.invalid(
-        'Код не содержит серийный номер (21).',
+        'Код маркировки должен содержать GS1-поля (01) GTIN и (21) серийный номер.',
       );
     }
 
-    if ((expectedGtin ?? '').trim().isNotEmpty) {
-      final normalizedExpected = normalizeGtin14(expectedGtin);
-      if (normalizedExpected == null) {
-        return Gs1DataMatrixValidation.invalid(
-          'Некорректный GTIN в карточке товара.',
-        );
-      }
-      if (normalizedExpected != gtin) {
-        return Gs1DataMatrixValidation.invalid(
-          'GTIN маркировки не совпадает с выбранным товаром.',
-        );
-      }
+    final gtin = match.group(1)!;
+    if (!hasValidGtinCheckDigit(gtin)) {
+      return Gs1DataMatrixValidation.invalid(
+        'GTIN в коде маркировки имеет неверную контрольную цифру.',
+      );
+    }
+
+    final normalizedExpected = normalizeGtin14(expectedGtin);
+    if (normalizedExpected != null && normalizedExpected != gtin) {
+      return Gs1DataMatrixValidation.invalid(
+        'GTIN $gtin из DataMatrix не совпадает с GTIN $normalizedExpected товара.',
+      );
     }
     return Gs1DataMatrixValidation.valid();
   }
 
-  static bool _hasValidCheckDigit(String gtin) {
+  static String? gtin(String value) => RegExp(r'^01(\d{14})21', dotAll: true)
+      .firstMatch(canonicalCode(value))
+      ?.group(1);
+
+  static bool hasValidGtinCheckDigit(String gtin) {
+    if (!RegExp(r'^\d{14}$').hasMatch(gtin)) return false;
     var sum = 0;
     for (var index = 0; index < 13; index++) {
       final digit = int.parse(gtin[index]);

@@ -96,6 +96,7 @@ class _SearchBarState extends State<SearchBar> {
       }
     });
     searchKeyboardCloseSignal.addListener(_handleExternalKeyboardCloseRequest);
+    searchResetAndFocusSignal.addListener(_handleSearchResetAndFocusRequest);
   }
 
   Future<void> _loadLastSaleAmount() async {
@@ -177,6 +178,7 @@ class _SearchBarState extends State<SearchBar> {
     searchKeyboardCloseSignal.removeListener(
       _handleExternalKeyboardCloseRequest,
     );
+    searchResetAndFocusSignal.removeListener(_handleSearchResetAndFocusRequest);
     _closeKeyboard();
     _controller.dispose();
     _focusNode.dispose();
@@ -193,6 +195,18 @@ class _SearchBarState extends State<SearchBar> {
   void _handleExternalKeyboardCloseRequest() {
     if (!mounted) return;
     _dismissSearchKeyboard();
+  }
+
+  void _handleSearchResetAndFocusRequest() {
+    if (!mounted) return;
+    _controller.clear();
+    _removeChooser();
+    _allowAutoRefocus = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _disableSearchFieldForIpad || _isHistoryMode) return;
+      _focusNode.requestFocus();
+      _ensureValidSelection();
+    });
   }
 
   bool get _isRouteCurrent => ModalRoute.of(context)?.isCurrent ?? true;

@@ -10,6 +10,7 @@ import 'package:leemon_app/features/data/utils/money.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_state.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
+import 'package:leemon_app/features/presentation/pages/search/search_keyboard_controller.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 import 'package:leemon_app/features/presentation/widgets/conversion_product_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/footer_panels_widget.dart';
@@ -371,8 +372,8 @@ class _FooterDesktop extends StatelessWidget {
     );
   }
 
-  void _showPaymentPanelCenter(BuildContext context) {
-    showGeneralDialog<void>(
+  Future<void> _showPaymentPanelCenter(BuildContext context) async {
+    await showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'payment',
@@ -424,6 +425,7 @@ class _FooterDesktop extends StatelessWidget {
         );
       },
     );
+    requestSearchResetAndFocus();
   }
 }
 

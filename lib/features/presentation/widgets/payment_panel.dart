@@ -121,16 +121,76 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
   Widget build(BuildContext context) {
     final complete = _codes.length == widget.requiredCount;
     return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      title: const Text('Сканирование маркировки'),
+      backgroundColor: const Color(0xFFF8FAFC),
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      titlePadding: const EdgeInsets.fromLTRB(24, 24, 16, 0),
+      title: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F8F2),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(
+              Icons.qr_code_scanner_rounded,
+              color: Color(0xFF15966A),
+              size: 26,
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Маркировка товара',
+                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Сканируйте код Data Matrix',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w400,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Закрыть',
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B)),
+          ),
+        ],
+      ),
       content: SizedBox(
-        width: 520,
+        width: 540,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.productName,
-                style: const TextStyle(fontWeight: FontWeight.w700)),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Text(
+                widget.productName,
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
             if ((widget.gtin ?? '').isNotEmpty ||
                 (widget.ntin ?? '').isNotEmpty)
               Padding(
@@ -140,16 +200,24 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
                   if ((widget.ntin ?? '').isNotEmpty) 'NTIN ${widget.ntin}',
                 ].join('  •  ')),
               ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
             LinearProgressIndicator(
               value: widget.requiredCount == 0
                   ? 1
                   : _codes.length / widget.requiredCount,
               minHeight: 8,
+              color: const Color(0xFF22B982),
+              backgroundColor: const Color(0xFFE2E8F0),
               borderRadius: BorderRadius.circular(8),
             ),
             const SizedBox(height: 8),
-            Text('Отсканировано ${_codes.length} из ${widget.requiredCount}'),
+            Text(
+              'Отсканировано ${_codes.length} из ${widget.requiredCount}',
+              style: const TextStyle(
+                color: Color(0xFF475569),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const SizedBox(height: 16),
             TextField(
               controller: _controller,
@@ -166,13 +234,33 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
               obscureText: true,
               obscuringCharacter: '•',
               onSubmitted: _acceptScan,
+              onTapOutside: (_) => _focusNode.requestFocus(),
               decoration: InputDecoration(
                 labelText:
                     complete ? 'Все коды получены' : 'Сканируйте DataMatrix',
                 hintText: 'Код не отображается в целях безопасности',
                 errorText: _error,
-                prefixIcon: const Icon(Icons.qr_code_scanner_rounded),
-                border: const OutlineInputBorder(),
+                filled: true,
+                fillColor: Colors.white,
+                prefixIcon: const Icon(
+                  Icons.qr_code_scanner_rounded,
+                  color: Color(0xFF15966A),
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(
+                    color: Color(0xFF22B982),
+                    width: 2,
+                  ),
+                ),
               ),
             ),
             if (_codes.isNotEmpty) ...[
@@ -184,8 +272,19 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
                   _codes.length,
                   (index) => Chip(
                     label: Text('Код ${index + 1}'),
-                    avatar: const Icon(Icons.check_circle, size: 18),
-                    onDeleted: () => setState(() => _codes.removeAt(index)),
+                    avatar: const Icon(
+                      Icons.check_circle_rounded,
+                      size: 18,
+                      color: Color(0xFF15966A),
+                    ),
+                    backgroundColor: const Color(0xFFE8F8F2),
+                    side: BorderSide.none,
+                    onDeleted: () {
+                      setState(() => _codes.removeAt(index));
+                      WidgetsBinding.instance.addPostFrameCallback(
+                        (_) => _focusNode.requestFocus(),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -196,7 +295,11 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Отмена'),
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF475569),
+            minimumSize: const Size(110, 48),
+          ),
+          child: const Text('Закрыть'),
         ),
         FilledButton.icon(
           onPressed: complete
@@ -204,6 +307,14 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
               : null,
           icon: const Icon(Icons.check_rounded),
           label: const Text('Продолжить'),
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF22B982),
+            disabledBackgroundColor: const Color(0xFFCBD5E1),
+            minimumSize: const Size(160, 48),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
         ),
       ],
     );
@@ -313,44 +424,121 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
     final failed = _receipt.hasFailed;
     final activePolling = DateTime.now().difference(_activePollingStartedAt) <
         const Duration(seconds: 60);
+    final pending = _receipt.isPending;
+    final accentColor = failed
+        ? const Color(0xFFDC2626)
+        : _receipt.canPrint
+            ? const Color(0xFF15966A)
+            : const Color(0xFF2563EB);
+    final accentBackground = failed
+        ? const Color(0xFFFEECEC)
+        : _receipt.canPrint
+            ? const Color(0xFFE8F8F2)
+            : const Color(0xFFEAF2FF);
     final title = switch (_receipt.status) {
       'succeeded' => 'Фискальный чек готов',
       'failed' => 'Ошибка фискализации',
       'needs_review' => 'Требуется проверка',
-      _ => 'Фискализация продажи',
+      _ => 'Формируем фискальный чек',
     };
     return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      title: Text(title),
-      content: SizedBox(
-        width: 470,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
+      backgroundColor: const Color(0xFFF8FAFC),
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      titlePadding: const EdgeInsets.fromLTRB(24, 24, 16, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: accentBackground,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
               failed
                   ? Icons.error_outline_rounded
                   : _receipt.canPrint
-                      ? Icons.check_circle_outline_rounded
+                      ? Icons.receipt_long_rounded
                       : Icons.hourglass_top_rounded,
-              size: 54,
-              color: failed
-                  ? Colors.red
-                  : _receipt.canPrint
-                      ? Colors.green
-                      : const Color(0xFF2F80ED),
+              color: accentColor,
+              size: 26,
             ),
-            const SizedBox(height: 12),
-            Text('Статус: ${_receipt.status}'),
-            if (_receipt.isPending) ...[
-              const SizedBox(height: 16),
-              if (activePolling) const LinearProgressIndicator(),
-              const SizedBox(height: 8),
-              Text(
-                activePolling
-                    ? 'Следующая проверка через ${_receipt.pollAfterSeconds} сек.'
-                    : 'Фискализация выполняется. Проверка продолжится в фоне.',
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+          ),
+          if (!pending && !_printing)
+            IconButton(
+              tooltip: 'Закрыть',
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(
+                Icons.close_rounded,
+                color: Color(0xFF64748B),
+              ),
+            ),
+        ],
+      ),
+      content: SizedBox(
+        width: 480,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (pending) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  children: [
+                    if (activePolling)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: const LinearProgressIndicator(
+                          minHeight: 7,
+                          color: Color(0xFF2563EB),
+                          backgroundColor: Color(0xFFDBEAFE),
+                        ),
+                      ),
+                    if (activePolling) const SizedBox(height: 14),
+                    Text(
+                      activePolling
+                          ? 'Пожалуйста, подождите'
+                          : 'Обработка продолжается в фоне',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF475569),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (!pending && !failed && _error == null) ...[
+              const Text(
+                'Чек отправлен на печать',
                 textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Color(0xFF475569),
+                ),
               ),
             ],
             if ((_receipt.errorMessage ?? '').isNotEmpty) ...[
@@ -395,7 +583,19 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
             ],
             if (_error != null) ...[
               const SizedBox(height: 12),
-              Text(_error!, style: const TextStyle(color: Colors.red)),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEECEC),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Color(0xFFB42318)),
+                ),
+              ),
             ],
             if (failed) ...[
               const SizedBox(height: 12),
@@ -409,11 +609,14 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _printing || _receipt.isPending
-              ? null
-              : () => Navigator.of(context).pop(),
+          onPressed:
+              _printing || pending ? null : () => Navigator.of(context).pop(),
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF475569),
+            minimumSize: const Size(110, 48),
+          ),
           child: Text(
-            _receipt.isPending ? 'Ожидание Webkassa…' : 'Закрыть',
+            pending ? 'Подождите…' : 'Закрыть',
           ),
         ),
         FilledButton.icon(
@@ -426,6 +629,14 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
               : const Icon(Icons.print_rounded),
           label: Text(
             _error == null ? 'Печать фискального чека' : 'Повторить печать',
+          ),
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF22B982),
+            disabledBackgroundColor: const Color(0xFFCBD5E1),
+            minimumSize: const Size(190, 48),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         ),
       ],
