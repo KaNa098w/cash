@@ -243,7 +243,10 @@ class FiscalReceiptService {
         pw.Page(
           pageFormat:
               paperMm == 80 ? PdfPageFormat.roll80 : PdfPageFormat.roll57,
-          margin: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          // Thermal printers often have a wider non-printable area on the
+          // right. Keep the content away from that edge so final characters
+          // are not clipped.
+          margin: const pw.EdgeInsets.fromLTRB(6, 8, 14, 8),
           build: (_) => pw.Center(
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.center,

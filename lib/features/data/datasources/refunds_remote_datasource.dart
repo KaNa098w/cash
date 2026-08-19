@@ -65,7 +65,8 @@ class RefundsRemoteDatasource {
     String? customerId,
     required num totalAmount,
     required List<RefundItemPayload> items,
-    required String returnAccessKey,
+    String? returnAccessKey,
+    String? userId,
     DateTime? date,
     String? reasonCode,
     String? note,
@@ -81,15 +82,17 @@ class RefundsRemoteDatasource {
       throw Exception('createRefundV2: items is empty');
     }
 
-    final accessKey = returnAccessKey.trim();
-    if (accessKey.isEmpty) {
-      throw Exception('createRefundV2: returnAccessKey is empty');
+    final accessKey = (returnAccessKey ?? '').trim();
+    final directorUserId = (userId ?? '').trim();
+    if (accessKey.isEmpty && directorUserId.isEmpty) {
+      throw Exception('createRefundV2: return access is missing');
     }
 
     final payload = <String, dynamic>{
       "date": _formatDateForApi(date ?? DateTime.now()),
       "sale_id": saleId.trim(),
       "total_amount": _moneyValue(totalAmount),
+      if (directorUserId.isNotEmpty) "user_id": directorUserId,
       if (customerId != null && customerId.trim().isNotEmpty)
         "customer_id": customerId.trim(),
       if ((reasonCode ?? '').trim().isNotEmpty)
@@ -101,9 +104,9 @@ class RefundsRemoteDatasource {
     final resp = await _dio.post(
       '/organizations/pos/$safeKey/refunds',
       data: payload,
-      queryParameters: {
-        'return_access_key': accessKey,
-      },
+      options: accessKey.isNotEmpty
+          ? Options(headers: {'X-Return-Access-Key': accessKey})
+          : null,
     );
 
     final body = resp.data;
@@ -132,7 +135,8 @@ class RefundsRemoteDatasource {
     required num totalAmount,
     required List<RefundItemPayload> items,
     DateTime? date,
-    required String returnAccessKey,
+    String? returnAccessKey,
+    String? userId,
     String? reasonCode,
     String? note,
   }) async {
@@ -148,10 +152,16 @@ class RefundsRemoteDatasource {
     if (items.isEmpty) {
       throw Exception('updateRefundV2: items is empty');
     }
+    final accessKey = (returnAccessKey ?? '').trim();
+    final directorUserId = (userId ?? '').trim();
+    if (accessKey.isEmpty && directorUserId.isEmpty) {
+      throw Exception('updateRefundV2: return access is missing');
+    }
 
     final payload = <String, dynamic>{
       "date": _formatDateForApi(date ?? DateTime.now()),
       "total_amount": _moneyValue(totalAmount),
+      if (directorUserId.isNotEmpty) "user_id": directorUserId,
       if ((reasonCode ?? '').trim().isNotEmpty)
         "reason_code": reasonCode!.trim(),
       if ((note ?? '').trim().isNotEmpty) "note": note!.trim(),
@@ -168,9 +178,9 @@ class RefundsRemoteDatasource {
     final resp = await _dio.put(
       '/organizations/pos/$safeKey/refunds/$rid', // ✅ ВАЖНО: /refunds/{refundId}
       data: payload,
-      queryParameters: {
-        'return_access_key': returnAccessKey,
-      },
+      options: accessKey.isNotEmpty
+          ? Options(headers: {'X-Return-Access-Key': accessKey})
+          : null,
     );
 
     final body = resp.data;

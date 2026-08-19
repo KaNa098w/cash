@@ -797,6 +797,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     final key = auth.posKey?.trim() ?? '';
     final deviceId = auth.deviceId?.trim() ?? '';
     final posSessionId = auth.shiftId?.trim() ?? '';
+    final storeId = auth.storeId?.trim() ?? '';
 
     if (key.isEmpty) {
       _snack('Нет posKey');
@@ -948,11 +949,12 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         (p.saleItemId.isNotEmpty ? p.saleItemId : p.productId): p.quantity,
     };
     final activeUserId = (auth.activeUserId ?? '').trim();
-    final isDirector = auth.users.any(
-      (user) =>
-          user.id == activeUserId &&
-          user.roles.any((role) => role.toLowerCase() == 'director'),
-    );
+    final isDirector = activeUserId.isNotEmpty &&
+        auth.users.any(
+          (user) =>
+              user.id == activeUserId &&
+              user.roles.any((role) => role.toLowerCase() == 'director'),
+        );
 
     Future<bool> sendRefund(String? accessKey) async {
       try {
@@ -968,6 +970,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
           items: items,
           date: DateTime.now(),
           returnAccessKey: accessKey,
+          userId: isDirector ? activeUserId : null,
           reasonCode: reasonCode,
         );
         if (result.result == QueueSendResult.manual) {
@@ -997,8 +1000,10 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                   onScanned: (barcode) async {
                     final accessKey = barcode.trim();
                     if (accessKey.isEmpty) return false;
-                    final validLocally =
-                        await sync.checkReturnAccessKey(accessKey);
+                    final validLocally = await sync.checkReturnAccessKey(
+                      accessKey,
+                      storeId: storeId,
+                    );
                     if (!validLocally) return false;
                     return sendRefund(accessKey);
                   },

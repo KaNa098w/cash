@@ -235,6 +235,8 @@ class SalesHistoryController {
     required SaleModel sale,
     required List<dynamic> items, // RefundItemPayload
     required num totalAmount,
+    required String? returnAccessKey,
+    required String? userId,
     required VoidCallback notifyLoading,
     required void Function(String msg) toast,
   }) {
@@ -255,7 +257,8 @@ class SalesHistoryController {
           totalAmount: totalAmount,
           items: items.cast<RefundItemPayload>(),
           date: DateTime.now(),
-          returnAccessKey: '', // <— добавить в datasource
+          returnAccessKey: returnAccessKey,
+          userId: userId,
         );
 
         toast('Возврат обновлён');

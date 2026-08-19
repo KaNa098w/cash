@@ -420,7 +420,11 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
             final key = code.trim();
             if (key.isEmpty) return false;
             _logRefund('checking return access key');
-            final ok = await _sync.checkReturnAccessKey(key);
+            final storeId = context.read<AuthTokenProvider>().storeId?.trim();
+            final ok = await _sync.checkReturnAccessKey(
+              key,
+              storeId: storeId,
+            );
             _logRefund('return access key check: ${ok ? 'ok' : 'failed'}');
             if (ok) acceptedKey = key;
             return ok;
@@ -485,11 +489,12 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
     }
 
     final activeUserId = (auth.activeUserId ?? '').trim();
-    final isDirector = auth.users.any(
-      (user) =>
-          user.id == activeUserId &&
-          user.roles.any((role) => role.toLowerCase() == 'director'),
-    );
+    final isDirector = activeUserId.isNotEmpty &&
+        auth.users.any(
+          (user) =>
+              user.id == activeUserId &&
+              user.roles.any((role) => role.toLowerCase() == 'director'),
+        );
     final returnAccessKey = isDirector ? null : await _requestReturnAccessKey();
     if (!isDirector && (returnAccessKey ?? '').trim().isEmpty) {
       _logRefund('blocked: return access key not provided');
@@ -540,6 +545,7 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
         date: DateTime.now(),
         items: items,
         returnAccessKey: returnAccessKey,
+        userId: isDirector ? activeUserId : null,
         reasonCode: _reasonCode,
       );
       _logRefund(

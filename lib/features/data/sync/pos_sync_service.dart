@@ -291,10 +291,15 @@ class PosSyncService {
     );
   }
 
-  /// Check if a return access key is valid in the local DB.
-  /// Pass [checkExpiry: false] for offline refund scenarios.
-  Future<bool> checkReturnAccessKey(String key, {bool checkExpiry = true}) {
-    return _localStore.checkReturnAccessKey(key, checkExpiry: checkExpiry);
+  /// Check if a return access key is active and not expired in the local DB.
+  Future<bool> checkReturnAccessKey(
+    String key, {
+    String? storeId,
+  }) {
+    return _localStore.checkReturnAccessKey(
+      key,
+      storeId: storeId,
+    );
   }
 
   Future<int> peekNextLocalSaleNumber() {
@@ -1078,6 +1083,7 @@ class PosSyncService {
     required DateTime date,
     required List<Map<String, dynamic>> items,
     String? returnAccessKey,
+    String? userId,
     String? reasonCode,
     String? note,
   }) async {
@@ -1110,6 +1116,7 @@ class PosSyncService {
       'items': items,
       if ((returnAccessKey ?? '').trim().isNotEmpty)
         'return_access_key': returnAccessKey!.trim(),
+      if ((userId ?? '').trim().isNotEmpty) 'user_id': userId!.trim(),
     };
 
     await _localStore.insertRefundLocal(payload);

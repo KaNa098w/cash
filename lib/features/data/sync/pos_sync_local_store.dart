@@ -2260,22 +2260,28 @@ class PosSyncLocalStore {
     };
   }
 
-  /// Check if a return access key is valid locally.
-  /// [checkExpiry] = false for offline refund scenarios.
-  Future<bool> checkReturnAccessKey(String key,
-      {bool checkExpiry = true}) async {
+  /// Check if a return access key is active and not expired locally.
+  Future<bool> checkReturnAccessKey(
+    String key, {
+    String? storeId,
+  }) async {
     final db = await _database;
+    final normalizedStoreId = (storeId ?? '').trim();
     final rows = db.select(
-      'SELECT * FROM return_access_keys WHERE key = ? AND is_active = 1 LIMIT 1',
-      [key.trim()],
+      normalizedStoreId.isEmpty
+          ? 'SELECT * FROM return_access_keys WHERE key = ? AND is_active = 1 LIMIT 1'
+          : 'SELECT * FROM return_access_keys WHERE key = ? AND is_active = 1 AND (store_id IS NULL OR store_id = ?) LIMIT 1',
+      normalizedStoreId.isEmpty
+          ? [key.trim()]
+          : [key.trim(), normalizedStoreId],
     );
     if (rows.isEmpty) return false;
-    if (!checkExpiry) return true;
     final row = _rowMap(rows.first);
     final expiresAt = row['expires_at']?.toString().trim() ?? '';
     if (expiresAt.isEmpty) return true;
     final expiryDt = _parseDt(expiresAt);
-    if (expiryDt == null) return true;
+    // Invalid server dates must never make a key valid.
+    if (expiryDt == null) return false;
     return expiryDt.isAfter(DateTime.now());
   }
 
