@@ -23,6 +23,7 @@ class _ShiftCloseWarningBannerState extends State<ShiftCloseWarningBanner> {
   Timer? _timer;
   DateTime? _openedAt;
   String? _loadedShiftId;
+  bool? _loadedFiscalizationEnabled;
   bool _refreshing = false;
 
   @override
@@ -41,11 +42,15 @@ class _ShiftCloseWarningBannerState extends State<ShiftCloseWarningBanner> {
   Future<void> _refresh() async {
     if (!mounted || _refreshing) return;
     _refreshing = true;
-    final shiftId = (context.read<AuthTokenProvider>().shiftId ?? '').trim();
-    if (shiftId.isEmpty) {
-      if (_openedAt != null || _loadedShiftId != shiftId) {
+    final auth = context.read<AuthTokenProvider>();
+    final shiftId = (auth.shiftId ?? '').trim();
+    if (!auth.fiscalizationEnabled || shiftId.isEmpty) {
+      if (_openedAt != null ||
+          _loadedShiftId != shiftId ||
+          _loadedFiscalizationEnabled != auth.fiscalizationEnabled) {
         setState(() {
           _loadedShiftId = shiftId;
+          _loadedFiscalizationEnabled = auth.fiscalizationEnabled;
           _openedAt = null;
         });
       }
@@ -62,6 +67,7 @@ class _ShiftCloseWarningBannerState extends State<ShiftCloseWarningBanner> {
       if (!mounted) return;
       setState(() {
         _loadedShiftId = shiftId;
+        _loadedFiscalizationEnabled = auth.fiscalizationEnabled;
         _openedAt = session?.openedAt;
       });
     } catch (_) {
@@ -80,11 +86,13 @@ class _ShiftCloseWarningBannerState extends State<ShiftCloseWarningBanner> {
 
   @override
   Widget build(BuildContext context) {
-    final currentShiftId =
-        (context.watch<AuthTokenProvider>().shiftId ?? '').trim();
-    if (currentShiftId != _loadedShiftId) {
+    final auth = context.watch<AuthTokenProvider>();
+    final currentShiftId = (auth.shiftId ?? '').trim();
+    if (currentShiftId != _loadedShiftId ||
+        auth.fiscalizationEnabled != _loadedFiscalizationEnabled) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
     }
+    if (!auth.fiscalizationEnabled) return const SizedBox.shrink();
     final openedAt = _openedAt;
     if (openedAt == null) return const SizedBox.shrink();
     final elapsed = DateTime.now().difference(openedAt);
