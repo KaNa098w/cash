@@ -539,11 +539,14 @@ class _SearchBarState extends State<SearchBar> {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
     final physicalDigit = _digitFromPhysicalKey(event.physicalKey);
-    final englishPhysicalCharacter =
-        MarkingKeyboardInputFormatter.englishCharacter(event);
+    final scannerCharacter =
+        MarkingKeyboardInputFormatter.scannerCharacter(event);
     final eventCharacter = event.character;
-    final scannedCharacter = physicalDigit ??
-        englishPhysicalCharacter ??
+    // Prefer the actual character emitted by the scanner. Parentheses are
+    // commonly sent as Shift+9 / Shift+0; using the physical digit first
+    // corrupts `(01)` into `9010` and makes human-readable GS1 codes invalid.
+    final scannedCharacter = scannerCharacter ??
+        physicalDigit ??
         (eventCharacter != null &&
                 eventCharacter.length == 1 &&
                 eventCharacter.codeUnitAt(0) >= 32
@@ -751,7 +754,7 @@ class _SearchBarState extends State<SearchBar> {
       return true;
     }
 
-    final canonicalCode = Gs1DataMatrixValidator.canonicalCode(normalizedCode);
+    final canonicalCode = validation.canonical!;
     final posCubit = context.read<PosCubit>();
     final alreadyScanned =
         posCubit.state.items.expand((item) => item.markCodes).any(
@@ -768,7 +771,7 @@ class _SearchBarState extends State<SearchBar> {
       () => addMarkedProductToCart(
         context,
         product,
-        initialMarkCode: normalizedCode,
+        initialMarkCode: canonicalCode,
       ),
       restoreFocus: false,
     );
@@ -805,7 +808,9 @@ class _SearchBarState extends State<SearchBar> {
     // Never process its partial value from live-search debounce: wait for the
     // scanner's Enter suffix so trailing characters cannot refill the field
     // after a successful add and clear.
-    if (submitted && await _tryAddProductByMarkingCode(query, all)) return;
+    if (submitted && await _tryAddProductByMarkingCode(_controller.text, all)) {
+      return;
+    }
     if (!mounted) return;
     final q = query.toLowerCase();
     final isBarcodeLike = RegExp(r'^\d{8,}$').hasMatch(query);

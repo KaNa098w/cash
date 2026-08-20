@@ -26,6 +26,7 @@ import 'package:leemon_app/features/presentation/pages/search/widgets/customer_c
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_page.dart';
 import 'package:leemon_app/features/presentation/widgets/last_sale_amount_notifier.dart';
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
+import 'package:leemon_app/features/presentation/widgets/receipt_print_confirmation_dialog.dart';
 import 'package:leemon_app/features/presentation/utils/comment_text_controller.dart';
 import 'package:uuid/uuid.dart';
 import '../../data/utils/money.dart';
@@ -88,7 +89,7 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
       }
       return KeyEventResult.handled;
     }
-    final character = MarkingKeyboardInputFormatter.englishCharacter(event);
+    final character = MarkingKeyboardInputFormatter.scannerCharacter(event);
     if (character == null) return KeyEventResult.ignored;
     final text = '${_controller.text}$character';
     _controller.value = TextEditingValue(
@@ -128,7 +129,7 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
       _focusNode.requestFocus();
       return;
     }
-    final canonical = Gs1DataMatrixValidator.canonicalCode(raw);
+    final canonical = validation.canonical!;
     final duplicate = widget.usedCodes.contains(canonical) ||
         _codes.any(
           (code) => Gs1DataMatrixValidator.canonicalCode(code) == canonical,
@@ -142,7 +143,7 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
       return;
     }
     setState(() {
-      _codes.add(raw);
+      _codes.add(canonical);
       _error = null;
       _controller.clear();
     });
@@ -428,6 +429,13 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
   }
 
   Future<void> _print() async {
+    final shouldPrint = await showReceiptPrintConfirmation(
+      context,
+      title: 'Распечатать фискальный чек?',
+      message: 'Фискальный чек готов. Отправить его на принтер?',
+    );
+    if (!mounted || !shouldPrint) return;
+
     setState(() {
       _printing = true;
       _error = null;
@@ -567,10 +575,12 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
               ),
             ],
             if (!pending && !failed && _error == null) ...[
-              const Text(
-                'Чек отправлен на печать',
+              Text(
+                _receipt.canPrint
+                    ? 'Чек готов к печати'
+                    : 'Фискальный чек обработан',
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 16,
                   color: Color(0xFF475569),
                 ),
@@ -1276,7 +1286,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     totalPrice: totalPrice,
                     id: '',
                     saleId: '',
-                    markCodes: it.markCodes,
+                    markCodes: it.markCodes
+                        .map(Gs1DataMatrixValidator.canonicalCode)
+                        .toList(growable: false),
                   ),
                 );
               }
@@ -1533,63 +1545,75 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   return;
                 }
 
-                final printedPaymentMethod =
-                    printedSale.paymentMethod.trim().toLowerCase();
-                await _printService.print80mmSilently(
-                  () => buildReceiptPdf(
-                    ReceiptPdfData(
-                      pageFormat: pageFormat,
-                      money: money,
-                      receiptDate: printedSale.date,
-                      receiptNumber: formatPosReceiptNumber(
-                        posNumber: auth.posNumber ?? '',
-                        saleNumber: printedSale.number,
-                        fallback: printedSale.localId,
-                      ),
-                      cashierName: (auth.activeUserName ?? '').trim().isEmpty
-                          ? userId
-                          : auth.activeUserName!.trim(),
-                      storeName: (() {
-                        final name = (auth.storeName ?? '').trim();
-                        if (name.isNotEmpty) return name;
-                        final posName = (auth.posName ?? '').trim();
-                        if (posName.isNotEmpty) return posName;
-                        return 'Магазин';
-                      })(),
-                      items: posCubit.state.items
-                          .map(
-                            (it) => ReceiptPdfItem(
-                              name: it.product.name,
-                              quantity: it.qty,
-                              unitPrice: it.effectiveUnitPrice,
-                              lineTotal: it.sum,
-                              discountPercent: it.effectiveDiscountPercent,
-                            ),
-                          )
-                          .toList(),
-                      total: posCubit.total,
-                      discountSum: posCubit.discountSum,
-                      paymentMethodLabel: _normalizePaymentMethodLabel(
-                          printedSale.paymentMethod),
-                      isCashPayment: printedPaymentMethod == 'cash',
-                      received: isDebtSale
-                          ? printedSale.paidAmount
-                          : posCubit.state.received,
-                      change: isDebtSale ? 0 : posCubit.change,
-                      customerName: selectedCustomer?.name,
-                      previousDebt:
-                          isDebtSale ? selectedCustomer?.balance : null,
-                      newDebt: isDebtSale
-                          ? (selectedCustomer?.balance ?? 0) +
-                              printedSale.debtAmount
-                          : null,
-                      debtAmount: isDebtSale ? printedSale.debtAmount : null,
-                      paidNow: isDebtSale ? printedSale.paidAmount : null,
-                      documentTitle: isDebtSale ? 'ПРОДАЖА В ДОЛГ' : null,
-                    ),
-                  ),
-                  printerName: auth.receiptPrinterName,
+                var localReceiptPrinted = false;
+                if (!mounted) return;
+                final shouldPrintLocalReceipt =
+                    await showReceiptPrintConfirmation(
+                  this.context,
+                  title: 'Распечатать чек продажи?',
+                  message: 'Продажа успешно оформлена. Нужен бумажный чек?',
                 );
+                if (!mounted) return;
+                if (shouldPrintLocalReceipt) {
+                  final printedPaymentMethod =
+                      printedSale.paymentMethod.trim().toLowerCase();
+                  await _printService.print80mmSilently(
+                    () => buildReceiptPdf(
+                      ReceiptPdfData(
+                        pageFormat: pageFormat,
+                        money: money,
+                        receiptDate: printedSale.date,
+                        receiptNumber: formatPosReceiptNumber(
+                          posNumber: auth.posNumber ?? '',
+                          saleNumber: printedSale.number,
+                          fallback: printedSale.localId,
+                        ),
+                        cashierName: (auth.activeUserName ?? '').trim().isEmpty
+                            ? userId
+                            : auth.activeUserName!.trim(),
+                        storeName: (() {
+                          final name = (auth.storeName ?? '').trim();
+                          if (name.isNotEmpty) return name;
+                          final posName = (auth.posName ?? '').trim();
+                          if (posName.isNotEmpty) return posName;
+                          return 'Магазин';
+                        })(),
+                        items: posCubit.state.items
+                            .map(
+                              (it) => ReceiptPdfItem(
+                                name: it.product.name,
+                                quantity: it.qty,
+                                unitPrice: it.effectiveUnitPrice,
+                                lineTotal: it.sum,
+                                discountPercent: it.effectiveDiscountPercent,
+                              ),
+                            )
+                            .toList(),
+                        total: posCubit.total,
+                        discountSum: posCubit.discountSum,
+                        paymentMethodLabel: _normalizePaymentMethodLabel(
+                            printedSale.paymentMethod),
+                        isCashPayment: printedPaymentMethod == 'cash',
+                        received: isDebtSale
+                            ? printedSale.paidAmount
+                            : posCubit.state.received,
+                        change: isDebtSale ? 0 : posCubit.change,
+                        customerName: selectedCustomer?.name,
+                        previousDebt:
+                            isDebtSale ? selectedCustomer?.balance : null,
+                        newDebt: isDebtSale
+                            ? (selectedCustomer?.balance ?? 0) +
+                                printedSale.debtAmount
+                            : null,
+                        debtAmount: isDebtSale ? printedSale.debtAmount : null,
+                        paidNow: isDebtSale ? printedSale.paidAmount : null,
+                        documentTitle: isDebtSale ? 'ПРОДАЖА В ДОЛГ' : null,
+                      ),
+                    ),
+                    printerName: auth.receiptPrinterName,
+                  );
+                  localReceiptPrinted = true;
+                }
 
                 final fiscalService = sl<FiscalReceiptService>();
                 final fiscalReceipt = fiscalizationExpected
@@ -1598,7 +1622,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 if (fiscalizationExpected && fiscalReceipt != null) {
                   await fiscalService.save(
                     fiscalReceipt,
-                    localReceiptPrinted: true,
+                    localReceiptPrinted: localReceiptPrinted,
                     saleIds: {
                       sale.localId,
                       printedSale.localId,

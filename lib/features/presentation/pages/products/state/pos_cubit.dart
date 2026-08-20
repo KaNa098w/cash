@@ -6,6 +6,7 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:leemon_app/core/marking/gs1_datamatrix_validator.dart';
 import 'package:leemon_app/core/models/product_response.dart'; // ProductModel
 import 'package:leemon_app/features/domain/entities/cart_item.dart';
 import 'package:leemon_app/features/domain/entities/payment.dart';
@@ -373,7 +374,7 @@ class PosCubit extends Cubit<PosState> {
   void setMarkCodes(int index, List<String> codes) {
     if (index < 0 || index >= state.items.length) return;
     final normalized = codes
-        .map((code) => code.trim())
+        .map(Gs1DataMatrixValidator.canonicalCode)
         .where((code) => code.isNotEmpty)
         .toList(growable: false);
     final tickets = _updateActiveTicketItems((items) {

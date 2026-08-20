@@ -316,7 +316,7 @@ class _SingleMarkCodeDialogState extends State<_SingleMarkCodeDialog> {
       }
       return KeyEventResult.handled;
     }
-    final character = MarkingKeyboardInputFormatter.englishCharacter(event);
+    final character = MarkingKeyboardInputFormatter.scannerCharacter(event);
     if (character == null) return KeyEventResult.ignored;
     final text = '${_controller.text}$character';
     _controller.value = TextEditingValue(
@@ -357,7 +357,7 @@ class _SingleMarkCodeDialogState extends State<_SingleMarkCodeDialog> {
       _focusNode.requestFocus();
       return;
     }
-    Navigator.of(context).pop(rawCode);
+    Navigator.of(context).pop(validation.canonical!);
   }
 
   @override

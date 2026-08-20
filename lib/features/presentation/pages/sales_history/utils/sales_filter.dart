@@ -10,6 +10,49 @@ enum SalesStatusFilter {
   refunded,
 }
 
+num refundAmount(RefundModel refund) {
+  final total = refund.totalAmount;
+  if (total != null) return total;
+  return refund.items.fold<num>(
+    0,
+    (sum, item) => sum + (item.price * item.quantity),
+  );
+}
+
+num netSalesTotal(
+  List<SaleModel> sales,
+  List<RefundModel> refunds,
+) {
+  var total = sales.fold<num>(0, (sum, sale) => sum + sale.totalAmount);
+
+  for (final sale in sales) {
+    final saleId = sale.localId.trim();
+    final embeddedRefundId = sale.refund?.id.trim() ?? '';
+    final matchedRefundIds = <String>{};
+    num matchedRefundTotal = 0;
+
+    for (final refund in refunds) {
+      final refundSaleId = (refund.saleId ?? '').trim();
+      final matchesSale = saleId.isNotEmpty && refundSaleId == saleId;
+      final matchesEmbeddedRefund =
+          embeddedRefundId.isNotEmpty && refund.id.trim() == embeddedRefundId;
+      if (!matchesSale && !matchesEmbeddedRefund) continue;
+
+      final refundId = refund.id.trim();
+      if (refundId.isNotEmpty && !matchedRefundIds.add(refundId)) continue;
+      matchedRefundTotal += refundAmount(refund);
+    }
+
+    total -= matchedRefundIds.isNotEmpty || matchedRefundTotal != 0
+        ? matchedRefundTotal
+        : sale.refund == null
+            ? 0
+            : refundAmount(sale.refund!);
+  }
+
+  return total;
+}
+
 List<SaleModel> filterSales(
   List<SaleModel> sales,
   String query, {

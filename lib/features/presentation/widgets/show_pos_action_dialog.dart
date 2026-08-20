@@ -28,6 +28,7 @@ import 'package:leemon_app/features/presentation/pages/auth/auth_bloc/auth_cubit
 import 'package:leemon_app/features/presentation/pages/products/product_bloc/product_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/products/product_create_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/deposit_to_cash_sheel.dart';
+import 'package:leemon_app/features/presentation/widgets/receipt_print_confirmation_dialog.dart';
 import 'package:path/path.dart' as path;
 import 'package:leemon_app/core/di/api/app_version.dart';
 import 'package:path_provider/path_provider.dart';
@@ -1715,6 +1716,13 @@ Future<void> _printLastSaleReceipt(BuildContext context) async {
       );
       return;
     }
+
+    final shouldPrint = await showReceiptPrintConfirmation(
+      context,
+      title: 'Распечатать последний чек?',
+      message: 'Отправить чек последней продажи на принтер?',
+    );
+    if (!context.mounted || !shouldPrint) return;
 
     final printer = PrintService();
     final auth = context.read<AuthTokenProvider>();

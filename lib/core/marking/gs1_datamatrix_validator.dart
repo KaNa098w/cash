@@ -3,85 +3,19 @@ import 'package:flutter/services.dart';
 class MarkingKeyboardInputFormatter extends TextInputFormatter {
   const MarkingKeyboardInputFormatter();
 
-  static const _russianToEnglish = <String, String>{
-    'й': 'q',
-    'ц': 'w',
-    'у': 'e',
-    'к': 'r',
-    'е': 't',
-    'н': 'y',
-    'г': 'u',
-    'ш': 'i',
-    'щ': 'o',
-    'з': 'p',
-    'х': '[',
-    'ъ': ']',
-    'ф': 'a',
-    'ы': 's',
-    'в': 'd',
-    'а': 'f',
-    'п': 'g',
-    'р': 'h',
-    'о': 'j',
-    'л': 'k',
-    'д': 'l',
-    'ж': ';',
-    'э': "'",
-    'я': 'z',
-    'ч': 'x',
-    'с': 'c',
-    'м': 'v',
-    'и': 'b',
-    'т': 'n',
-    'ь': 'm',
-    'б': ',',
-    'ю': '.',
-    'Й': 'Q',
-    'Ц': 'W',
-    'У': 'E',
-    'К': 'R',
-    'Е': 'T',
-    'Н': 'Y',
-    'Г': 'U',
-    'Ш': 'I',
-    'Щ': 'O',
-    'З': 'P',
-    'Х': '{',
-    'Ъ': '}',
-    'Ф': 'A',
-    'Ы': 'S',
-    'В': 'D',
-    'А': 'F',
-    'П': 'G',
-    'Р': 'H',
-    'О': 'J',
-    'Л': 'K',
-    'Д': 'L',
-    'Ж': ':',
-    'Э': '"',
-    'Я': 'Z',
-    'Ч': 'X',
-    'С': 'C',
-    'М': 'V',
-    'И': 'B',
-    'Т': 'N',
-    'Ь': 'M',
-    'Б': '<',
-    'Ю': '>',
-  };
+  // Do not transliterate scanner data. A Cyrillic payload is not byte-for-byte
+  // identical to the marking and must be fixed in the scanner HID settings.
+  static String normalize(String value) => value;
 
-  static String normalize(String value) => value
-      .split('')
-      .map((character) => _russianToEnglish[character] ?? character)
-      .join();
-
-  /// Returns the character for the physical key as if the US English layout
-  /// were active. Hardware scanners emulate a keyboard, so this prevents the
-  /// current Russian/Kazakh system layout from changing barcode characters.
-  static String? englishCharacter(KeyEvent event) {
+  /// Reads scanner key presses using a fixed US layout, independently of the
+  /// active Russian/Kazakh system layout.
+  static String? scannerCharacter(
+    KeyEvent event, {
+    bool? shiftPressed,
+  }) {
     if (event.character == '\x1D') return event.character;
 
-    final shift = HardwareKeyboard.instance.isShiftPressed;
+    final shift = shiftPressed ?? HardwareKeyboard.instance.isShiftPressed;
     final letters = <PhysicalKeyboardKey, String>{
       PhysicalKeyboardKey.keyA: 'a',
       PhysicalKeyboardKey.keyB: 'b',
@@ -191,16 +125,40 @@ class MarkingKeyboardInputFormatter extends TextInputFormatter {
 }
 
 class Gs1DataMatrixValidation {
-  const Gs1DataMatrixValidation._(this.isValid, this.message);
+  const Gs1DataMatrixValidation._(
+    this.isValid,
+    this.message, {
+    this.canonical,
+    this.gtin,
+  });
 
   final bool isValid;
   final String? message;
+  final String? canonical;
+  final String? gtin;
 
-  factory Gs1DataMatrixValidation.valid() =>
-      const Gs1DataMatrixValidation._(true, null);
+  factory Gs1DataMatrixValidation.valid({
+    required String canonical,
+    required String gtin,
+  }) =>
+      Gs1DataMatrixValidation._(
+        true,
+        null,
+        canonical: canonical,
+        gtin: gtin,
+      );
 
-  factory Gs1DataMatrixValidation.invalid(String message) =>
-      Gs1DataMatrixValidation._(false, message);
+  factory Gs1DataMatrixValidation.invalid(
+    String message, {
+    String? canonical,
+    String? gtin,
+  }) =>
+      Gs1DataMatrixValidation._(
+        false,
+        message,
+        canonical: canonical,
+        gtin: gtin,
+      );
 }
 
 class Gs1DataMatrixValidator {
@@ -215,12 +173,22 @@ class Gs1DataMatrixValidator {
     if (value.startsWith(gs1DataMatrixSymbology)) {
       value = value.substring(gs1DataMatrixSymbology.length);
     }
-    return value.startsWith(_groupSeparator) ? value.substring(1) : value;
+    if (value.startsWith(_groupSeparator)) {
+      value = value.substring(1);
+    }
+    if (value.startsWith('(01)')) {
+      value = value.replaceAllMapped(
+        RegExp(r'\((\d{2,4})\)'),
+        (match) => match.group(1)!,
+      );
+    }
+    return value;
   }
 
   static String? normalizeGtin14(String? value) {
     final raw = value?.trim();
-    if (raw == null || !RegExp(r'^\d{1,14}$').hasMatch(raw)) return null;
+    if (raw == null || !RegExp(r'^\d+$').hasMatch(raw)) return null;
+    if (!const {8, 12, 13, 14}.contains(raw.length)) return null;
     return raw.padLeft(14, '0');
   }
 
@@ -260,6 +228,8 @@ class Gs1DataMatrixValidator {
     if (!hasValidGtinCheckDigit(gtin)) {
       return Gs1DataMatrixValidation.invalid(
         'GTIN в коде маркировки имеет неверную контрольную цифру.',
+        canonical: content,
+        gtin: gtin,
       );
     }
 
@@ -267,9 +237,11 @@ class Gs1DataMatrixValidator {
     if (normalizedExpected != null && normalizedExpected != gtin) {
       return Gs1DataMatrixValidation.invalid(
         'Отсканирован код другого товара. Выберите код с нужной упаковки.',
+        canonical: content,
+        gtin: gtin,
       );
     }
-    return Gs1DataMatrixValidation.valid();
+    return Gs1DataMatrixValidation.valid(canonical: content, gtin: gtin);
   }
 
   static String? gtin(String value) => RegExp(r'^01(\d{14})21', dotAll: true)

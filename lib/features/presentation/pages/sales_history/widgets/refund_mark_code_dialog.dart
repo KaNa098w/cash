@@ -75,7 +75,7 @@ class _RefundMarkCodeDialogState extends State<_RefundMarkCodeDialog> {
       }
       return KeyEventResult.handled;
     }
-    final character = MarkingKeyboardInputFormatter.englishCharacter(event);
+    final character = MarkingKeyboardInputFormatter.scannerCharacter(event);
     if (character == null) return KeyEventResult.ignored;
     _setText('${_controller.text}$character');
     return KeyEventResult.handled;
@@ -114,17 +114,22 @@ class _RefundMarkCodeDialogState extends State<_RefundMarkCodeDialog> {
       _reject(validation.message ?? 'Код маркировки не распознан.');
       return;
     }
-    if (widget.currentCodes.contains(rawCode)) {
+    final canonical = validation.canonical!;
+    if (widget.currentCodes.any(
+      (code) => Gs1DataMatrixValidator.canonicalCode(code) == canonical,
+    )) {
       _reject('Этот код маркировки уже добавлен в возврат.');
       return;
     }
-    if (!widget.availableCodes.contains(rawCode)) {
+    if (!widget.availableCodes.any(
+      (code) => Gs1DataMatrixValidator.canonicalCode(code) == canonical,
+    )) {
       _reject(
         'Этот код отсутствует в исходном чеке или уже был возвращён.',
       );
       return;
     }
-    Navigator.of(context).pop(rawCode);
+    Navigator.of(context).pop(canonical);
   }
 
   @override

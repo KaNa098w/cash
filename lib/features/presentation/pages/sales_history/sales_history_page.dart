@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pdf/pdf.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/core/marking/gs1_datamatrix_validator.dart';
 import 'package:leemon_app/core/models/refund_model.dart';
 import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
@@ -29,6 +30,7 @@ import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sal
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 import 'package:leemon_app/features/presentation/widgets/payment_panel.dart'
     show FiscalReceiptDialog;
+import 'package:leemon_app/features/presentation/widgets/receipt_print_confirmation_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/refund_reason_selector.dart';
 
 import 'state/sales_cubit.dart';
@@ -432,6 +434,12 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   Future<void> _printFiscalSaleReceipt(SaleModel sale) async {
     final saleKey = _salePrintKey(sale);
     if (_controller.isReceiptPrintDisabled(saleKey)) return;
+    final shouldPrint = await showReceiptPrintConfirmation(
+      context,
+      title: 'Распечатать фискальный чек?',
+      message: 'Отправить фискальный чек этой продажи на принтер?',
+    );
+    if (!mounted || !shouldPrint) return;
     _controller.setReceiptPrintLoading(saleKey, true, _notifyPrintStateChanged);
     final auth = context.read<AuthTokenProvider>();
     try {
@@ -844,7 +852,9 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         'quantity': e.quantity,
         'price': e.price,
         if (e.markCodes.isNotEmpty)
-          'mark_codes': List<String>.from(e.markCodes),
+          'mark_codes': e.markCodes
+              .map(Gs1DataMatrixValidator.canonicalCode)
+              .toList(growable: false),
         if (isSynced && e.saleItemId.isNotEmpty) 'sale_item_id': e.saleItemId,
       };
     }).toList();
@@ -1474,6 +1484,13 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
     if (refundItems.isEmpty) return;
 
+    final shouldPrint = await showReceiptPrintConfirmation(
+      context,
+      title: 'Распечатать чек возврата?',
+      message: 'Возврат успешно оформлен. Нужен бумажный чек?',
+    );
+    if (!mounted || !shouldPrint) return;
+
     await printer.print80mmSilently(
       () => buildReceiptPdf(
         ReceiptPdfData(
@@ -1543,12 +1560,9 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
               final visibleTotalAmount = showingRefunds
                   ? visibleRefunds.fold<num>(
                       0,
-                      (sum, refund) => sum + (refund.totalAmount ?? 0),
+                      (sum, refund) => sum - refundAmount(refund),
                     )
-                  : visibleSales.fold<num>(
-                      0,
-                      (sum, sale) => sum + sale.totalAmount,
-                    );
+                  : netSalesTotal(visibleSales, state.refunds);
               final visibleChecksCount =
                   showingRefunds ? visibleRefunds.length : visibleSales.length;
               final saleListEntries =
@@ -2529,7 +2543,7 @@ class _ReceiptPreviewDialog extends StatelessWidget {
                           ),
                         ),
                         child: const Text(
-                          'Закрыть',
+                          'Не печатать',
                           style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ),

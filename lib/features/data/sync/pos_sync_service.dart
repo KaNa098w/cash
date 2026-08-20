@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:leemon_app/core/marking/gs1_datamatrix_validator.dart';
 import 'package:leemon_app/core/service/app_build_info.dart';
 import 'package:leemon_app/core/models/pos_pricing_plan_status.dart';
 import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
@@ -858,7 +859,10 @@ class PosSyncService {
               'quantity': item.quantity,
               'price': item.price,
               'total_price': item.totalPrice,
-              if (item.markCodes.isNotEmpty) 'mark_codes': item.markCodes,
+              if (item.markCodes.isNotEmpty)
+                'mark_codes': item.markCodes
+                    .map(Gs1DataMatrixValidator.canonicalCode)
+                    .toList(growable: false),
             },
           )
           .toList(growable: false),
