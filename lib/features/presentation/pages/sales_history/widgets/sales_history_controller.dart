@@ -10,17 +10,20 @@ import 'package:leemon_app/features/presentation/pages/sales_history/utils/forma
 
 class SalesHistoryController {
   final Map<String, bool> _refundLoading = {};
+  final Map<String, bool> _refundCoolingDown = {};
   final Map<String, bool> _receiptPrintLoading = {};
   final Map<String, bool> _invoicePrintLoading = {};
   final Map<String, bool> _receiptPrintCoolingDown = {};
   final Map<String, bool> _invoicePrintCoolingDown = {};
   final Map<String, Timer> _receiptPrintCooldownTimers = {};
   final Map<String, Timer> _invoicePrintCooldownTimers = {};
+  final Map<String, Timer> _refundCooldownTimers = {};
   final Map<String, Map<String, RefundPick>> _refundPicks = {};
 
   Timer? _refundPutDebounce;
 
-  bool isRefundLoading(String saleId) => _refundLoading[saleId] == true;
+  bool isRefundLoading(String saleId) =>
+      _refundLoading[saleId] == true || _refundCoolingDown[saleId] == true;
   bool isReceiptPrintLoading(String saleId) =>
       _receiptPrintLoading[saleId] == true;
   bool isInvoicePrintLoading(String saleId) =>
@@ -31,6 +34,10 @@ class SalesHistoryController {
       isInvoicePrintLoading(saleId) || _invoicePrintCoolingDown[saleId] == true;
 
   void setRefundLoading(String saleId, bool v, VoidCallback notify) {
+    if (v) {
+      _refundCooldownTimers.remove(saleId)?.cancel();
+      _refundCoolingDown[saleId] = false;
+    }
     _refundLoading[saleId] = v;
     notify();
   }
@@ -38,10 +45,26 @@ class SalesHistoryController {
   /// Atomically reserves refund submission for this sale.
   /// Returns false when another scan/tap is already processing it.
   bool tryStartRefund(String saleId, VoidCallback notify) {
-    if (_refundLoading[saleId] == true) return false;
+    if (isRefundLoading(saleId)) return false;
     _refundLoading[saleId] = true;
     notify();
     return true;
+  }
+
+  void startRefundCooldown(
+    String saleId,
+    Duration duration,
+    VoidCallback notify,
+  ) {
+    _refundCooldownTimers.remove(saleId)?.cancel();
+    _refundLoading[saleId] = false;
+    _refundCoolingDown[saleId] = true;
+    notify();
+    _refundCooldownTimers[saleId] = Timer(duration, () {
+      _refundCooldownTimers.remove(saleId);
+      _refundCoolingDown[saleId] = false;
+      notify();
+    });
   }
 
   void setReceiptPrintLoading(String saleId, bool v, VoidCallback notify) {
@@ -297,6 +320,9 @@ class SalesHistoryController {
 
   void dispose() {
     _refundPutDebounce?.cancel();
+    for (final timer in _refundCooldownTimers.values) {
+      timer.cancel();
+    }
     for (final timer in _receiptPrintCooldownTimers.values) {
       timer.cancel();
     }
@@ -305,6 +331,8 @@ class SalesHistoryController {
     }
     _receiptPrintCooldownTimers.clear();
     _invoicePrintCooldownTimers.clear();
+    _refundCooldownTimers.clear();
+    _refundCoolingDown.clear();
     _receiptPrintCoolingDown.clear();
     _invoicePrintCoolingDown.clear();
   }

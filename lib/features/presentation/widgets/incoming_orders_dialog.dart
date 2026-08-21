@@ -59,45 +59,37 @@ class _IncomingOrdersDialogState extends State<_IncomingOrdersDialog> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    final contentWidth = size.width < 1080 ? 1080.0 : size.width;
 
     return Material(
       color: const Color(0xFFF7F8FA),
       child: SizedBox(
         width: size.width,
         height: size.height,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(
-            width: contentWidth,
-            height: size.height,
-            child: SafeArea(
-              child: AnimatedBuilder(
-                animation: _controller,
-                builder: (context, _) {
-                  return Column(
-                    children: [
-                      _Header(
-                        controller: _controller,
-                        onClose: () => Navigator.of(context).pop(),
-                      ),
-                      if (_controller.error != null)
-                        _ErrorStrip(
-                          text: _controller.error!,
-                          onRefresh: _controller.refreshVisibleOrders,
-                        ),
-                      Expanded(
-                        child: _WideBody(
-                          controller: _controller,
-                          printingInvoiceOrderId: _printingInvoiceOrderId,
-                          onPrintInvoice: _printInvoice,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
+        child: SafeArea(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              return Column(
+                children: [
+                  _Header(
+                    controller: _controller,
+                    onClose: () => Navigator.of(context).pop(),
+                  ),
+                  if (_controller.error != null)
+                    _ErrorStrip(
+                      text: _controller.error!,
+                      onRefresh: _controller.refreshVisibleOrders,
+                    ),
+                  Expanded(
+                    child: _WideBody(
+                      controller: _controller,
+                      printingInvoiceOrderId: _printingInvoiceOrderId,
+                      onPrintInvoice: _printInvoice,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -171,25 +163,10 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 76,
-      padding: const EdgeInsets.symmetric(horizontal: 22),
-      color: const Color(0xFF202733),
-      child: Row(
-        children: [
-          const Icon(Icons.shopping_bag_outlined,
-              color: Colors.white, size: 28),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Text(
-              'Онлайн заказы',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 900;
+        final scopes = <Widget>[
           _ScopeButton(
             text: 'Новые',
             count: controller.newOrders.length,
@@ -210,7 +187,8 @@ class _Header extends StatelessWidget {
             active: controller.scope == MarketplaceOrderScope.history,
             onTap: () => controller.setScope(MarketplaceOrderScope.history),
           ),
-          const SizedBox(width: 10),
+        ];
+        final utilityButtons = <Widget>[
           IconButton(
             onPressed:
                 controller.loading ? null : controller.refreshVisibleOrders,
@@ -231,7 +209,65 @@ class _Header extends StatelessWidget {
             icon: const Icon(Icons.close, color: Colors.white70),
             tooltip: 'Закрыть',
           ),
-        ],
+        ];
+
+        return Container(
+          height: compact ? 124 : 76,
+          padding: EdgeInsets.symmetric(horizontal: compact ? 14 : 22),
+          color: const Color(0xFF202733),
+          child: compact
+              ? Column(
+                  children: [
+                    SizedBox(
+                      height: 64,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.shopping_bag_outlined,
+                              color: Colors.white, size: 26),
+                          const SizedBox(width: 12),
+                          const Expanded(child: _HeaderTitle()),
+                          ...utilityButtons,
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      height: 52,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(children: scopes),
+                      ),
+                    ),
+                  ],
+                )
+              : Row(
+                  children: [
+                    const Icon(Icons.shopping_bag_outlined,
+                        color: Colors.white, size: 28),
+                    const SizedBox(width: 14),
+                    const Expanded(child: _HeaderTitle()),
+                    ...scopes,
+                    const SizedBox(width: 10),
+                    ...utilityButtons,
+                  ],
+                ),
+        );
+      },
+    );
+  }
+}
+
+class _HeaderTitle extends StatelessWidget {
+  const _HeaderTitle();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Text(
+      'Онлайн заказы',
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: Colors.white,
+        fontSize: 22,
+        fontWeight: FontWeight.w800,
       ),
     );
   }
@@ -311,21 +347,26 @@ class _WideBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 360,
-          child: _OrdersList(controller: controller),
-        ),
-        const VerticalDivider(width: 1, color: Color(0xFFE2E8F0)),
-        Expanded(
-          child: _OrderDetails(
-            controller: controller,
-            printingInvoiceOrderId: printingInvoiceOrderId,
-            onPrintInvoice: onPrintInvoice,
-          ),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final listWidth = constraints.maxWidth < 900 ? 280.0 : 360.0;
+        return Row(
+          children: [
+            SizedBox(
+              width: listWidth,
+              child: _OrdersList(controller: controller),
+            ),
+            const VerticalDivider(width: 1, color: Color(0xFFE2E8F0)),
+            Expanded(
+              child: _OrderDetails(
+                controller: controller,
+                printingInvoiceOrderId: printingInvoiceOrderId,
+                onPrintInvoice: onPrintInvoice,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -543,109 +584,12 @@ class _OrderDetails extends StatelessWidget {
               end: Alignment.bottomRight,
             ),
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Заказ № ${order.displayNumber}',
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Подробная информация и состав заказа',
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Color(0xFFCBD5E1),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              _StatusPill(
-                text: _statusLabel(order.status),
-                color: _statusColor(order.status),
-              ),
-              if (controller.scope == MarketplaceOrderScope.active) ...[
-                const SizedBox(width: 12),
-                OutlinedButton.icon(
-                  onPressed: printingInvoiceOrderId == null
-                      ? () => onPrintInvoice(order)
-                      : null,
-                  icon: printingInvoiceOrderId == order.id
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.print_outlined),
-                  label: const Text('Распечатать накладную'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    minimumSize: const Size(210, 44),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(width: 12),
-              if (!order.isAccepted &&
-                  controller.scope == MarketplaceOrderScope.newOrders)
-                FilledButton.icon(
-                  onPressed: controller.actionLoading
-                      ? null
-                      : controller.acceptSelected,
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: const Text('Принять'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF16A34A),
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(128, 44),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-              if (controller.scope != MarketplaceOrderScope.history &&
-                  (order.status == 'processing' ||
-                      order.status == 'partially_shipped')) ...[
-                const SizedBox(width: 12),
-                FilledButton.icon(
-                  onPressed: controller.actionLoading
-                      ? null
-                      : () => _confirmAndShip(context, controller),
-                  icon: controller.actionLoading
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.local_shipping_outlined),
-                  label: const Text('Отгрузить заказ'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(170, 44),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-              ],
-            ],
+          child: _OrderActionsHeader(
+            order: order,
+            controller: controller,
+            printingInvoiceOrderId: printingInvoiceOrderId,
+            onPrintInvoice: onPrintInvoice,
+            onShip: () => _confirmAndShip(context, controller),
           ),
         ),
         _OrderSummary(order: order),
@@ -720,6 +664,140 @@ class _OrderDetails extends StatelessWidget {
         : '';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Заказ полностью отгружен.$saleSuffix')),
+    );
+  }
+}
+
+class _OrderActionsHeader extends StatelessWidget {
+  const _OrderActionsHeader({
+    required this.order,
+    required this.controller,
+    required this.printingInvoiceOrderId,
+    required this.onPrintInvoice,
+    required this.onShip,
+  });
+
+  final MarketplaceOrder order;
+  final MarketplaceOrdersController controller;
+  final String? printingInvoiceOrderId;
+  final ValueChanged<MarketplaceOrder> onPrintInvoice;
+  final VoidCallback onShip;
+
+  @override
+  Widget build(BuildContext context) {
+    final actions = <Widget>[
+      if (controller.scope == MarketplaceOrderScope.active)
+        OutlinedButton.icon(
+          onPressed: printingInvoiceOrderId == null
+              ? () => onPrintInvoice(order)
+              : null,
+          icon: printingInvoiceOrderId == order.id
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.print_outlined),
+          label: const Text('Распечатать накладную'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white,
+            side: const BorderSide(color: Color(0xFFCBD5E1)),
+            minimumSize: const Size(210, 44),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+      if (!order.isAccepted &&
+          controller.scope == MarketplaceOrderScope.newOrders)
+        FilledButton.icon(
+          onPressed:
+              controller.actionLoading ? null : controller.acceptSelected,
+          icon: const Icon(Icons.check_circle_outline),
+          label: const Text('Принять'),
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF16A34A),
+            foregroundColor: Colors.white,
+            minimumSize: const Size(128, 44),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+      if (controller.scope != MarketplaceOrderScope.history &&
+          (order.status == 'processing' || order.status == 'partially_shipped'))
+        FilledButton.icon(
+          onPressed: controller.actionLoading ? null : onShip,
+          icon: controller.actionLoading
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.local_shipping_outlined),
+          label: const Text('Отгрузить заказ'),
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF2563EB),
+            foregroundColor: Colors.white,
+            minimumSize: const Size(170, 44),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Заказ № ${order.displayNumber}',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Подробная информация и состав заказа',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Color(0xFFCBD5E1),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            _StatusPill(
+              text: _statusLabel(order.status),
+              color: _statusColor(order.status),
+            ),
+          ],
+        ),
+        if (actions.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 12,
+              runSpacing: 10,
+              children: actions,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

@@ -434,7 +434,11 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
       title: 'Распечатать фискальный чек?',
       message: 'Фискальный чек готов. Отправить его на принтер?',
     );
-    if (!mounted || !shouldPrint) return;
+    if (!mounted) return;
+    if (!shouldPrint) {
+      Navigator.of(context).pop();
+      return;
+    }
 
     setState(() {
       _printing = true;

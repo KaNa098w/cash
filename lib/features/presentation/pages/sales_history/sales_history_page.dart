@@ -53,6 +53,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   static const Duration _historyIdleTimeout = Duration(seconds: 60);
   static const Duration _printLoadingDuration = Duration(seconds: 1);
   static const Duration _printCooldownDuration = Duration(seconds: 5);
+  static const Duration _refundCooldownDuration = Duration(seconds: 5);
 
   String? _expandedSaleId;
   String? _expandedRefundId;
@@ -956,6 +957,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     final refundId = (sale.refund?.id ?? '').trim();
     var effectiveRefundId = refundId;
     QueueOperationResult? completedRefund;
+    var refundCompleted = false;
     // Key: server item id for synced sales, productId for offline sales.
     final pickedBySaleItemId = <String, int>{
       for (final p in picks)
@@ -1037,6 +1039,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         refundId: effectiveRefundId,
         pickedBySaleItemId: pickedBySaleItemId,
       );
+      refundCompleted = true;
       final auth = context.read<AuthTokenProvider>();
       if (!auth.fiscalizationEnabled) {
         try {
@@ -1108,7 +1111,15 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       return false;
     } finally {
       if (mounted) {
-        _controller.setRefundLoading(saleId, false, () => setState(() {}));
+        if (refundCompleted) {
+          _controller.startRefundCooldown(
+            saleId,
+            _refundCooldownDuration,
+            () => setState(() {}),
+          );
+        } else {
+          _controller.setRefundLoading(saleId, false, () => setState(() {}));
+        }
       }
     }
   }

@@ -363,6 +363,7 @@ class ShiftReportData {
 class ShiftClosureSummaryData {
   const ShiftClosureSummaryData({
     required this.sessionId,
+    this.openedAt,
     required this.openingCashAmount,
     required this.cashSalesTotal,
     required this.cardSalesTotal,
@@ -377,6 +378,7 @@ class ShiftClosureSummaryData {
   });
 
   final String sessionId;
+  final DateTime? openedAt;
   final num openingCashAmount;
   final num cashSalesTotal;
   final num cardSalesTotal;

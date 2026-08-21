@@ -1395,6 +1395,7 @@ class PosSyncService {
     return ShiftClosureSummaryData(
       sessionId:
           _stringFromMap(data, 'session_id', fallback: fallbackSessionId),
+      openedAt: _parseRemoteDate(data['opened_at']),
       openingCashAmount: _numFromMap(summary, 'opening_cash_amount'),
       cashSalesTotal: cashTotal,
       cardSalesTotal: cardTotal,

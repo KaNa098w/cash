@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -37,7 +40,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
   bool _shortageCommentKeyboardOpen = false;
   String? _shortageCommentError;
 
-  late final Future<ShiftClosureSummaryData?> _summaryFuture;
+  late Future<ShiftClosureSummaryData?> _summaryFuture;
 
   @override
   void initState() {
@@ -69,6 +72,14 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
       sessionId: sessionId,
       deviceId: deviceId,
     );
+  }
+
+  void _retryClosureSummary() {
+    final sessionId = context.read<AuthTokenProvider>().shiftId?.trim() ?? '';
+    if (sessionId.isEmpty) return;
+    setState(() {
+      _summaryFuture = _loadClosureSummary(sessionId);
+    });
   }
 
   Future<ShiftReportData?> _loadShiftReport(String sessionId) async {
@@ -1088,7 +1099,6 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
   Widget _buildLeftBlock(bool hasShift) {
     if (!hasShift) return const _NoShiftContent();
 
-    final now = DateTime.now();
     final tokenProvider = context.read<AuthTokenProvider>();
     final shiftId = (tokenProvider.posNumber ?? '').trim();
     final cashierName = (tokenProvider.activeUserName ?? '').trim();
@@ -1098,12 +1108,16 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
       future: _summaryFuture,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return _SummaryErrorCard(error: snapshot.error);
+          return _SummaryErrorCard(
+            error: snapshot.error,
+            onRetry: _retryClosureSummary,
+          );
         }
         final summary = snapshot.data;
         if (summary == null) {
           return const _LoadingSummaryCard();
         }
+        final openedAt = summary.openedAt?.toLocal();
 
         return SingleChildScrollView(
           child: LayoutBuilder(
@@ -1121,8 +1135,14 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                         _InfoTile(
                           minHeight: 98,
                           lines: [
-                            _InfoLine('Начало', _formatDate(now)),
-                            _InfoLine('Время', _formatTime(now)),
+                            _InfoLine(
+                              'Начало',
+                              openedAt == null ? '-' : _formatDate(openedAt),
+                            ),
+                            _InfoLine(
+                              'Время',
+                              openedAt == null ? '-' : _formatTime(openedAt),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -1164,8 +1184,14 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
                           child: _InfoTile(
                             minHeight: 98,
                             lines: [
-                              _InfoLine('Начало', _formatDate(now)),
-                              _InfoLine('Время', _formatTime(now)),
+                              _InfoLine(
+                                'Начало',
+                                openedAt == null ? '-' : _formatDate(openedAt),
+                              ),
+                              _InfoLine(
+                                'Время',
+                                openedAt == null ? '-' : _formatTime(openedAt),
+                              ),
                             ],
                           ),
                         ),
@@ -1519,28 +1545,126 @@ class _LoadingSummaryCard extends StatelessWidget {
 }
 
 class _SummaryErrorCard extends StatelessWidget {
-  const _SummaryErrorCard({required this.error});
+  const _SummaryErrorCard({
+    required this.error,
+    required this.onRetry,
+  });
 
   final Object? error;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
+    final connectionError = _isInternetConnectionError(error);
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        child: Text(
-          'Не удалось загрузить данные смены с бэка.\n$error',
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFFD15850),
-            height: 1.35,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 520),
+          padding: const EdgeInsets.fromLTRB(26, 26, 26, 22),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: connectionError
+                  ? const Color(0xFFF6C86E)
+                  : const Color(0xFFF1B4B0),
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x140F172A),
+                blurRadius: 24,
+                offset: Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: connectionError
+                      ? const Color(0xFFFFF4D8)
+                      : const Color(0xFFFEECEB),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Icon(
+                  connectionError
+                      ? Icons.wifi_off_rounded
+                      : Icons.cloud_off_rounded,
+                  size: 32,
+                  color: connectionError
+                      ? const Color(0xFFC77800)
+                      : const Color(0xFFD15850),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                connectionError
+                    ? 'Нет соединения с интернетом'
+                    : 'Не удалось загрузить данные смены',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 21,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF111827),
+                ),
+              ),
+              const SizedBox(height: 9),
+              Text(
+                connectionError
+                    ? 'Подключите интернет и повторите загрузку данных для закрытия смены.'
+                    : 'Проверьте подключение и попробуйте ещё раз. Если ошибка повторится, обратитесь к администратору.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF667085),
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: FilledButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text(
+                    'ПОВТОРИТЬ',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF33CC99),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+}
+
+bool _isInternetConnectionError(Object? error) {
+  if (error is SocketException) return true;
+  if (error is! DioException) return false;
+  if (error.error is SocketException) return true;
+  return switch (error.type) {
+    DioExceptionType.connectionTimeout ||
+    DioExceptionType.sendTimeout ||
+    DioExceptionType.receiveTimeout ||
+    DioExceptionType.connectionError =>
+      true,
+    _ => false,
+  };
 }
 
 class _ShiftCloseKeypad extends StatelessWidget {

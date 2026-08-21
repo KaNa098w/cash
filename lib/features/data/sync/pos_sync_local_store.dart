@@ -3101,6 +3101,7 @@ class PosSyncLocalStore {
 
     return ShiftClosureSummaryData(
       sessionId: sessionId,
+      openedAt: _parseDt(sessionRow['opened_at']),
       openingCashAmount: openingCashAmount,
       cashSalesTotal: cashSalesTotal,
       cardSalesTotal: cardSalesTotal,
