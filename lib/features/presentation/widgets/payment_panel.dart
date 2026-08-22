@@ -69,6 +69,8 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
   late final List<String> _codes =
       widget.initialCodes.take(widget.requiredCount).toList(growable: true);
   String? _error;
+  String? _lastAcceptedCode;
+  DateTime? _lastAcceptedCodeAt;
 
   KeyEventResult _handleScannerKey(FocusNode _, KeyEvent event) {
     if (event is! KeyDownEvent || !_focusNode.hasFocus) {
@@ -118,6 +120,7 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
     // TextField does not include the scanner's Enter key. Keep every other
     // character exactly as received (including the GS separator, ASCII 29).
     final raw = MarkingKeyboardInputFormatter.normalize(_controller.text);
+    if (raw.isEmpty) return;
     final validation = Gs1DataMatrixValidator.validate(
       raw,
       expectedGtin:
@@ -130,6 +133,15 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
       return;
     }
     final canonical = validation.canonical!;
+    final lastAcceptedAt = _lastAcceptedCodeAt;
+    if (canonical == _lastAcceptedCode &&
+        lastAcceptedAt != null &&
+        DateTime.now().difference(lastAcceptedAt) <
+            const Duration(milliseconds: 1200)) {
+      _controller.clear();
+      _focusNode.requestFocus();
+      return;
+    }
     final duplicate = widget.usedCodes.contains(canonical) ||
         _codes.any(
           (code) => Gs1DataMatrixValidator.canonicalCode(code) == canonical,
@@ -144,6 +156,8 @@ class _MarkCodesDialogState extends State<_MarkCodesDialog> {
     }
     setState(() {
       _codes.add(canonical);
+      _lastAcceptedCode = canonical;
+      _lastAcceptedCodeAt = DateTime.now();
       _error = null;
       _controller.clear();
     });

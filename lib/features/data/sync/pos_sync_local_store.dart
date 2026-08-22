@@ -3609,6 +3609,8 @@ class PosSyncLocalStore {
         return _EntityKind.expenseType;
       case 'customer':
       case 'customers':
+      case 'agent':
+      case 'agents':
         return _EntityKind.customer;
       case 'return_access_key':
       case 'return_access_keys':

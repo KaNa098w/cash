@@ -15,6 +15,7 @@ import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/domain/entities/payment.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
+import 'package:leemon_app/features/presentation/widgets/app_scroll_behovir.dart';
 
 class DebtsPage extends StatefulWidget {
   const DebtsPage({super.key});
@@ -30,14 +31,20 @@ class _DebtsPageState extends State<DebtsPage> {
 
   List<CustomerDto> _items = const [];
   List<SaleModel> _customerSales = const [];
+  List<CustomerSettlementHistoryDto> _customerSettlements = const [];
   int? _selectedIndex;
   bool _loading = true;
   bool _salesLoading = false;
+  bool _settlementsLoading = false;
   bool _settling = false;
   bool _refreshingOnline = false;
+  int _customerDataRevision = 0;
   String? _error;
   String? _salesError;
+  String? _settlementsError;
   StreamSubscription<void>? _debtsChangedSub;
+  final _customersScrollController = ScrollController();
+  final _salesScrollController = ScrollController();
 
   CustomerDto? get _selectedItem {
     final index = _selectedIndex;
@@ -50,6 +57,7 @@ class _DebtsPageState extends State<DebtsPage> {
     super.initState();
     _debtsChangedSub = _sync.onDebtsChanged.listen((_) {
       if (!mounted) return;
+      _customerDataRevision += 1;
       unawaited(_loadDebts(refreshOnline: false));
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadDebts());
@@ -58,6 +66,8 @@ class _DebtsPageState extends State<DebtsPage> {
   @override
   void dispose() {
     _debtsChangedSub?.cancel();
+    _customersScrollController.dispose();
+    _salesScrollController.dispose();
     super.dispose();
   }
 
@@ -116,8 +126,12 @@ class _DebtsPageState extends State<DebtsPage> {
       final selected = _selectedItem;
       if (selected != null) {
         await _loadCustomerSales(selected, refreshOnline: false);
+        unawaited(_loadCustomerSettlements(selected));
       } else {
-        setState(() => _customerSales = const []);
+        setState(() {
+          _customerSales = const [];
+          _customerSettlements = const [];
+        });
       }
     } catch (e) {
       if (!mounted) return;
@@ -136,6 +150,7 @@ class _DebtsPageState extends State<DebtsPage> {
       _refreshingOnline = true;
       _error = null;
     });
+    final revisionAtStart = _customerDataRevision;
 
     try {
       final customers = await _customersDs.listCustomers(
@@ -143,6 +158,10 @@ class _DebtsPageState extends State<DebtsPage> {
         size: 500,
         hasDebt: true,
       );
+      if (revisionAtStart != _customerDataRevision) {
+        if (mounted) setState(() => _refreshingOnline = false);
+        return;
+      }
       await _sync.upsertCustomersRaw(
         customers.map((customer) => customer.toJson()).toList(growable: false),
       );
@@ -169,9 +188,14 @@ class _DebtsPageState extends State<DebtsPage> {
       final selected = _selectedItem;
       if (selected != null) {
         unawaited(_loadCustomerSales(selected));
+        unawaited(_loadCustomerSettlements(selected));
       }
     } catch (e) {
       if (!mounted) return;
+      if (revisionAtStart != _customerDataRevision) {
+        setState(() => _refreshingOnline = false);
+        return;
+      }
       setState(() {
         _loading = false;
         _refreshingOnline = false;
@@ -251,6 +275,34 @@ class _DebtsPageState extends State<DebtsPage> {
     }
   }
 
+  Future<void> _loadCustomerSettlements(CustomerDto customer) async {
+    final key = context.read<AuthTokenProvider>().posKey?.trim() ?? '';
+    if (key.isEmpty) return;
+    setState(() {
+      _settlementsLoading = true;
+      _settlementsError = null;
+      _customerSettlements = const [];
+    });
+
+    try {
+      final settlements = await _customersDs.listDebtSettlements(
+        key: key,
+        customerId: customer.id,
+      );
+      if (!mounted || _selectedItem?.id != customer.id) return;
+      setState(() {
+        _customerSettlements = settlements;
+        _settlementsLoading = false;
+      });
+    } catch (e) {
+      if (!mounted || _selectedItem?.id != customer.id) return;
+      setState(() {
+        _settlementsLoading = false;
+        _settlementsError = 'Не удалось загрузить погашения: $e';
+      });
+    }
+  }
+
   Future<void> _settleSelectedDebt() async {
     final selected = _selectedItem;
     final index = _selectedIndex;
@@ -290,7 +342,12 @@ class _DebtsPageState extends State<DebtsPage> {
       return;
     }
 
-    setState(() => _settling = true);
+    setState(() {
+      _settling = true;
+      // Any customer-list request started before this settlement contains an
+      // older debt balance and must not overwrite the settlement response.
+      _customerDataRevision += 1;
+    });
     try {
       final localSessionId = auth.shiftId?.trim() ?? '';
       final resolvedSessionId = localSessionId.isEmpty
@@ -315,7 +372,8 @@ class _DebtsPageState extends State<DebtsPage> {
       if (!mounted) return;
       setState(() {
         final nextItems = List<CustomerDto>.from(_items);
-        if (settlement.agent.debtBalance == 0) {
+        final removed = settlement.agent.debtBalance == 0;
+        if (removed) {
           nextItems.removeAt(index);
         } else {
           nextItems[index] = settlement.agent;
@@ -325,12 +383,17 @@ class _DebtsPageState extends State<DebtsPage> {
         _items = nextItems;
         _selectedIndex = nextItems.isEmpty
             ? null
-            : index.clamp(0, nextItems.length - 1).toInt();
+            : removed
+                ? index.clamp(0, nextItems.length - 1).toInt()
+                : nextItems.indexWhere(
+                    (item) => item.id == settlement.agent.id,
+                  );
         _settling = false;
       });
       final nextSelected = _selectedItem;
       if (nextSelected != null) {
         await _loadCustomerSales(nextSelected);
+        unawaited(_loadCustomerSettlements(nextSelected));
       }
       await _loadDebts(refreshOnline: true);
       if (!mounted) return;
@@ -371,7 +434,11 @@ class _DebtsPageState extends State<DebtsPage> {
   void _selectCustomer(int index) {
     if (index < 0 || index >= _items.length) return;
     setState(() => _selectedIndex = index);
+    if (_salesScrollController.hasClients) {
+      _salesScrollController.jumpTo(0);
+    }
     _loadCustomerSales(_items[index]);
+    _loadCustomerSettlements(_items[index]);
   }
 
   Future<void> _refreshSelectedSales() async {
@@ -391,7 +458,10 @@ class _DebtsPageState extends State<DebtsPage> {
     final net = receivable + payable;
     final selectedItem = _selectedItem;
 
-    Widget debtList({required bool twoColumns}) {
+    Widget debtList({
+      required bool twoColumns,
+      required double height,
+    }) {
       if (_loading) return const _LoadingPanel();
       if (_error != null) {
         return _StatePanel(
@@ -411,33 +481,47 @@ class _DebtsPageState extends State<DebtsPage> {
           onAction: _loadDebts,
         );
       }
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _SectionHeader(
-            title: 'Контрагенты',
-            subtitle: '${_items.length} записей',
-          ),
-          const SizedBox(height: 8),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _items.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: twoColumns ? 2 : 1,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              mainAxisExtent: 88,
+      return SizedBox(
+        height: height,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _SectionHeader(
+              title: 'Контрагенты',
+              subtitle: '${_items.length} записей',
             ),
-            itemBuilder: (context, index) {
-              return _DebtCard(
-                item: _items[index],
-                selected: _selectedIndex == index,
-                onTap: () => _selectCustomer(index),
-              );
-            },
-          ),
-        ],
+            const SizedBox(height: 8),
+            Expanded(
+              child: ScrollConfiguration(
+                behavior: AppScrollBehavior(),
+                child: Scrollbar(
+                  controller: _customersScrollController,
+                  thumbVisibility: true,
+                  interactive: true,
+                  child: GridView.builder(
+                    controller: _customersScrollController,
+                    physics: const ClampingScrollPhysics(),
+                    padding: const EdgeInsets.only(right: 12, bottom: 4),
+                    itemCount: _items.length,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: twoColumns ? 2 : 1,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      mainAxisExtent: 88,
+                    ),
+                    itemBuilder: (context, index) {
+                      return _DebtCard(
+                        item: _items[index],
+                        selected: _selectedIndex == index,
+                        onTap: () => _selectCustomer(index),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       );
     }
 
@@ -456,6 +540,8 @@ class _DebtsPageState extends State<DebtsPage> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final wide = constraints.maxWidth >= 980;
+                  final panelHeight =
+                      (constraints.maxHeight - 192).clamp(420.0, 620.0);
                   return RefreshIndicator(
                     onRefresh: _loadDebts,
                     child: SingleChildScrollView(
@@ -485,7 +571,10 @@ class _DebtsPageState extends State<DebtsPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Expanded(
-                                      child: debtList(twoColumns: false),
+                                      child: debtList(
+                                        twoColumns: false,
+                                        height: panelHeight,
+                                      ),
                                     ),
                                     const SizedBox(width: 18),
                                     SizedBox(
@@ -495,13 +584,25 @@ class _DebtsPageState extends State<DebtsPage> {
                                           : _DebtActionPanel(
                                               item: selectedItem,
                                               sales: _customerSales,
+                                              settlements: _customerSettlements,
                                               salesLoading: _salesLoading,
+                                              settlementsLoading:
+                                                  _settlementsLoading,
                                               salesError: _salesError,
+                                              settlementsError:
+                                                  _settlementsError,
                                               settling: _settling,
                                               onSettle: _settleSelectedDebt,
                                               onAddDebt: _openDebtSale,
                                               onRefreshSales:
                                                   _refreshSelectedSales,
+                                              onRefreshSettlements: () =>
+                                                  _loadCustomerSettlements(
+                                                selectedItem,
+                                              ),
+                                              scrollController:
+                                                  _salesScrollController,
+                                              height: panelHeight,
                                             ),
                                     ),
                                   ],
@@ -511,17 +612,24 @@ class _DebtsPageState extends State<DebtsPage> {
                                   _DebtActionPanel(
                                     item: selectedItem,
                                     sales: _customerSales,
+                                    settlements: _customerSettlements,
                                     salesLoading: _salesLoading,
+                                    settlementsLoading: _settlementsLoading,
                                     salesError: _salesError,
+                                    settlementsError: _settlementsError,
                                     settling: _settling,
                                     onSettle: _settleSelectedDebt,
                                     onAddDebt: _openDebtSale,
                                     onRefreshSales: _refreshSelectedSales,
+                                    onRefreshSettlements: () =>
+                                        _loadCustomerSettlements(selectedItem),
+                                    scrollController: _salesScrollController,
                                   ),
                                   const SizedBox(height: 12),
                                 ],
                                 debtList(
                                   twoColumns: constraints.maxWidth >= 720,
+                                  height: 420,
                                 ),
                               ],
                             ],
@@ -933,22 +1041,34 @@ class _DebtActionPanel extends StatelessWidget {
   const _DebtActionPanel({
     required this.item,
     required this.sales,
+    required this.settlements,
     required this.salesLoading,
+    required this.settlementsLoading,
     required this.salesError,
+    required this.settlementsError,
     required this.settling,
     required this.onSettle,
     required this.onAddDebt,
     required this.onRefreshSales,
+    required this.onRefreshSettlements,
+    required this.scrollController,
+    this.height,
   });
 
   final CustomerDto item;
   final List<SaleModel> sales;
+  final List<CustomerSettlementHistoryDto> settlements;
   final bool salesLoading;
+  final bool settlementsLoading;
   final String? salesError;
+  final String? settlementsError;
   final bool settling;
   final VoidCallback onSettle;
   final VoidCallback onAddDebt;
   final VoidCallback onRefreshSales;
+  final VoidCallback onRefreshSettlements;
+  final ScrollController scrollController;
+  final double? height;
 
   @override
   Widget build(BuildContext context) {
@@ -961,6 +1081,7 @@ class _DebtActionPanel extends StatelessWidget {
     };
 
     return Container(
+      height: height,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1087,33 +1208,79 @@ class _DebtActionPanel extends StatelessWidget {
             subtitle: '${sales.length}',
           ),
           const SizedBox(height: 8),
-          if (salesLoading)
-            const SizedBox(
-              height: 82,
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (salesError != null)
-            _MiniState(
-              icon: Icons.error_outline_rounded,
-              text: salesError!,
-              actionLabel: 'Повторить',
-              onAction: onRefreshSales,
-            )
-          else if (sales.isEmpty)
-            const _MiniState(
-              icon: Icons.receipt_long_rounded,
-              text: 'Неоплаченных продаж не найдено',
-            )
+          if (height != null)
+            Expanded(child: _buildActivityList())
           else
-            Column(
-              children: [
-                for (final sale in sales) ...[
-                  _DebtSaleRow(sale: sale),
-                  if (sale != sales.last) const SizedBox(height: 8),
-                ],
-              ],
-            ),
+            SizedBox(height: 360, child: _buildActivityList()),
         ],
+      ),
+    );
+  }
+
+  Widget _buildActivityList() {
+    return ScrollConfiguration(
+      behavior: AppScrollBehavior(),
+      child: Scrollbar(
+        controller: scrollController,
+        thumbVisibility: true,
+        interactive: true,
+        child: ListView(
+          controller: scrollController,
+          physics: const ClampingScrollPhysics(),
+          padding: const EdgeInsets.only(right: 12, bottom: 2),
+          children: [
+            if (salesLoading)
+              const SizedBox(
+                height: 82,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (salesError != null)
+              _MiniState(
+                icon: Icons.error_outline_rounded,
+                text: salesError!,
+                actionLabel: 'Повторить',
+                onAction: onRefreshSales,
+              )
+            else if (sales.isEmpty)
+              const _MiniState(
+                icon: Icons.receipt_long_rounded,
+                text: 'Неоплаченных продаж не найдено',
+              )
+            else
+              for (var index = 0; index < sales.length; index++) ...[
+                _DebtSaleRow(sale: sales[index]),
+                if (index != sales.length - 1) const SizedBox(height: 8),
+              ],
+            const SizedBox(height: 18),
+            _SectionHeader(
+              title: 'История погашений',
+              subtitle: '${settlements.length}',
+            ),
+            const SizedBox(height: 8),
+            if (settlementsLoading)
+              const SizedBox(
+                height: 82,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (settlementsError != null)
+              _MiniState(
+                icon: Icons.error_outline_rounded,
+                text: settlementsError!,
+                actionLabel: 'Повторить',
+                onAction: onRefreshSettlements,
+              )
+            else if (settlements.isEmpty)
+              const _MiniState(
+                icon: Icons.payments_outlined,
+                text: 'Погашений пока не было',
+              )
+            else
+              for (var index = 0; index < settlements.length; index++) ...[
+                _DebtSettlementRow(settlement: settlements[index]),
+                if (index != settlements.length - 1) const SizedBox(height: 8),
+              ],
+          ],
+        ),
       ),
     );
   }
@@ -1252,6 +1419,91 @@ class _DebtSaleRow extends StatelessWidget {
                   color: const Color(0xFF6B7280),
                 ),
               ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DebtSettlementRow extends StatelessWidget {
+  const _DebtSettlementRow({required this.settlement});
+
+  final CustomerSettlementHistoryDto settlement;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFBBF7D0)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFFDCFCE7),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.payments_rounded,
+              color: Color(0xFF15803D),
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Погашение долга',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF14532D),
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  _formatDate(settlement.date),
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF6B7280),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '−${_formatMoney(settlement.amount.abs())}',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  color: const Color(0xFF15803D),
+                ),
+              ),
+              if (settlement.remainingDebt != null) ...[
+                const SizedBox(height: 3),
+                Text(
+                  'Остаток: ${_formatMoney(settlement.remainingDebt!)}',
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF6B7280),
+                  ),
+                ),
+              ],
             ],
           ),
         ],

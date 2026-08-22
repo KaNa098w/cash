@@ -296,6 +296,7 @@ class _SingleMarkCodeDialogState extends State<_SingleMarkCodeDialog> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   String? _error;
+  bool _submitted = false;
 
   KeyEventResult _handleScannerKey(FocusNode _, KeyEvent event) {
     if (event is! KeyDownEvent || !_focusNode.hasFocus) {
@@ -342,9 +343,12 @@ class _SingleMarkCodeDialogState extends State<_SingleMarkCodeDialog> {
   }
 
   void _submit(String _) {
+    if (_submitted) return;
     // Enter sent by a hardware scanner is not part of controller.text.
     // Preserve all other characters, including the ASCII 29 GS separator.
     final rawCode = MarkingKeyboardInputFormatter.normalize(_controller.text);
+    if (rawCode.isEmpty) return;
+    _submitted = true;
     final validation = Gs1DataMatrixValidator.validate(
       rawCode,
       expectedGtin: (widget.product.gtin ?? '').trim().isNotEmpty
@@ -352,6 +356,7 @@ class _SingleMarkCodeDialogState extends State<_SingleMarkCodeDialog> {
           : widget.product.ntin,
     );
     if (!validation.isValid) {
+      _submitted = false;
       setState(() => _error = validation.message);
       _controller.clear();
       _focusNode.requestFocus();

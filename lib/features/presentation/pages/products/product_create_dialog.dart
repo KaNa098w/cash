@@ -227,6 +227,11 @@ class _ProductCreateDialogState extends State<_ProductCreateDialog> {
       _error = null;
     });
     if (!RegExp(r'^\d{11,13}$').hasMatch(barcode)) return;
+    if (barcode.startsWith('2')) {
+      setState(() => _nameLookupCompleted = true);
+      _focusNameField();
+      return;
+    }
     _barcodeLookupDebounce = Timer(
       const Duration(milliseconds: 350),
       _lookupProductName,
@@ -236,6 +241,15 @@ class _ProductCreateDialogState extends State<_ProductCreateDialog> {
   Future<void> _lookupProductName() async {
     final barcode = _barcodeController.text.trim();
     if (!RegExp(r'^\d{11,13}$').hasMatch(barcode)) return;
+    if (barcode.startsWith('2')) {
+      setState(() {
+        _nameLookupInProgress = false;
+        _nameLookupCompleted = true;
+        _foundProductName = null;
+      });
+      _focusNameField();
+      return;
+    }
     setState(() {
       _nameLookupInProgress = true;
       _nameLookupCompleted = false;

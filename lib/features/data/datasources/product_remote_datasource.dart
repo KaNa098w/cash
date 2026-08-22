@@ -149,6 +149,9 @@ class ProductRemoteDataSource {
         'Barcode must contain 11 to 13 digits',
       );
     }
+    // Barcodes beginning with 2 are internal/store codes. Their product name
+    // is entered by the cashier and must not be requested from NKT.
+    if (safeBarcode.startsWith('2')) return null;
     if (safeDeviceId.isEmpty) {
       throw ArgumentError.value(deviceId, 'deviceId', 'Device id is empty');
     }

@@ -233,6 +233,26 @@ class PosCubit extends Cubit<PosState> {
   }) {
     if (qty <= 0 || qty.isNaN || qty.isInfinite) return;
 
+    final normalizedMarkCodes = markCodes
+        .map(Gs1DataMatrixValidator.canonicalCode)
+        .where((code) => code.isNotEmpty)
+        .toList(growable: false);
+    if (markCodes.isNotEmpty) {
+      final incomingCodes = normalizedMarkCodes.toSet();
+      final existingCodes = state.items
+          .expand((item) => item.markCodes)
+          .map(Gs1DataMatrixValidator.canonicalCode)
+          .where((code) => code.isNotEmpty)
+          .toSet();
+      if (normalizedMarkCodes.length != markCodes.length ||
+          incomingCodes.length != normalizedMarkCodes.length ||
+          incomingCodes.any(existingCodes.contains)) {
+        // Last line of defense against duplicate scanner events. Cart updates
+        // are synchronous, so a repeated event cannot add quantity twice.
+        return;
+      }
+    }
+
     int? selectedIndex; // какой индекс выбрать после добавления/увеличения
     double? updatedCartQty;
     bool? updatedDiscountApplied;
@@ -246,7 +266,7 @@ class PosCubit extends Cubit<PosState> {
         list[idx] = it.copyWith(
           qty: it.qty + qty,
           discountApplied: it.discountApplied || _shouldApplyServerDiscount(p),
-          markCodes: [...it.markCodes, ...markCodes],
+          markCodes: [...it.markCodes, ...normalizedMarkCodes],
         );
         updatedCartQty = list[idx].qty;
         updatedDiscountApplied = list[idx].discountApplied;
@@ -256,7 +276,7 @@ class PosCubit extends Cubit<PosState> {
           product: p,
           qty: qty,
           discountApplied: _shouldApplyServerDiscount(p),
-          markCodes: markCodes,
+          markCodes: normalizedMarkCodes,
         ));
         updatedCartQty = list.last.qty;
         updatedDiscountApplied = list.last.discountApplied;

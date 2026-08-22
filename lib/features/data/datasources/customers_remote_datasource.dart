@@ -154,6 +154,87 @@ class CustomerSettlementDto {
   }
 }
 
+class CustomerSettlementHistoryDto {
+  const CustomerSettlementHistoryDto({
+    required this.id,
+    required this.amount,
+    required this.date,
+    this.remainingDebt,
+    this.note,
+  });
+
+  final String id;
+  final num amount;
+  final DateTime date;
+  final num? remainingDebt;
+  final String? note;
+
+  factory CustomerSettlementHistoryDto.fromJson(Map<String, dynamic> json) {
+    final agent = json['agent'] is Map
+        ? Map<String, dynamic>.from(json['agent'] as Map)
+        : const <String, dynamic>{};
+    return CustomerSettlementHistoryDto(
+      id: (json['id'] ?? json['client_settlement_id'] ?? '').toString(),
+      amount: _firstNum(
+        json,
+        const ['amount', 'paid_amount', 'settlement_amount'],
+      ),
+      date: _firstDate(
+            json,
+            const ['date', 'created_at', 'settled_at'],
+          ) ??
+          DateTime.now(),
+      remainingDebt: _firstNullableNum(
+            json,
+            const [
+              'remaining_debt',
+              'debt_balance',
+              'balance_after',
+              'current_debt',
+            ],
+          ) ??
+          _firstNullableNum(
+            agent,
+            const ['debt_balance', 'balance', 'current_debt'],
+          ),
+      note: (json['note'] ?? '').toString().trim().isEmpty
+          ? null
+          : json['note'].toString().trim(),
+    );
+  }
+
+  static num _firstNum(Map<String, dynamic> json, List<String> keys) =>
+      _firstNullableNum(json, keys) ?? 0;
+
+  static num? _firstNullableNum(
+    Map<String, dynamic> json,
+    List<String> keys,
+  ) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value is num) return value;
+      final parsed =
+          num.tryParse((value ?? '').toString().replaceAll(',', '.'));
+      if (parsed != null) return parsed;
+    }
+    return null;
+  }
+
+  static DateTime? _firstDate(
+    Map<String, dynamic> json,
+    List<String> keys,
+  ) {
+    for (final key in keys) {
+      final raw = (json[key] ?? '').toString().trim();
+      if (raw.isEmpty) continue;
+      final isoLike = raw.contains(' ') ? raw.replaceFirst(' ', 'T') : raw;
+      final parsed = DateTime.tryParse(isoLike);
+      if (parsed != null) return parsed;
+    }
+    return null;
+  }
+}
+
 class CustomersRemoteDataSource {
   final Dio _dio;
   CustomersRemoteDataSource(this._dio);
@@ -285,6 +366,53 @@ class CustomersRemoteDataSource {
 
     final payload = _extractDataMap(resp.data, op: 'settleDebt');
     return CustomerSettlementDto.fromJson(payload);
+  }
+
+  Future<List<CustomerSettlementHistoryDto>> listDebtSettlements({
+    required String key,
+    required String customerId,
+    int perPage = 100,
+  }) async {
+    final safeKey = key.trim();
+    final safeCustomerId = customerId.trim();
+    if (safeKey.isEmpty) {
+      throw ArgumentError.value(key, 'key', 'Key is required');
+    }
+    if (safeCustomerId.isEmpty) {
+      throw ArgumentError.value(
+        customerId,
+        'customerId',
+        'Customer is required',
+      );
+    }
+
+    final resp = await _dio.get(
+      '/organizations/pos/$safeKey/customers/$safeCustomerId/debt-history',
+      queryParameters: {'perPage': perPage, 'page': 1},
+    );
+    if (resp.data is! Map) {
+      throw Exception('listDebtSettlements: invalid response format');
+    }
+    final body = Map<String, dynamic>.from(resp.data as Map);
+    final data = body['data'];
+    final rawItems = data is List
+        ? data
+        : data is Map && data['items'] is List
+            ? data['items'] as List
+            : const <dynamic>[];
+    return rawItems
+        .whereType<Map>()
+        .where(
+          (item) =>
+              (item['type'] ?? '').toString().trim().toLowerCase() ==
+              'settlement',
+        )
+        .map((item) => CustomerSettlementHistoryDto.fromJson(
+              Map<String, dynamic>.from(item),
+            ))
+        .where((item) => item.amount > 0)
+        .toList(growable: false)
+      ..sort((a, b) => b.date.compareTo(a.date));
   }
 
   Map<String, dynamic> _extractDataMap(dynamic body, {required String op}) {

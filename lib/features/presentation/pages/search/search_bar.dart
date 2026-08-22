@@ -55,6 +55,9 @@ class _SearchBarState extends State<SearchBar> {
   Timer? _routeFocusRestoreTimer;
   bool _showClearSearchButton = false;
   bool _creatingMissingProduct = false;
+  bool _submittedSearchInProgress = false;
+  String? _lastAcceptedMarkCode;
+  DateTime? _lastAcceptedMarkCodeAt;
   List<ProductModel> _chooserProducts = const [];
   int _chooserSelectedIndex = 0;
   final _chooserScrollController = ScrollController();
@@ -707,6 +710,21 @@ class _SearchBarState extends State<SearchBar> {
     final scannedGtin = Gs1DataMatrixValidator.gtin(normalizedCode);
     if (scannedGtin == null) return false;
 
+    final candidateCanonical =
+        Gs1DataMatrixValidator.canonicalCode(normalizedCode);
+    final lastAcceptedAt = _lastAcceptedMarkCodeAt;
+    if (candidateCanonical.isNotEmpty &&
+        candidateCanonical == _lastAcceptedMarkCode &&
+        lastAcceptedAt != null &&
+        DateTime.now().difference(lastAcceptedAt) <
+            const Duration(milliseconds: 1200)) {
+      // Some HID scanners emit Enter through more than one Flutter input
+      // path. Silently consume the duplicate event from the same scan.
+      _controller.clear();
+      _restoreSearchFocus();
+      return true;
+    }
+
     _scanDebounce?.cancel();
     _typingDebounce?.cancel();
     _missingProductDebounce?.cancel();
@@ -776,11 +794,23 @@ class _SearchBarState extends State<SearchBar> {
       restoreFocus: false,
     );
     if (!mounted || added != true) return true;
+    _lastAcceptedMarkCode = canonicalCode;
+    _lastAcceptedMarkCodeAt = DateTime.now();
     _finishSuccessfulProductAdd();
     return true;
   }
 
   Future<void> _doSearch({bool submitted = false}) async {
+    if (submitted && _submittedSearchInProgress) return;
+    if (submitted) _submittedSearchInProgress = true;
+    try {
+      await _doSearchInternal(submitted: submitted);
+    } finally {
+      if (submitted) _submittedSearchInProgress = false;
+    }
+  }
+
+  Future<void> _doSearchInternal({required bool submitted}) async {
     if (submitted) {
       _scanDebounce?.cancel();
       _typingDebounce?.cancel();

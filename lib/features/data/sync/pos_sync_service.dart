@@ -655,6 +655,8 @@ class PosSyncService {
         final hasDebtRelatedChanges = batch.items.any((c) {
           final entity = c.entity.trim().toLowerCase();
           return entity.contains('customer') ||
+              entity == 'agent' ||
+              entity == 'agents' ||
               entity.contains('sale') ||
               entity.contains('payment') ||
               entity.contains('settlement');
