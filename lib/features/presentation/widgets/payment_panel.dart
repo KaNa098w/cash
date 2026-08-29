@@ -1687,7 +1687,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 if (!mounted) return;
                 Navigator.of(this.context).pop();
                 _commentCtrl.clear();
-                posCubit.clearAfterPayment();
+                posCubit.clearAfterPayment(closeCompletedTicket: true);
               } catch (_) {
                 _showError('Не удалось провести оплату');
               } finally {

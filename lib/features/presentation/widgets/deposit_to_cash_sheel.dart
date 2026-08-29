@@ -420,16 +420,11 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
             result.errorMessage ?? 'Операция требует ручной обработки');
       }
 
-      if (provider.fiscalizationEnabled &&
-          result.result == QueueSendResult.sent) {
-        final fiscalService = sl<FiscalReceiptService>();
-        final fiscalReceipt =
-            fiscalService.fromSaleResponse(result.responseData);
-        if (fiscalReceipt == null) {
-          throw StateError(
-            'Операция сохранена, но backend не вернул фискальный чек. Повторно операцию не создавайте.',
-          );
-        }
+      final fiscalService = sl<FiscalReceiptService>();
+      final fiscalReceipt = result.result == QueueSendResult.sent
+          ? fiscalService.fromSaleResponse(result.responseData)
+          : null;
+      if (fiscalReceipt != null) {
         await fiscalService.save(
           fiscalReceipt,
           localReceiptPrinted: false,

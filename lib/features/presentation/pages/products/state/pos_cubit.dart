@@ -170,18 +170,25 @@ class PosCubit extends Cubit<PosState> {
     );
   }
 
-  void clearAfterPayment() {
+  void clearAfterPayment({bool closeCompletedTicket = false}) {
     final tickets = [...state.tickets];
     final idx = tickets.indexWhere((t) => t.id == state.activeTicketId);
     if (idx == -1) return;
 
-    tickets[idx] = tickets[idx].copyWith(
-      items: const [],
-      clearCustomer: true,
-    );
+    var activeTicketId = state.activeTicketId;
+    if (closeCompletedTicket && tickets.length > 1) {
+      tickets.removeAt(idx);
+      activeTicketId = idx > 0 ? tickets[idx - 1].id : tickets.first.id;
+    } else {
+      tickets[idx] = tickets[idx].copyWith(
+        items: const [],
+        clearCustomer: true,
+      );
+    }
 
     _emitAndPersist(state.copyWith(
       tickets: tickets,
+      activeTicketId: activeTicketId,
       received: 0,
       paymentKind: PaymentKind.cash,
       selectedItemIndex: null,

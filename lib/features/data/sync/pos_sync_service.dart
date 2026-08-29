@@ -1501,7 +1501,7 @@ class PosSyncService {
         deviceId: deviceId,
       );
       await _localStore.markOperationAcked(record.id);
-      _markDedicatedTableSynced(record);
+      await _markDedicatedTableSynced(record);
       return QueueOperationResult(
         operationId: record.id,
         result: QueueSendResult.sent,
@@ -1710,21 +1710,23 @@ class PosSyncService {
     }
   }
 
-  void _markDedicatedTableSynced(OutboxOperationRecord record) {
+  Future<void> _markDedicatedTableSynced(
+    OutboxOperationRecord record,
+  ) async {
     switch (record.type) {
       case OutboxOperationType.productCreate:
         return;
       case OutboxOperationType.sale:
-        unawaited(_localStore.upsertSaleFromOutboxPayload(record.payload));
-        unawaited(_localStore.markSaleSynced(record.clientId));
+        await _localStore.upsertSaleFromOutboxPayload(record.payload);
+        await _localStore.markSaleSynced(record.clientId);
       case OutboxOperationType.payment:
-        unawaited(_localStore.markPaymentSynced(record.clientId));
+        await _localStore.markPaymentSynced(record.clientId);
       case OutboxOperationType.refund:
-        unawaited(_localStore.markRefundSynced(record.clientId));
+        await _localStore.markRefundSynced(record.clientId);
       case OutboxOperationType.sessionOpen:
-        unawaited(_localStore.markSessionSynced(record.clientId));
+        await _localStore.markSessionSynced(record.clientId);
       case OutboxOperationType.sessionClose:
-        unawaited(_localStore.markSessionSynced(record.clientId));
+        await _localStore.markSessionSynced(record.clientId);
     }
   }
 
