@@ -731,12 +731,11 @@ class _SearchBarState extends State<SearchBar> {
     _removeChooser();
     _closeKeyboard();
 
-    final matches = products.where((product) {
-      if (product.isUniversal) return false;
-      final productGtin = Gs1DataMatrixValidator.normalizeGtin14(product.gtin);
-      final productNtin = Gs1DataMatrixValidator.normalizeGtin14(product.ntin);
-      return productGtin == scannedGtin || productNtin == scannedGtin;
-    }).toList(growable: false);
+    final indexedProduct =
+        context.read<ProductsCubit>().findByGtin(scannedGtin);
+    final matches = indexedProduct == null
+        ? const <ProductModel>[]
+        : <ProductModel>[indexedProduct];
 
     if (matches.isEmpty) {
       _controller.clear();
@@ -842,28 +841,11 @@ class _SearchBarState extends State<SearchBar> {
       return;
     }
     if (!mounted) return;
-    final q = query.toLowerCase();
     final isBarcodeLike = RegExp(r'^\d{8,}$').hasMatch(query);
-
-    final matches = all.where((p) {
-      if (p.isUniversal) return false;
-      final name = p.name.toLowerCase();
-      final barcodeStr = (p.barcode?.toString() ?? '').toLowerCase();
-      final localCodeStr = (p.localBarcode?.toString() ?? '').toLowerCase();
-
-      // ✅ если похоже на штрихкод — лучше искать точным совпадением
-      if (isBarcodeLike) {
-        if (barcodeStr == q) return true;
-        if (localCodeStr == q) return true;
-        return false;
-      }
-
-      // обычный поиск по имени/частичному совпадению
-      if (name.contains(q)) return true;
-      if (barcodeStr.contains(q)) return true;
-      if (localCodeStr.contains(q)) return true;
-      return false;
-    }).toList();
+    // Showing thousands of equally broad matches is not useful and retains a
+    // large temporary list. The chooser remains responsive and narrows as the
+    // cashier types more characters.
+    final matches = productsCubit.search(query, limit: 100);
 
     if (matches.isEmpty) {
       _removeChooser();

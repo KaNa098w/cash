@@ -136,6 +136,11 @@ class PosSyncLocalStore {
     ''');
 
     db.execute('''
+      CREATE INDEX IF NOT EXISTS products_name_nocase_idx
+      ON products (name COLLATE NOCASE);
+    ''');
+
+    db.execute('''
       CREATE TABLE IF NOT EXISTS accounts (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -560,32 +565,11 @@ class PosSyncLocalStore {
       ),
     );
 
-    var maxKnown = _asInt(salesRow?['max_local_number']);
-
-    final saleNumberRows = db.select('SELECT number FROM sales');
-    for (final row in saleNumberRows) {
-      final parsed = _parseLocalSaleNumber(row['number']);
-      if (parsed > maxKnown) {
-        maxKnown = parsed;
-      }
-    }
-
-    final historyRows = db.select('SELECT raw_json FROM sales_history');
-    for (final row in historyRows) {
-      final raw = (row['raw_json'] ?? '').toString();
-      if (raw.isEmpty) continue;
-      try {
-        final json = decodeJsonMap(raw);
-        final parsed = _parseLocalSaleNumber(json['number']);
-        if (parsed > maxKnown) {
-          maxKnown = parsed;
-        }
-      } catch (_) {
-        // Ignore malformed cached rows and keep the best known number.
-      }
-    }
-
-    return maxKnown;
+    // Server/bootstrap numbers are folded into local_counters when their
+    // batches are applied. Local sales always have local_number. Scanning and
+    // JSON-decoding the entire sales_history here made every PIN unlock and
+    // every payment progressively slower as history grew.
+    return _asInt(salesRow?['max_local_number']);
   }
 
   void _syncSaleLocalCounter(sqlite.Database db) {

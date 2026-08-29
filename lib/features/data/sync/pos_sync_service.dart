@@ -542,7 +542,6 @@ class PosSyncService {
         'expense_types': expenseTypes.length,
         'customers': customers.length,
       },
-      'saved_snapshot_products': rawProducts,
     });
     _notifyDebtsChanged();
 
@@ -809,6 +808,7 @@ class PosSyncService {
     required List<Map<String, dynamic>> payments,
     bool sendInBackground = false,
     bool requireOnline = false,
+    bool discardOnFailure = false,
   }) async {
     final localPosSessionId = sale.posSessionId?.trim() ?? '';
     final localNumber = await _localStore.nextLocalSaleNumber();
@@ -886,11 +886,13 @@ class PosSyncService {
       payload: payload,
       tryImmediateSend: !sendInBackground,
     );
-    if (requireOnline &&
-        result.result == QueueSendResult.manual &&
-        result.errorCode == 'MARKING_CONFLICT') {
-      // A marking conflict is correctable in the open cart. Do not leave a
-      // rejected sale in local history or in the service queue.
+    if ((discardOnFailure && result.result != QueueSendResult.sent) ||
+        (requireOnline &&
+            result.result == QueueSendResult.manual &&
+            result.errorCode == 'MARKING_CONFLICT')) {
+      // Fiscal sales are online-only: a failed attempt must not remain in the
+      // service queue or local history. Marking conflicts are also corrected
+      // in the still-open cart instead of being retained as rejected sales.
       await _localStore.deleteQueueOperation(result.operationId);
       _notifySalesHistoryChanged();
     }

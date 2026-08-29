@@ -28,6 +28,7 @@ abstract class SaleRepository {
     required SaleModel sale,
     required List<Map<String, dynamic>> payments,
     bool requireOnline = false,
+    bool discardOnFailure = false,
   });
 
   Future<void> syncPendingSales({

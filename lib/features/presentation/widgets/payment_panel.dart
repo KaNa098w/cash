@@ -715,6 +715,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
   final _cardFocusNode = FocusNode();
   final _commentFocusNode = FocusNode();
   OverlayEntry? _commentKeyboardEntry;
+  List<LocalAccount> _accounts = const [];
   List<LocalAccount> _bankAccounts = const [];
   String? _selectedBankAccountId;
   bool _loadingBankAccounts = false;
@@ -770,6 +771,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
           .toList(growable: false);
       if (!mounted) return;
       setState(() {
+        _accounts = accounts;
         _bankAccounts = bankAccounts;
         final selectedExists = bankAccounts
             .any((account) => account.id.trim() == _selectedBankAccountId);
@@ -1355,7 +1357,10 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           PaymentKind.card => 'card',
                           PaymentKind.credit => 'debt',
                         };
-              final fiscalizationExpected = fiscalizationEnabled && !isDebtSale;
+              // Only marked goods require an online fiscal receipt. Ordinary
+              // goods remain offline-capable and are queued for later sync.
+              final fiscalizationExpected =
+                  fiscalizationEnabled && containsMarkedItems && !isDebtSale;
 
               final customerId = isDebtSale
                   ? selectedCustomer?.id.trim()
@@ -1410,8 +1415,11 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     .toList(),
               );
 
-              // Load accounts to find cash/card account IDs
-              final accounts = await sl<PosSyncService>().loadAccounts();
+              // Accounts are prefetched when the payment panel opens. Avoid a
+              // synchronous SQLite read in the button's critical path.
+              final accounts = _accounts.isNotEmpty
+                  ? _accounts
+                  : await sl<PosSyncService>().loadAccounts();
               final visibleAccounts =
                   accounts.where((account) => account.visibleToPos).toList();
               final cashAccount = visibleAccounts
@@ -1536,6 +1544,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   requireOnline: isDebtSale ||
                       containsMarkedItems ||
                       fiscalizationExpected,
+                  discardOnFailure: fiscalizationExpected,
                 );
                 final result = outcome.result;
                 final printedSale = outcome.sale;
@@ -1554,11 +1563,13 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     name: 'PaymentPanel',
                   );
                   _showError(
-                    markedSale && outcome.retryScheduled
-                        ? 'Продажа сохранена и будет повторена с тем же идентификатором. Повторно оплату не создавайте.'
-                        : message.isEmpty
-                            ? 'Продажа в долг не прошла. Проверьте интернет и настройки клиента.'
-                            : message,
+                    fiscalizationExpected
+                        ? 'Проверьте соединение с интернетом. Фискальная продажа не создана.'
+                        : markedSale && outcome.retryScheduled
+                            ? 'Продажа сохранена и будет повторена с тем же идентификатором. Повторно оплату не создавайте.'
+                            : message.isEmpty
+                                ? 'Продажа в долг не прошла. Проверьте интернет и настройки клиента.'
+                                : message,
                   );
                   return;
                 }
@@ -1683,7 +1694,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   _paying = false;
                   _paymentSuccess = true;
                 });
-                await Future.delayed(const Duration(milliseconds: 950));
+                await Future.delayed(const Duration(milliseconds: 250));
                 if (!mounted) return;
                 Navigator.of(this.context).pop();
                 _commentCtrl.clear();

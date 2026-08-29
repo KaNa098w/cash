@@ -17,6 +17,7 @@ class SaleRepositoryImpl implements SaleRepository {
     required SaleModel sale,
     required List<Map<String, dynamic>> payments,
     bool requireOnline = false,
+    bool discardOnFailure = false,
   }) async {
     try {
       final queueResult = await _syncService.createSale(
@@ -26,6 +27,7 @@ class SaleRepositoryImpl implements SaleRepository {
         payments: payments,
         sendInBackground: !requireOnline,
         requireOnline: requireOnline,
+        discardOnFailure: discardOnFailure,
       );
 
       final localNumber = queueResult.payload['local_number']?.toString() ?? '';
@@ -43,7 +45,8 @@ class SaleRepositoryImpl implements SaleRepository {
         errorMessage: queueResult.errorMessage,
         errorCode: queueResult.errorCode,
         responseData: queueResult.responseData,
-        retryScheduled: queueResult.result == QueueSendResult.queued,
+        retryScheduled:
+            !discardOnFailure && queueResult.result == QueueSendResult.queued,
       );
     } catch (error, stackTrace) {
       developer.log(

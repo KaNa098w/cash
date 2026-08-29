@@ -504,6 +504,27 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.setString(_kActiveUserName, v);
   }
 
+  /// Updates the active cashier with a single preferences flush and a single
+  /// UI notification. Login previously performed both writes sequentially.
+  Future<void> setActiveUser({
+    required String id,
+    required String name,
+  }) async {
+    final cleanId = id.trim();
+    final cleanName = name.trim();
+    if (cleanId.isEmpty) return;
+
+    _activeUserId = cleanId;
+    if (cleanName.isNotEmpty) _activeUserName = cleanName;
+
+    final prefs = await SharedPreferences.getInstance();
+    await Future.wait([
+      prefs.setString(_kActiveUserId, cleanId),
+      if (cleanName.isNotEmpty) prefs.setString(_kActiveUserName, cleanName),
+    ]);
+    notifyListeners();
+  }
+
   Future<void> setPricingPlanStatus(PosPricingPlanStatus status) async {
     _pricingPlanStatus = status;
     notifyListeners();

@@ -15,6 +15,12 @@ class PosDiagnosticsService {
   Map<String, dynamic>? _lastBootstrapSummary;
   final List<Map<String, dynamic>> _localStorageIssues = [];
 
+  // Diagnostics must never become a second in-memory database. A product
+  // snapshot can contain tens of thousands of fairly large maps.
+  static const int _snapshotSampleSize = 20;
+  static const int _collectionSampleSize = 50;
+  static const int _maxCloneDepth = 8;
+
   void recordError(String message) {
     final value = message.trim();
     if (value.isEmpty) return;
@@ -87,16 +93,30 @@ class PosDiagnosticsService {
   }
 
   void recordSnapshotFile(Map<String, dynamic> snapshotFile) {
-    _lastSnapshotFile = Map<String, dynamic>.from(snapshotFile);
-    _lastSnapshotProducts = (snapshotFile['products'] as List?)
-            ?.whereType<Map>()
-            .map((item) => Map<String, dynamic>.from(item))
-            .toList(growable: false) ??
-        const [];
+    final products = (snapshotFile['products'] as List?) ?? const [];
+    _lastSnapshotFile = <String, dynamic>{
+      for (final entry in snapshotFile.entries)
+        if (entry.key != 'products' &&
+            entry.key != 'sales' &&
+            entry.key != 'refunds')
+          entry.key: _cloneJsonValue(entry.value),
+      'products_count': products.length,
+      'sales_count': (snapshotFile['sales'] as List?)?.length ?? 0,
+      'refunds_count': (snapshotFile['refunds'] as List?)?.length ?? 0,
+    };
+    _lastSnapshotProducts = products
+        .whereType<Map>()
+        .take(_snapshotSampleSize)
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
   }
 
   void recordBootstrapSummary(Map<String, dynamic> summary) {
-    _lastBootstrapSummary = Map<String, dynamic>.from(summary);
+    _lastBootstrapSummary = <String, dynamic>{
+      for (final entry in summary.entries)
+        if (entry.key != 'saved_snapshot_products')
+          entry.key: _cloneJsonValue(entry.value),
+    };
   }
 
   void recordLocalStorageIssue(Map<String, dynamic> issue) {
@@ -161,14 +181,30 @@ class PosDiagnosticsService {
     }
   }
 
-  dynamic _cloneJsonValue(dynamic value) {
+  dynamic _cloneJsonValue(dynamic value, [int depth = 0]) {
+    if (depth >= _maxCloneDepth) return '<max-depth>';
     if (value is Map) {
-      return value.map(
-        (key, item) => MapEntry(key.toString(), _cloneJsonValue(item)),
-      );
+      final result = <String, dynamic>{};
+      for (final entry in value.entries.take(_collectionSampleSize)) {
+        result[entry.key.toString()] = _cloneJsonValue(entry.value, depth + 1);
+      }
+      if (value.length > _collectionSampleSize) {
+        result['_diagnostics_truncated_entries'] =
+            value.length - _collectionSampleSize;
+      }
+      return result;
     }
     if (value is List) {
-      return value.map(_cloneJsonValue).toList(growable: false);
+      final result = value
+          .take(_collectionSampleSize)
+          .map((item) => _cloneJsonValue(item, depth + 1))
+          .toList(growable: true);
+      if (value.length > _collectionSampleSize) {
+        result.add({
+          '_diagnostics_truncated_items': value.length - _collectionSampleSize,
+        });
+      }
+      return List<dynamic>.unmodifiable(result);
     }
     if (value == null || value is String || value is num || value is bool) {
       return value;

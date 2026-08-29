@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -165,10 +166,6 @@ class AuthCubit extends Cubit<AuthState> {
     );
     if (!pricingPlanAllowsAccess) return;
 
-    await _tokenProvider.setActiveUserId(user.id);
-    await _tokenProvider.setActiveUserName(user.name);
-    await sl<PosSyncService>().ensureLocalSaleCounterSynced();
-
     if (_tokenProvider.hasShiftId) {
       final shiftUserId = _tokenProvider.shiftUserId?.trim() ?? '';
       if (shiftUserId.isNotEmpty && shiftUserId != user.id) {
@@ -181,9 +178,16 @@ class AuthCubit extends Cubit<AuthState> {
         );
         return;
       }
+      await _tokenProvider.setActiveUser(id: user.id, name: user.name);
       emit(AuthUnlocked(provision: provision, user: user));
+      // The counter is already maintained on bootstrap, pull and every local
+      // sale. A legacy consistency scan must not delay cashier unlock.
+      unawaited(sl<PosSyncService>().ensureLocalSaleCounterSynced());
       return;
     }
+
+    await _tokenProvider.setActiveUser(id: user.id, name: user.name);
+    unawaited(sl<PosSyncService>().ensureLocalSaleCounterSynced());
 
     await openSessionWithCash(
       provision: provision,
@@ -197,6 +201,33 @@ class AuthCubit extends Cubit<AuthState> {
   }) async {
     final key = _tokenProvider.posKey?.trim() ?? '';
     var status = _tokenProvider.pricingPlanStatus;
+
+    // A cached status allows an instant repeat login. Refresh it in the
+    // background; the first login still waits because there is no safe cached
+    // decision yet.
+    if (status != null) {
+      if (status.isAccessBlocked()) {
+        // A subscription may have been renewed since the cached block. Verify
+        // blocked status online so a renewed cashier is not locked out.
+        if (key.isNotEmpty) {
+          try {
+            status = await sl<PosSyncService>().loadPricingPlan(key: key);
+            await _tokenProvider.setPricingPlanStatus(status);
+          } catch (error) {
+            debugPrint('[AuthCubit] pricing-plan recheck failed: $error');
+          }
+        }
+        if (!status!.isAccessBlocked()) return true;
+        emit(AuthPricingBlocked(
+          provision: provision,
+          user: user,
+          status: status,
+        ));
+        return false;
+      }
+      if (key.isNotEmpty) unawaited(_refreshPricingPlan(key));
+      return true;
+    }
 
     if (key.isNotEmpty) {
       try {
@@ -217,6 +248,15 @@ class AuthCubit extends Cubit<AuthState> {
       ),
     );
     return false;
+  }
+
+  Future<void> _refreshPricingPlan(String key) async {
+    try {
+      final status = await sl<PosSyncService>().loadPricingPlan(key: key);
+      await _tokenProvider.setPricingPlanStatus(status);
+    } catch (error) {
+      debugPrint('[AuthCubit] background pricing-plan refresh failed: $error');
+    }
   }
 
   Future<void> openSessionWithCash({
@@ -264,8 +304,7 @@ class AuthCubit extends Cubit<AuthState> {
 
       await _tokenProvider.setShiftId(sessionId);
       await _tokenProvider.setShiftUserId(user.id);
-      await _tokenProvider.setActiveUserId(user.id);
-      await _tokenProvider.setActiveUserName(user.name);
+      await _tokenProvider.setActiveUser(id: user.id, name: user.name);
 
       emit(const AuthSuccess());
     } on DioException catch (e) {
@@ -305,8 +344,7 @@ class AuthCubit extends Cubit<AuthState> {
     if (shiftUserId.isEmpty) {
       await _tokenProvider.setShiftUserId(user.id);
     }
-    await _tokenProvider.setActiveUserId(user.id);
-    await _tokenProvider.setActiveUserName(user.name);
+    await _tokenProvider.setActiveUser(id: user.id, name: user.name);
 
     debugPrint(
       '[AuthCubit] openSession skipped: active shift already exists shiftId=$shiftId userId=${user.id}',
