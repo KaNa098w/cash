@@ -37,6 +37,7 @@ class AuthTokenProvider extends ChangeNotifier {
   static const _kReceiptPaperMm = 'receiptPaperMm';
   static const _kReceiptPrinterName = 'receiptPrinterName';
   static const _kInvoicePrinterName = 'invoicePrinterName';
+  static const _kReceiptPrintingEnabled = 'receiptPrintingEnabled';
   static const _kPricingPlanStatus = 'pricingPlanStatus';
 
   // ✅ активный кассир
@@ -110,6 +111,9 @@ class AuthTokenProvider extends ChangeNotifier {
 
   String? _invoicePrinterName;
   String? get invoicePrinterName => _invoicePrinterName;
+
+  bool _receiptPrintingEnabled = true;
+  bool get receiptPrintingEnabled => _receiptPrintingEnabled;
 
   String? _activeUserId;
   String? get activeUserId => _activeUserId;
@@ -238,6 +242,7 @@ class AuthTokenProvider extends ChangeNotifier {
     _receiptPaperMm = savedReceiptPaperMm == 80 ? 80 : 57;
     _receiptPrinterName = prefs.getString(_kReceiptPrinterName);
     _invoicePrinterName = prefs.getString(_kInvoicePrinterName);
+    _receiptPrintingEnabled = prefs.getBool(_kReceiptPrintingEnabled) ?? true;
     final pricingPlanStatusStr = prefs.getString(_kPricingPlanStatus);
     if (pricingPlanStatusStr != null && pricingPlanStatusStr.isNotEmpty) {
       try {
@@ -444,6 +449,13 @@ class AuthTokenProvider extends ChangeNotifier {
     } else {
       await prefs.setString(_kInvoicePrinterName, _invoicePrinterName!);
     }
+  }
+
+  Future<void> setReceiptPrintingEnabled(bool enabled) async {
+    _receiptPrintingEnabled = enabled;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kReceiptPrintingEnabled, enabled);
   }
 
   Future<void> setShiftId(String id) async {

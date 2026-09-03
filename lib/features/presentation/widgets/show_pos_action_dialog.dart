@@ -1839,6 +1839,7 @@ Future<void> _pickPrinterSettings(BuildContext context) async {
       int selectedMm = provider.receiptPaperMm;
       String? selectedReceipt = provider.receiptPrinterName;
       String? selectedInvoice = provider.invoicePrinterName;
+      bool receiptPrintingEnabled = provider.receiptPrintingEnabled;
 
       // Если сохранённый принтер больше не доступен — сбросить
       if (selectedReceipt != null && !printerNames.contains(selectedReceipt)) {
@@ -1982,6 +1983,75 @@ Future<void> _pickPrinterSettings(BuildContext context) async {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 18),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+                        decoration: BoxDecoration(
+                          color: receiptPrintingEnabled
+                              ? const Color(0xFFEAF2FF)
+                              : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: receiptPrintingEnabled
+                                ? const Color(0xFF93C5FD)
+                                : const Color(0xFFE2E8F0),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: receiptPrintingEnabled
+                                    ? const Color(0xFFDBEAFE)
+                                    : const Color(0xFFE2E8F0),
+                                borderRadius: BorderRadius.circular(11),
+                              ),
+                              child: Icon(
+                                Icons.receipt_long_rounded,
+                                size: 21,
+                                color: receiptPrintingEnabled
+                                    ? const Color(0xFF2563EB)
+                                    : const Color(0xFF64748B),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Распечатка чеков',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Спрашивать о печати после операции',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Switch.adaptive(
+                              value: receiptPrintingEnabled,
+                              activeThumbColor: Colors.white,
+                              activeTrackColor: const Color(0xFF2563EB),
+                              onChanged: (value) => setState(
+                                () => receiptPrintingEnabled = value,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       sectionTitle('Размер бумаги чека'),
                       paperCard(
                           value: 80,
@@ -2047,6 +2117,9 @@ Future<void> _pickPrinterSettings(BuildContext context) async {
                                       .setReceiptPrinterName(selectedReceipt);
                                   await provider
                                       .setInvoicePrinterName(selectedInvoice);
+                                  await provider.setReceiptPrintingEnabled(
+                                    receiptPrintingEnabled,
+                                  );
                                 },
                                 style: FilledButton.styleFrom(
                                   backgroundColor: const Color(0xFF2563EB),

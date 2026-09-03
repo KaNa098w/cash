@@ -379,6 +379,7 @@ class FiscalReceiptDialog extends StatefulWidget {
     required this.deviceId,
     required this.paperMm,
     this.printerName,
+    this.autoPrintEnabled = true,
   });
 
   final FiscalReceipt initial;
@@ -386,6 +387,7 @@ class FiscalReceiptDialog extends StatefulWidget {
   final String deviceId;
   final int paperMm;
   final String? printerName;
+  final bool autoPrintEnabled;
 
   @override
   State<FiscalReceiptDialog> createState() => _FiscalReceiptDialogState();
@@ -405,7 +407,7 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
   void initState() {
     super.initState();
     _schedulePoll();
-    if (_receipt.canPrint) {
+    if (widget.autoPrintEnabled && _receipt.canPrint) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _autoPrint());
     }
   }
@@ -434,7 +436,7 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
         _receipt = updated;
         _error = null;
       });
-      if (updated.canPrint) unawaited(_autoPrint());
+      if (widget.autoPrintEnabled && updated.canPrint) unawaited(_autoPrint());
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = 'Не удалось обновить статус. Повторяем…');
@@ -1576,12 +1578,14 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
                 var localReceiptPrinted = false;
                 if (!mounted) return;
-                final shouldPrintLocalReceipt =
-                    await showReceiptPrintConfirmation(
-                  this.context,
-                  title: 'Распечатать чек продажи?',
-                  message: 'Продажа успешно оформлена. Нужен бумажный чек?',
-                );
+                final shouldPrintLocalReceipt = auth.receiptPrintingEnabled
+                    ? await showReceiptPrintConfirmation(
+                        this.context,
+                        title: 'Распечатать чек продажи?',
+                        message:
+                            'Продажа успешно оформлена. Нужен бумажный чек?',
+                      )
+                    : false;
                 if (!mounted) return;
                 if (shouldPrintLocalReceipt) {
                   final printedPaymentMethod =
@@ -1673,6 +1677,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                       deviceId: deviceId,
                       paperMm: auth.receiptPaperMm,
                       printerName: auth.receiptPrinterName,
+                      autoPrintEnabled: auth.receiptPrintingEnabled,
                     ),
                   );
                 } else if (fiscalizationExpected && outcome.retryScheduled) {

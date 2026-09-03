@@ -448,6 +448,7 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
             deviceId: deviceId,
             paperMm: provider.receiptPaperMm,
             printerName: provider.receiptPrinterName,
+            autoPrintEnabled: provider.receiptPrintingEnabled,
           ),
         );
       }

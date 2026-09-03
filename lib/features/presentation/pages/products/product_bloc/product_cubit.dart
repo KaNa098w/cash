@@ -167,6 +167,9 @@ class _ProductSearchIndex {
         _byGtin = const {};
 
   _ProductSearchIndex(List<ProductModel> products)
+      : this._fromUnique(_deduplicateByBarcode(products));
+
+  _ProductSearchIndex._fromUnique(List<ProductModel> products)
       : _entries = products
             .where((product) => !product.isUniversal)
             .map(_ProductSearchEntry.new)
@@ -175,16 +178,17 @@ class _ProductSearchIndex {
         _byGtin = _buildGtinMap(products);
 
   final List<_ProductSearchEntry> _entries;
-  final Map<String, List<ProductModel>> _byBarcode;
+  final Map<String, ProductModel> _byBarcode;
   final Map<String, ProductModel> _byGtin;
 
   List<ProductModel> search(String rawQuery, {required int limit}) {
     final query = rawQuery.trim().toLowerCase();
     if (query.isEmpty || limit <= 0) return const [];
     if (RegExp(r'^\d{8,}$').hasMatch(query)) {
-      return List<ProductModel>.unmodifiable(
-        (_byBarcode[query] ?? const <ProductModel>[]).take(limit),
-      );
+      final product = _byBarcode[query];
+      return product == null
+          ? const <ProductModel>[]
+          : List<ProductModel>.unmodifiable([product]);
     }
     final result = <ProductModel>[];
     for (final entry in _entries) {
@@ -200,14 +204,38 @@ class _ProductSearchIndex {
 
   ProductModel? findByGtin(String gtin) => _byGtin[gtin];
 
-  static Map<String, List<ProductModel>> _buildBarcodeMap(
+  static List<ProductModel> _deduplicateByBarcode(List<ProductModel> products) {
+    final result = <ProductModel>[];
+    final seenBarcodes = <String>{};
+    final seenFallbackIds = <String>{};
+
+    for (final product in products) {
+      if (product.isUniversal) continue;
+      final barcodes = [product.barcode, product.localBarcode]
+          .map((value) => (value ?? '').trim().toLowerCase())
+          .where((value) => value.isNotEmpty)
+          .toSet();
+      if (barcodes.isNotEmpty) {
+        if (barcodes.any(seenBarcodes.contains)) continue;
+        seenBarcodes.addAll(barcodes);
+        result.add(product);
+        continue;
+      }
+
+      final id = (product.id ?? '').trim();
+      if (id.isEmpty || seenFallbackIds.add(id)) result.add(product);
+    }
+    return result;
+  }
+
+  static Map<String, ProductModel> _buildBarcodeMap(
       List<ProductModel> products) {
-    final result = <String, List<ProductModel>>{};
+    final result = <String, ProductModel>{};
     for (final product in products) {
       if (product.isUniversal) continue;
       for (final value in [product.barcode, product.localBarcode]) {
         final key = (value ?? '').toString().trim().toLowerCase();
-        if (key.isNotEmpty) (result[key] ??= <ProductModel>[]).add(product);
+        if (key.isNotEmpty) result.putIfAbsent(key, () => product);
       }
     }
     return result;

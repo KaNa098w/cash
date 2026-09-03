@@ -47,4 +47,30 @@ void main() {
     expect(find.text('Фискальный чек готов'), findsNothing);
     expect(dialogClosed, isTrue);
   });
+
+  testWidgets('disabled automatic printing does not ask to print',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: FiscalReceiptDialog(
+            initial: FiscalReceipt(
+              id: 'fiscal-receipt-id',
+              status: 'succeeded',
+              printable: true,
+            ),
+            posKey: 'pos-key',
+            deviceId: 'device-id',
+            paperMm: 80,
+            autoPrintEnabled: false,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Фискальный чек готов'), findsOneWidget);
+    expect(find.text('Распечатать фискальный чек?'), findsNothing);
+  });
 }

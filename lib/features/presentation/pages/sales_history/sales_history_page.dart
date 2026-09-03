@@ -802,6 +802,11 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     SaleModel sale, {
     String? reasonCode,
   }) async {
+    if (!_saleIsSyncedForRefund(sale)) {
+      _showPendingSaleRefundMessage();
+      return false;
+    }
+
     final auth = context.read<AuthTokenProvider>();
 
     final key = auth.posKey?.trim() ?? '';
@@ -1084,6 +1089,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
             deviceId: deviceId,
             paperMm: auth.receiptPaperMm,
             printerName: auth.receiptPrinterName,
+            autoPrintEnabled: auth.receiptPrintingEnabled,
           ),
         );
       } else if (auth.fiscalizationEnabled &&
@@ -1126,6 +1132,11 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
   Future<void> _openRefundPickDialog(
       BuildContext context, SaleModel sale) async {
+    if (!_saleIsSyncedForRefund(sale)) {
+      _showPendingSaleRefundMessage();
+      return;
+    }
+
     final saleId = sale.localId.trim();
     if (saleId.isEmpty) return _snack('saleId пустой (sale.localId)');
     final auth = context.read<AuthTokenProvider>();
@@ -1435,6 +1446,18 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     }
   }
 
+  bool _saleIsSyncedForRefund(SaleModel sale) {
+    return sale.items.isNotEmpty &&
+        sale.items.every((item) => item.id.trim().isNotEmpty);
+  }
+
+  void _showPendingSaleRefundMessage() {
+    _snack(
+      'Продажа ещё находится в очереди синхронизации. '
+      'Возврат станет доступен после её отправки на сервер.',
+    );
+  }
+
   Future<void> _logRefundAccessContext(AuthTokenProvider auth) async {
     const yellow = '\x1B[33m';
     const reset = '\x1B[0m';
@@ -1495,11 +1518,13 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
     if (refundItems.isEmpty) return;
 
-    final shouldPrint = await showReceiptPrintConfirmation(
-      context,
-      title: 'Распечатать чек возврата?',
-      message: 'Возврат успешно оформлен. Нужен бумажный чек?',
-    );
+    final shouldPrint = auth.receiptPrintingEnabled
+        ? await showReceiptPrintConfirmation(
+            context,
+            title: 'Распечатать чек возврата?',
+            message: 'Возврат успешно оформлен. Нужен бумажный чек?',
+          )
+        : false;
     if (!mounted || !shouldPrint) return;
 
     await printer.print80mmSilently(
