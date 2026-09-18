@@ -323,6 +323,8 @@ class PosSyncRemoteDataSource {
 
   bool isManualErrorCode(String code) {
     switch (code.trim().toUpperCase()) {
+      case 'MARKING_PACKAGE_CHANGED':
+      case 'MARKING_CONFLICT':
       case 'VALIDATION_FAILED':
       case 'SUBSCRIPTION_INACTIVE':
       case 'INSUFFICIENT_STOCK':

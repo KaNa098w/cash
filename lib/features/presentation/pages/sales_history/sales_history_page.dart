@@ -1,3 +1,4 @@
+import 'package:leemon_app/core/marking/refund_marking_allocation.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -360,6 +361,13 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   }
 
   Future<void> _printSaleReceipt(SaleModel sale) async {
+    final fiscal = sale.fiscalReceipt ??
+        await GetIt.I<FiscalReceiptService>().findBySaleId(sale.localId);
+    if (!mounted) return;
+    if (fiscal != null) {
+      await _printFiscalSaleReceipt(sale);
+      return;
+    }
     final saleKey = _salePrintKey(sale);
     if (_controller.isReceiptPrintDisabled(saleKey)) return;
 
@@ -801,6 +809,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     BuildContext context,
     SaleModel sale, {
     String? reasonCode,
+    String? inventoryAction,
   }) async {
     if (!_saleIsSyncedForRefund(sale)) {
       _showPendingSaleRefundMessage();
@@ -992,6 +1001,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
           returnAccessKey: accessKey,
           userId: isDirector ? activeUserId : null,
           reasonCode: reasonCode,
+          inventoryAction: inventoryAction,
         );
         if (result.result == QueueSendResult.manual) {
           throw Exception(
@@ -1038,20 +1048,47 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         return false;
       }
 
-      if (!context.mounted) return false;
-      _cubit.applyRefundOptimistic(
-        saleId: saleId,
-        refundId: effectiveRefundId,
-        pickedBySaleItemId: pickedBySaleItemId,
-      );
       refundCompleted = true;
-      final auth = context.read<AuthTokenProvider>();
-      if (!auth.fiscalizationEnabled) {
+      if (!context.mounted) return true;
+      if (completedRefund?.result == QueueSendResult.sent) {
+        await _cubit.loadFirst(key: key);
+      } else {
+        _cubit.applyRefundOptimistic(
+            saleId: saleId,
+            refundId: effectiveRefundId,
+            pickedBySaleItemId: pickedBySaleItemId);
+      }
+      if (!context.mounted) return true;
+      final finalizedRefund = RefundModel.fromJson({
+        ...?completedRefund?.payload,
+        ...?completedRefund?.responseData,
+      });
+      final finalizedTotal = finalizedRefund.totalAmount ?? totalAmount;
+      final finalizedPicks = finalizedRefund.items
+          .map((item) => RefundPick(
+                saleItemId: item.saleItemId,
+                productId: item.productId,
+                checked: true,
+                quantity: item.quantity,
+                maxQuantity: item.quantity,
+                totalQuantity: item.quantity,
+                refundedQuantity: 0,
+                price: item.price,
+                markCodes: item.markCodes,
+              ))
+          .toList();
+      final fiscalService = GetIt.I<FiscalReceiptService>();
+      final fiscalReceipt =
+          fiscalService.fromSaleResponse(completedRefund?.responseData);
+      if (fiscalReceipt == null &&
+          completedRefund?.responseData?['fiscal_receipt'] == null &&
+          completedRefund?.responseData?.containsKey('fiscal_receipt') ==
+              true) {
         try {
           await _printRefundReceipt(
             sale: sale,
-            picks: picks,
-            totalAmount: totalAmount,
+            picks: finalizedPicks,
+            totalAmount: finalizedTotal,
             paymentMethod: refundPaymentMethod,
           );
         } catch (e) {
@@ -1060,10 +1097,6 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
           }
         }
       }
-      final fiscalService = GetIt.I<FiscalReceiptService>();
-      final fiscalReceipt = auth.fiscalizationEnabled
-          ? fiscalService.fromSaleResponse(completedRefund?.responseData)
-          : null;
       if (fiscalReceipt != null) {
         await fiscalService.save(
           fiscalReceipt,
@@ -1104,10 +1137,11 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       }
       await _showRefundSuccessDialog(
         updated: refundId.isNotEmpty,
-        itemsCount: picks.length,
-        totalAmount: totalAmount,
+        itemsCount: finalizedPicks.length,
+        totalAmount: finalizedTotal,
       );
 
+      await _cubit.loadFirst(key: key);
       _controller.clearPicksForSale(saleId, () => setState(() {}));
       return true;
     } catch (e) {
@@ -1152,6 +1186,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
     try {
       String? selectedReasonCode;
+      var selectedInventoryAction = RefundInventoryAction.returnToStock;
       await _runWithDialogFocus(() {
         return showDialog<void>(
           context: context,
@@ -1171,9 +1206,16 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                     !_controller.isRefundLoading(saleId);
 
                 List<String> returnedMarkCodes(SaleItemModel item) {
-                  final refund = sale.refund;
-                  if (refund == null) return const <String>[];
-                  return refund.items
+                  final refunds = {
+                    for (final refund in _cubit.state.refunds)
+                      if (refund.saleId == sale.localId ||
+                          (sale.clientSaleId != null &&
+                              refund.clientSaleId == sale.clientSaleId))
+                        refund.id: refund,
+                    if (sale.refund != null) sale.refund!.id: sale.refund!
+                  };
+                  return refunds.values
+                      .expand((refund) => refund.items)
                       .where((refundItem) =>
                           (item.id.isNotEmpty &&
                               refundItem.saleItemId == item.id) ||
@@ -1186,9 +1228,16 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                 List<MarkingPartModel> returnedMarkingParts(
                   SaleItemModel item,
                 ) {
-                  final refund = sale.refund;
-                  if (refund == null) return const <MarkingPartModel>[];
-                  return refund.items
+                  final refunds = {
+                    for (final refund in _cubit.state.refunds)
+                      if (refund.saleId == sale.localId ||
+                          (sale.clientSaleId != null &&
+                              refund.clientSaleId == sale.clientSaleId))
+                        refund.id: refund,
+                    if (sale.refund != null) sale.refund!.id: sale.refund!
+                  };
+                  return refunds.values
+                      .expand((refund) => refund.items)
                       .where((refundItem) =>
                           (item.id.isNotEmpty &&
                               refundItem.saleItemId == item.id) ||
@@ -1196,33 +1245,6 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                               refundItem.productId == item.productId))
                       .expand((refundItem) => refundItem.markingParts)
                       .toList(growable: false);
-                }
-
-                int requiredMarkCodeCount(
-                  SaleItemModel item,
-                  int quantity,
-                ) {
-                  if (quantity <= 0 || item.markCodes.isEmpty) return 0;
-                  if (item.markingParts.isEmpty) return quantity;
-
-                  final returnedByCode = <String, double>{};
-                  for (final part in returnedMarkingParts(item)) {
-                    returnedByCode[part.code] =
-                        (returnedByCode[part.code] ?? 0) + part.quantity;
-                  }
-                  var covered = 0.0;
-                  var count = 0;
-                  for (final code in item.markCodes) {
-                    final soldPart = item.markingParts
-                        .where((part) => part.code == code)
-                        .fold<double>(0, (sum, part) => sum + part.quantity);
-                    final available = soldPart - (returnedByCode[code] ?? 0.0);
-                    if (available <= 0) continue;
-                    covered += available;
-                    count++;
-                    if (covered >= quantity) break;
-                  }
-                  return count == 0 ? 1 : count;
                 }
 
                 Future<void> changeQuantity(
@@ -1235,33 +1257,29 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                     item: item,
                     previouslyReturnedMarkCodes: previouslyReturned,
                   );
-                  final neededCodes = requiredMarkCodeCount(item, quantity);
-                  pick.requiredMarkCodeCount = neededCodes;
-                  if (!pick.isMarked || neededCodes <= pick.markCodes.length) {
-                    _controller.changeQty(
-                      saleId: saleId,
-                      item: item,
-                      newQty: quantity,
-                      previouslyReturnedMarkCodes: previouslyReturned,
-                      notify: refresh,
-                    );
-                    return;
-                  }
-
+                  pick.returnedMarkingParts = returnedMarkingParts(item);
                   final scannedCodes = List<String>.from(pick.markCodes);
-                  final partialMarking = item.markingParts.isNotEmpty;
+                  final capacities = RefundMarkingAllocation.available(
+                      item.markingParts, pick.returnedMarkingParts);
                   final availableCodes = item.markCodes
                       .where((code) =>
-                          partialMarking || !previouslyReturned.contains(code))
+                          item.markingParts.isEmpty ||
+                          (capacities[Gs1DataMatrixValidator.canonicalCode(
+                                      code)] ??
+                                  0) >
+                              0)
                       .toSet();
-                  while (scannedCodes.length < neededCodes) {
-                    final code = await showRefundMarkCodeDialog(
-                      dialogContext,
-                      item: item,
-                      availableCodes: availableCodes,
-                      currentCodes: scannedCodes.toSet(),
-                      requiredCount: neededCodes,
-                    );
+                  while (!RefundMarkingAllocation.covers(
+                      quantity: quantity,
+                      codes: scannedCodes,
+                      originalCodes: item.markCodes,
+                      sold: item.markingParts,
+                      returned: pick.returnedMarkingParts)) {
+                    final code = await showRefundMarkCodeDialog(dialogContext,
+                        item: item,
+                        availableCodes: availableCodes,
+                        currentCodes: scannedCodes.toSet(),
+                        requiredCount: scannedCodes.length + 1);
                     if (code == null || !dialogContext.mounted) return;
                     scannedCodes.add(code);
                   }
@@ -1303,17 +1321,13 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                                     SaleItemsBox(
                                       items: sale.items,
                                       picks: _controller.salePickMap(saleId),
-                                      onToggleItem: (item, checked) {
-                                        final returned =
-                                            returnedMarkCodes(item);
-                                        _controller.toggleItem(
-                                          saleId: saleId,
-                                          item: item,
-                                          checked: checked,
-                                          previouslyReturnedMarkCodes: returned,
-                                          notify: refresh,
-                                        );
-                                      },
+                                      onToggleItem: (item, checked) =>
+                                          changeQuantity(
+                                              item,
+                                              checked
+                                                  ? _controller
+                                                      .availableQtyOf(item)
+                                                  : 0),
                                       onQtyChanged: (item, q) =>
                                           changeQuantity(item, q),
                                       refundedQtyOf: _controller.refundedQtyOf,
@@ -1327,9 +1341,17 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                                       onChanged: (code) {
                                         setDialogState(() {
                                           selectedReasonCode = code;
+                                          selectedInventoryAction =
+                                              RefundInventoryAction.forReason(
+                                                  code);
                                         });
                                       },
                                     ),
+                                    RefundInventoryActionSelector(
+                                        value: selectedInventoryAction,
+                                        onChanged: (action) => setDialogState(
+                                            () => selectedInventoryAction =
+                                                action)),
                                   ],
                                 ),
                               ),
@@ -1389,6 +1411,9 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                                                   sale,
                                                   reasonCode:
                                                       selectedReasonCode,
+                                                  inventoryAction:
+                                                      selectedInventoryAction
+                                                          .code,
                                                 );
                                                 if (!dialogContext.mounted) {
                                                   return;

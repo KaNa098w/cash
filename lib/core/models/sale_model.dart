@@ -4,13 +4,15 @@ import 'fiscal_receipt.dart';
 
 class SaleModel {
   final String localId; // id продажи
+  final String? clientSaleId;
+  final bool completed;
   final String number; // номер чека
   final DateTime date;
 
-  final int totalAmount;
+  final num totalAmount;
   final String paymentMethod;
   final String? paymentType;
-  final int paidAmount;
+  final num paidAmount;
   final int debtAmount;
   final int documentUnpaidAmount;
   final String? paidPaymentMethod;
@@ -36,6 +38,8 @@ class SaleModel {
 
   SaleModel({
     required this.localId,
+    this.clientSaleId,
+    this.completed = false,
     required this.number,
     required this.date,
     required this.totalAmount,
@@ -62,12 +66,14 @@ class SaleModel {
 
   SaleModel copyWith({
     String? localId,
+    String? clientSaleId,
+    bool? completed,
     String? number,
     DateTime? date,
-    int? totalAmount,
+    num? totalAmount,
     String? paymentMethod,
     String? paymentType,
-    int? paidAmount,
+    num? paidAmount,
     int? debtAmount,
     int? documentUnpaidAmount,
     String? paidPaymentMethod,
@@ -87,6 +93,8 @@ class SaleModel {
   }) {
     return SaleModel(
       localId: localId ?? this.localId,
+      clientSaleId: clientSaleId ?? this.clientSaleId,
+      completed: completed ?? this.completed,
       number: number ?? this.number,
       date: date ?? this.date,
       totalAmount: totalAmount ?? this.totalAmount,
@@ -119,7 +127,7 @@ class SaleModel {
     );
     return {
       "date": _formatDate(date),
-      "total_amount": exactTotal,
+      "total_amount": exactTotal.toStringAsFixed(2),
       "payment_method": paymentMethod,
       if ((paymentType ?? '').trim().isNotEmpty) "payment_type": paymentType,
       if (paidAmount > 0) "paid_amount": paidAmount,
@@ -168,12 +176,14 @@ class SaleModel {
 
     return SaleModel(
       localId: (json["id"] ?? "").toString(),
+      clientSaleId: json["client_sale_id"]?.toString(),
+      completed: json["completed"] == true || json["completed"] == 1,
       number: (json["number"] ?? "").toString(),
       date: _parseApiDate(json["date"]),
-      totalAmount: _toIntMoney(json["total_amount"]),
+      totalAmount: _toDouble(json["total_amount"]),
       paymentMethod: (json["payment_method"] ?? "cash").toString(),
       paymentType: json["payment_type"]?.toString(),
-      paidAmount: _toIntMoney(json["paid_amount"]),
+      paidAmount: _toDouble(json["paid_amount"]),
       debtAmount: _toIntMoney(json["debt_amount"]),
       documentUnpaidAmount: _toIntMoney(json["document_unpaid_amount"]),
       paidPaymentMethod: json["paid_payment_method"]?.toString(),
@@ -197,6 +207,8 @@ class SaleModel {
   Map<String, dynamic> toJson() {
     return {
       "localId": localId,
+      "clientSaleId": clientSaleId,
+      "completed": completed,
       "number": number,
       "userId": userId,
       "accountId": accountId,
@@ -245,16 +257,18 @@ class SaleModel {
 
     return SaleModel(
       localId: (json["localId"] ?? "").toString(),
+      clientSaleId: json["clientSaleId"]?.toString(),
+      completed: json["completed"] == true,
       number: (json["number"] ?? "").toString(),
       userId: (json["userId"] ?? "").toString(),
       accountId: (json["accountId"] ?? "").toString(),
       posSessionId: json["posSessionId"]?.toString(),
       date:
           DateTime.tryParse((json["date"] ?? "").toString()) ?? DateTime.now(),
-      totalAmount: _toInt(json["totalAmount"]),
+      totalAmount: _toDouble(json["totalAmount"]),
       paymentMethod: (json["paymentMethod"] ?? "cash").toString(),
       paymentType: json["paymentType"]?.toString(),
-      paidAmount: _toInt(json["paidAmount"]),
+      paidAmount: _toDouble(json["paidAmount"]),
       debtAmount: _toInt(json["debtAmount"]),
       documentUnpaidAmount: _toInt(json["documentUnpaidAmount"]),
       paidPaymentMethod: json["paidPaymentMethod"]?.toString(),
@@ -602,8 +616,8 @@ class SaleItemModel {
       "product_id": productId,
       "quantity": quantity,
       "base_price": basePrice,
-      "price": price,
-      "total_price": totalPrice,
+      "price": price.toStringAsFixed(2),
+      "total_price": totalPrice.toStringAsFixed(2),
       if (discountType != null) "discount_type": discountType,
       "discount_percent": discountPercent,
       "discount_amount": discountAmount,

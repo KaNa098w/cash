@@ -100,6 +100,8 @@ class QueueOperationResult {
     required this.clientId,
     required this.payload,
     this.errorCode,
+    this.errorContext = const {},
+    this.fieldErrors = const {},
     this.errorMessage,
     this.responseData,
   });
@@ -110,6 +112,8 @@ class QueueOperationResult {
   final String clientId;
   final Map<String, dynamic> payload;
   final String? errorCode;
+  final Map<String, dynamic> errorContext;
+  final Map<String, List<String>> fieldErrors;
   final String? errorMessage;
   final Map<String, dynamic>? responseData;
 }

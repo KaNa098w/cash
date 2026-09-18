@@ -3,10 +3,11 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:bloc/bloc.dart';
+import 'package:uuid/uuid.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:leemon_app/core/marking/gs1_datamatrix_validator.dart';
+import 'package:leemon_app/core/models/marking_check.dart';
 import 'package:leemon_app/core/models/product_response.dart'; // ProductModel
 import 'package:leemon_app/features/domain/entities/cart_item.dart';
 import 'package:leemon_app/features/domain/entities/payment.dart';
@@ -16,6 +17,67 @@ import 'package:leemon_app/features/domain/repositories/pos_repository.dart';
 part 'pos_state.dart';
 
 class PosCubit extends Cubit<PosState> {
+  String _markingScope = '';
+  String get markingScope => _markingScope;
+  set markingScope(String value) {
+    if (value == _markingScope) return;
+    _markingScope = value;
+    invalidateMarkingCheck();
+  }
+
+  String? lastMarkingCheckAttempt;
+  String? _checkedSnapshot;
+  MarkingCheckResponse? _markingResponse;
+  String get markingSnapshot => jsonEncode([
+        markingScope,
+        state.activeTicketId,
+        state.items.map((item) => item.toJson()).toList()
+      ]);
+  bool get markingCheckPassed =>
+      _checkedSnapshot == markingSnapshot &&
+      (_markingResponse?.canPay ?? false) &&
+      state.items.isNotEmpty;
+
+  void applyMarkingCheck(String snapshot, MarkingCheckResponse response) {
+    if (snapshot != markingSnapshot) return;
+    if (state.items.any((item) =>
+        !response.items.any((result) => result.productId == item.product.id))) {
+      return;
+    }
+    _checkedSnapshot = snapshot;
+    _markingResponse = response;
+    final results = {for (final item in response.items) item.productId: item};
+    final tickets = state.tickets
+        .map((ticket) => ticket.id == state.activeTicketId
+            ? ticket.copyWith(
+                items: ticket.items
+                    .map((item) => item.copyWith(
+                        markingCheck: results[item.product.id],
+                        clearMarkingCheck:
+                            !results.containsKey(item.product.id)))
+                    .toList())
+            : ticket)
+        .toList();
+    emit(state.copyWith(tickets: tickets));
+  }
+
+  void invalidateMarkingCheck() {
+    _checkedSnapshot = null;
+    _markingResponse = null;
+  }
+
+  void beginMarkingCheck() {
+    invalidateMarkingCheck();
+    lastMarkingCheckAttempt = markingSnapshot;
+    emit(state.copyWith(
+        tickets: state.tickets
+            .map((ticket) => ticket.copyWith(
+                items: ticket.items
+                    .map((item) => item.copyWith(clearMarkingCheck: true))
+                    .toList()))
+            .toList()));
+  }
+
   static const _kPersistedStateKey = 'persisted_pos_state_v1';
   final PosRepository repo;
   Timer? _persistDebounce;
@@ -50,6 +112,18 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void _emitAndPersist(PosState nextState) {
+    if (jsonEncode(nextState.items.map((item) => item.toJson()).toList()) !=
+            jsonEncode(state.items.map((item) => item.toJson()).toList()) ||
+        nextState.activeTicketId != state.activeTicketId) {
+      invalidateMarkingCheck();
+      nextState = nextState.copyWith(
+          tickets: nextState.tickets
+              .map((ticket) => ticket.copyWith(
+                  items: ticket.items
+                      .map((item) => item.copyWith(clearMarkingCheck: true))
+                      .toList()))
+              .toList());
+    }
     emit(nextState);
     _schedulePersistState(nextState);
   }
@@ -129,8 +203,14 @@ class PosCubit extends Cubit<PosState> {
   }
 
   List<PosTicket> _updateActiveTicketItems(
-    List<CartItem> Function(List<CartItem>) updater,
-  ) {
+    List<CartItem> Function(List<CartItem>) updater, {
+    bool correctingCheckoutMarking = false,
+  }) {
+    if (state.activeTicket.checkout != null &&
+        !(correctingCheckoutMarking &&
+            state.activeTicket.checkout!['needs_marking_check'] == true)) {
+      return state.tickets;
+    }
     final tickets = [...state.tickets];
     final idx = tickets.indexWhere((t) => t.id == state.activeTicketId);
 
@@ -170,7 +250,53 @@ class PosCubit extends Cubit<PosState> {
     );
   }
 
+  String ensureClientSaleId() {
+    final existing = state.activeTicket.clientSaleId;
+    if (existing != null) return existing;
+    final id = const Uuid().v4();
+    _emitAndPersist(state.copyWith(
+        tickets: state.tickets
+            .map((t) =>
+                t.id == state.activeTicketId ? t.copyWith(clientSaleId: id) : t)
+            .toList()));
+    return id;
+  }
+
+  Future<void> saveCheckout(Map<String, dynamic> checkout) async {
+    _emitAndPersist(state.copyWith(
+        tickets: state.tickets
+            .map((t) => t.id == state.activeTicketId
+                ? t.copyWith(checkout: checkout)
+                : t)
+            .toList()));
+    await flushPendingState();
+    final prefs = await SharedPreferences.getInstance();
+    if (!await prefs.setString(
+        _kPersistedStateKey, jsonEncode(state.toJson()))) {
+      throw StateError('Не удалось сохранить оплату на устройстве');
+    }
+  }
+
+  void releaseCheckout() {
+    _emitAndPersist(state.copyWith(
+        tickets: state.tickets
+            .map((t) => t.id == state.activeTicketId
+                ? t.copyWith(clearCheckout: true)
+                : t)
+            .toList()));
+  }
+
+  void completeCheckout(int ticketId) {
+    if (state.activeTicketId == ticketId) {
+      clearAfterPayment(closeCompletedTicket: true);
+      return;
+    }
+    _emitAndPersist(state.copyWith(
+        tickets: state.tickets.where((t) => t.id != ticketId).toList()));
+  }
+
   void clearAfterPayment({bool closeCompletedTicket = false}) {
+    if (!closeCompletedTicket && state.activeTicket.checkout != null) return;
     final tickets = [...state.tickets];
     final idx = tickets.indexWhere((t) => t.id == state.activeTicketId);
     if (idx == -1) return;
@@ -180,10 +306,7 @@ class PosCubit extends Cubit<PosState> {
       tickets.removeAt(idx);
       activeTicketId = idx > 0 ? tickets[idx - 1].id : tickets.first.id;
     } else {
-      tickets[idx] = tickets[idx].copyWith(
-        items: const [],
-        clearCustomer: true,
-      );
+      tickets[idx] = PosTicket(id: tickets[idx].id);
     }
 
     _emitAndPersist(state.copyWith(
@@ -197,6 +320,7 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void setCustomerForActiveTicket(PosCustomer customer) {
+    if (state.activeTicket.checkout != null) return;
     final tid = state.activeTicketId;
 
     final updated = state.tickets.map((t) {
@@ -208,6 +332,7 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void clearCustomerForActiveTicket() {
+    if (state.activeTicket.checkout != null) return;
     final tid = state.activeTicketId;
 
     final updated = state.tickets.map((t) {
@@ -238,17 +363,15 @@ class PosCubit extends Cubit<PosState> {
     double qty, {
     List<String> markCodes = const <String>[],
   }) {
-    if (qty <= 0 || qty.isNaN || qty.isInfinite) return;
+    if (qty <= 0 || !qty.isFinite) return;
+    if (p.requiresMarking && qty != qty.roundToDouble()) return;
 
-    final normalizedMarkCodes = markCodes
-        .map(Gs1DataMatrixValidator.canonicalCode)
-        .where((code) => code.isNotEmpty)
-        .toList(growable: false);
+    final normalizedMarkCodes =
+        markCodes.where((code) => code.isNotEmpty).toList(growable: false);
     if (markCodes.isNotEmpty) {
       final incomingCodes = normalizedMarkCodes.toSet();
       final existingCodes = state.items
           .expand((item) => item.markCodes)
-          .map(Gs1DataMatrixValidator.canonicalCode)
           .where((code) => code.isNotEmpty)
           .toSet();
       if (normalizedMarkCodes.length != markCodes.length ||
@@ -398,17 +521,25 @@ class PosCubit extends Cubit<PosState> {
     _emitAndPersist(state.copyWith(tickets: tickets));
   }
 
-  void setMarkCodes(int index, List<String> codes) {
+  void setMarkCodes(int index, List<String> codes,
+      {bool correctingCheckoutMarking = false}) {
     if (index < 0 || index >= state.items.length) return;
-    final normalized = codes
-        .map(Gs1DataMatrixValidator.canonicalCode)
-        .where((code) => code.isNotEmpty)
-        .toList(growable: false);
+    final normalized =
+        codes.where((code) => code.isNotEmpty).toList(growable: false);
+    final others = <String>{
+      for (var i = 0; i < state.items.length; i++)
+        if (i != index) ...state.items[i].markCodes
+    };
+    if (normalized.length != codes.length ||
+        normalized.toSet().length != normalized.length ||
+        normalized.any(others.contains)) {
+      return;
+    }
     final tickets = _updateActiveTicketItems((items) {
       final list = List<CartItem>.from(items);
       list[index] = list[index].copyWith(markCodes: normalized);
       return list;
-    });
+    }, correctingCheckoutMarking: correctingCheckoutMarking);
     _emitAndPersist(state.copyWith(tickets: tickets));
   }
 
@@ -454,6 +585,7 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void removeAt(int index) {
+    if (state.activeTicket.checkout != null) return;
     final itemsBefore = state.items;
     if (index < 0 || index >= itemsBefore.length) return;
 
@@ -488,7 +620,11 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void setQty(int index, double qty) {
-    if (index < 0 || index >= state.items.length) return;
+    if (index < 0 || index >= state.items.length || !qty.isFinite) return;
+    if (state.items[index].product.requiresMarking &&
+        qty != qty.roundToDouble()) {
+      return;
+    }
 
     if (qty <= 0) {
       removeAt(index);
@@ -499,40 +635,22 @@ class PosCubit extends Cubit<PosState> {
       final list = List<CartItem>.from(items);
       if (index >= 0 && index < list.length) {
         final current = list[index];
-        var normalizedQty = current.product.isUniversal
-            ? qty
-            : current.product.allowsPartialPackages ||
-                    ProductModel.isPiecesMeasurementUnit(
-                        current.product.measurementUnit)
-                ? qty.roundToDouble()
-                : current.product.hasConversion
-                    ? _normalizeToWholePackages(
-                        qty,
-                        current.product.conversionValue!,
-                      )
-                    : qty;
-        final partialMarkedPackage = current.product.requiresMarking &&
-            current.product.hasConversion &&
-            current.product.allowsPartialPackages;
-        final markedCapacity = partialMarkedPackage
-            ? current.markCodes.length * current.product.conversionValue!
-            : current.markCodes.length.toDouble();
-        if (current.product.requiresMarking && normalizedQty > markedCapacity) {
-          normalizedQty = markedCapacity;
-        }
-        final retainedCodes = current.product.requiresMarking
-            ? current.markCodes
-                .take(
-                  partialMarkedPackage
-                      ? (normalizedQty / current.product.conversionValue!)
-                          .ceil()
-                      : normalizedQty.round(),
-                )
-                .toList()
-            : current.markCodes;
+        final normalizedQty =
+            current.product.requiresMarking || current.product.isUniversal
+                ? qty
+                : current.product.allowsPartialPackages ||
+                        ProductModel.isPiecesMeasurementUnit(
+                            current.product.measurementUnit)
+                    ? qty.roundToDouble()
+                    : current.product.hasConversion
+                        ? _normalizeToWholePackages(
+                            qty,
+                            current.product.conversionValue!,
+                          )
+                        : qty;
         list[index] = current.copyWith(
           qty: normalizedQty,
-          markCodes: retainedCodes,
+          markCodes: current.markCodes,
         );
       }
       return list;
@@ -675,10 +793,12 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void setPaymentKind(PaymentKind kind) {
+    if (state.activeTicket.checkout != null) return;
     _emitAndPersist(state.copyWith(paymentKind: kind));
   }
 
   void setReceived(double value) {
+    if (state.activeTicket.checkout != null) return;
     _emitAndPersist(state.copyWith(received: value));
   }
 
@@ -701,7 +821,7 @@ class PosCubit extends Cubit<PosState> {
     }
 
     final idx = tickets.indexWhere((t) => t.id == id);
-    if (idx == -1) return;
+    if (idx == -1 || tickets[idx].checkout != null) return;
 
     tickets.removeAt(idx);
 

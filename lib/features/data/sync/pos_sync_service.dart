@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:leemon_app/core/models/refund_inventory_action.dart';
 import 'dart:async';
 
 import 'package:leemon_app/core/marking/gs1_datamatrix_validator.dart';
@@ -801,7 +803,32 @@ class PosSyncService {
     return result;
   }
 
+  final Map<String, Future<QueueOperationResult>> _saleRequests = {};
+
   Future<QueueOperationResult> createSale({
+    required String key,
+    required String deviceId,
+    required SaleModel sale,
+    required List<Map<String, dynamic>> payments,
+    bool sendInBackground = false,
+    bool requireOnline = false,
+    bool discardOnFailure = false,
+  }) =>
+      _saleRequests.putIfAbsent(
+          sale.localId,
+          () => _createSale(
+                key: key,
+                deviceId: deviceId,
+                sale: sale,
+                payments: payments,
+                sendInBackground: sendInBackground,
+                requireOnline: requireOnline,
+                discardOnFailure: discardOnFailure,
+              ).whenComplete(() {
+                _saleRequests.remove(sale.localId);
+              }));
+
+  Future<QueueOperationResult> _createSale({
     required String key,
     required String deviceId,
     required SaleModel sale,
@@ -811,7 +838,21 @@ class PosSyncService {
     bool discardOnFailure = false,
   }) async {
     final localPosSessionId = sale.posSessionId?.trim() ?? '';
-    final localNumber = await _localStore.nextLocalSaleNumber();
+    final previous =
+        await _localStore.findOperation(OutboxOperationType.sale, sale.localId);
+    final accepted = await _localStore.acceptedOperation(
+        OutboxOperationType.sale, sale.localId);
+    if (accepted != null) {
+      return QueueOperationResult(
+          operationId: previous?.id ?? '',
+          result: QueueSendResult.sent,
+          type: OutboxOperationType.sale,
+          clientId: sale.localId,
+          payload: previous?.payload ?? {},
+          responseData: accepted);
+    }
+    final localNumber = previous?.payload['local_number'] as int? ??
+        await _localStore.nextLocalSaleNumber();
     final exactTotal = double.parse(
       sale.items
           .fold(0.0, (sum, item) => sum + item.totalPrice)
@@ -824,6 +865,21 @@ class PosSyncService {
       totalAmount: exactTotal,
       payments: payments,
     );
+    final previousPayments = previous?.payload['payments'];
+    if (previousPayments is List) {
+      for (var i = 0;
+          i < normalizedPayments.length && i < previousPayments.length;
+          i++) {
+        final old = previousPayments[i];
+        final current = normalizedPayments[i];
+        if (old is Map &&
+            old['account_id'] == current['account_id'] &&
+            num.tryParse(old['amount'].toString()) ==
+                num.tryParse(current['amount'].toString())) {
+          current['client_payment_id'] = old['client_payment_id'];
+        }
+      }
+    }
     final payload = <String, dynamic>{
       'device_id': deviceId,
       'app_version': AppBuildInfo.appVersion,
@@ -831,7 +887,7 @@ class PosSyncService {
       'local_number': localNumber,
       if (localPosSessionId.isNotEmpty) 'pos_session_id': localPosSessionId,
       'date': _formatDate(sale.date),
-      'total_amount': exactTotal,
+      'total_amount': exactTotal.toStringAsFixed(2),
       'payment_method':
           normalizedPaymentMethod == 'cash' ? 'cash' : sale.paymentMethod,
       if ((sale.paymentType ?? '').trim().isNotEmpty)
@@ -859,22 +915,45 @@ class PosSyncService {
                   ? item.productId
                   : item.product!.name,
               'quantity': item.quantity,
-              'price': item.price,
-              'total_price': item.totalPrice,
-              if (item.markCodes.isNotEmpty)
-                'mark_codes': item.markCodes
-                    .map(Gs1DataMatrixValidator.canonicalCode)
-                    .toList(growable: false),
+              'price': item.price.toStringAsFixed(2),
+              'total_price': item.totalPrice.toStringAsFixed(2),
+              'mark_codes': List<String>.from(item.markCodes),
             },
           )
           .toList(growable: false),
-      'payments': normalizedPayments,
+      'payments': normalizedPayments
+          .map((p) => {
+                ...p,
+                'amount': num.parse(p['amount'].toString()).toStringAsFixed(2)
+              })
+          .toList(),
     };
+
+    if (previous != null &&
+        (previous.status == OutboxOperationStatus.sending ||
+            previous.status == OutboxOperationStatus.pending ||
+            previous.lastErrorCode == 'NETWORK_RECONCILIATION_REQUIRED' ||
+            previous.lastErrorCode == 'IDEMPOTENCY_CONFLICT')) {
+      if (previous.status == OutboxOperationStatus.sending) {
+        return QueueOperationResult(
+            operationId: previous.id,
+            result: QueueSendResult.queued,
+            type: previous.type,
+            clientId: previous.clientId,
+            payload: previous.payload,
+            errorCode: 'OPERATION_IN_PROGRESS',
+            errorMessage: 'Продажа уже отправляется');
+      }
+      payload
+        ..clear()
+        ..addAll(previous.payload);
+    }
 
     await _localStore.insertSaleLocal(
       clientSaleId: sale.localId,
       localNumber: localNumber,
       payload: payload,
+      completed: !requireOnline,
     );
     _notifySalesHistoryChanged();
 
@@ -886,16 +965,6 @@ class PosSyncService {
       payload: payload,
       tryImmediateSend: !sendInBackground,
     );
-    if ((discardOnFailure && result.result != QueueSendResult.sent) ||
-        (requireOnline &&
-            result.result == QueueSendResult.manual &&
-            result.errorCode == 'MARKING_CONFLICT')) {
-      // Fiscal sales are online-only: a failed attempt must not remain in the
-      // service queue or local history. Marking conflicts are also corrected
-      // in the still-open cart instead of being retained as rejected sales.
-      await _localStore.deleteQueueOperation(result.operationId);
-      _notifySalesHistoryChanged();
-    }
     // Keep the original operation on timeout. Retrying must reuse the same
     // client_sale_id, local_number and byte-for-byte marking payload.
     if (result.result == QueueSendResult.sent &&
@@ -1080,6 +1149,8 @@ class PosSyncService {
     );
   }
 
+  final Map<String, Future<QueueOperationResult>> _refundRequests = {};
+
   Future<QueueOperationResult> createRefund({
     required String key,
     required String deviceId,
@@ -1101,10 +1172,83 @@ class PosSyncService {
     String? returnAccessKey,
     String? userId,
     String? reasonCode,
+    String? inventoryAction,
+    String? clientRefundId,
     String? note,
   }) async {
+    final requestKey =
+        '$key|$saleId|${clientSaleId ?? ""}|${clientRefundId ?? ""}';
+    return _refundRequests.putIfAbsent(
+        requestKey,
+        () => _createRefund(
+                    key: key,
+                    deviceId: deviceId,
+                    posSessionId: posSessionId,
+                    posId: posId,
+                    storeId: storeId,
+                    accountId: accountId,
+                    saleId: saleId,
+                    clientSaleId: clientSaleId,
+                    totalAmount: totalAmount,
+                    paymentMethod: paymentMethod,
+                    payments: payments,
+                    date: date,
+                    items: items,
+                    returnAccessKey: returnAccessKey,
+                    userId: userId,
+                    reasonCode: reasonCode,
+                    inventoryAction: inventoryAction,
+                    clientRefundId: clientRefundId,
+                    note: note)
+                .whenComplete(() {
+              _refundRequests.remove(requestKey);
+            }));
+  }
+
+  Future<QueueOperationResult> _createRefund({
+    required String key,
+    required String deviceId,
+    required String posSessionId,
+    String? posId,
+    String? storeId,
+    String? accountId,
+
+    /// Server-assigned sale id. Pass empty string if the sale is not yet synced.
+    required String saleId,
+
+    /// Client-side client_sale_id. Required when [saleId] is empty (offline refund).
+    String? clientSaleId,
+    required num totalAmount,
+    required String paymentMethod,
+    required List<Map<String, dynamic>> payments,
+    required DateTime date,
+    required List<Map<String, dynamic>> items,
+    String? returnAccessKey,
+    String? userId,
+    String? reasonCode,
+    String? inventoryAction,
+    String? clientRefundId,
+    String? note,
+  }) async {
+    if (clientRefundId != null) {
+      final accepted = await _localStore.acceptedOperation(
+          OutboxOperationType.refund, clientRefundId);
+      if (accepted != null) {
+        final operation = await _localStore.findOperation(
+            OutboxOperationType.refund, clientRefundId);
+        return QueueOperationResult(
+            operationId: operation?.id ?? '',
+            result: QueueSendResult.sent,
+            type: OutboxOperationType.refund,
+            clientId: clientRefundId,
+            payload: operation?.payload ?? {},
+            responseData: accepted);
+      }
+    }
     final localPosSessionId = posSessionId.trim();
-    final clientId = 'refund_${_uuid.v7()}';
+    final previous =
+        await _localStore.findUnresolvedRefund(saleId, clientSaleId);
+    final clientId = previous?.clientId ?? clientRefundId ?? _uuid.v4();
     final cleanSaleId = saleId.trim();
     final cleanClientSaleId = (clientSaleId ?? '').trim();
     final hasLinkedSale =
@@ -1123,20 +1267,57 @@ class PosSyncService {
       if ((storeId ?? '').trim().isNotEmpty) 'store_id': storeId!.trim(),
       if (!hasLinkedSale && (accountId ?? '').trim().isNotEmpty)
         'account_id': accountId!.trim(),
-      'total_amount': totalAmount,
+      'total_amount': totalAmount.toStringAsFixed(2),
+      'inventory_action':
+          inventoryAction ?? RefundInventoryAction.forReason(reasonCode).code,
       if (!hasLinkedSale) 'payment_method': paymentMethod,
       if ((reasonCode ?? '').trim().isNotEmpty)
         'reason_code': reasonCode!.trim(),
       if ((note ?? '').trim().isNotEmpty) 'note': note!.trim(),
-      if (!hasLinkedSale) 'payments': nonZeroPayments,
-      'items': items,
+      if (!hasLinkedSale)
+        'payments': nonZeroPayments
+            .map((p) => {
+                  ...p,
+                  'amount': num.parse(p['amount'].toString()).toStringAsFixed(2)
+                })
+            .toList(),
+      'items': items
+          .map((item) => {
+                ...item,
+                'price': num.parse(item['price'].toString()).toStringAsFixed(2),
+                if (item['mark_codes'] is List)
+                  'mark_codes': (item['mark_codes'] as List)
+                      .map((code) =>
+                          Gs1DataMatrixValidator.canonicalCode(code.toString()))
+                      .toList(),
+              })
+          .toList(),
       if ((returnAccessKey ?? '').trim().isNotEmpty)
         'return_access_key': returnAccessKey!.trim(),
       if ((userId ?? '').trim().isNotEmpty) 'user_id': userId!.trim(),
     };
 
-    await _localStore.insertRefundLocal(payload);
-    _notifySalesHistoryChanged();
+    if (previous != null &&
+        (previous.lastErrorCode == 'NETWORK_RECONCILIATION_REQUIRED' ||
+            previous.lastErrorCode == 'IDEMPOTENCY_CONFLICT' ||
+            previous.status == OutboxOperationStatus.pending ||
+            previous.status == OutboxOperationStatus.sending)) {
+      if (previous.status == OutboxOperationStatus.sending) {
+        return QueueOperationResult(
+            operationId: previous.id,
+            result: QueueSendResult.queued,
+            type: previous.type,
+            clientId: previous.clientId,
+            payload: previous.payload,
+            errorCode: 'OPERATION_IN_PROGRESS',
+            errorMessage: 'Возврат уже отправляется');
+      }
+      payload
+        ..clear()
+        ..addAll(previous.payload);
+    }
+    // The durable outbox retains the confirmed request. Refund totals only
+    // change when the backend accepts the operation.
 
     return _queueAndTrySend(
       key: key,
@@ -1223,7 +1404,8 @@ class PosSyncService {
   }) async {
     await initialize();
     await _localStore.ensureSyncState(posKey: key, deviceId: deviceId);
-    final operationId = _uuid.v7();
+    final existing = await _localStore.findOperation(type, clientId);
+    final operationId = existing?.id ?? _uuid.v7();
 
     await _localStore.enqueueOperation(
       id: operationId,
@@ -1485,17 +1667,65 @@ class PosSyncService {
     required String deviceId,
     required OutboxOperationRecord record,
   }) async {
-    late final Map<String, dynamic> payloadForSend;
+    var payloadForSend = record.payload;
     try {
+      final financial = record.type == OutboxOperationType.sale ||
+          record.type == OutboxOperationType.refund;
+      if (financial &&
+          (record.retryCount > 0 ||
+              record.lastErrorCode == 'NETWORK_RECONCILIATION_REQUIRED' ||
+              record.lastErrorCode == 'IDEMPOTENCY_CONFLICT')) {
+        // Pull before retry: backend may have accepted the previous POST and
+        // automatically allocated an open package before the connection broke.
+        await pullOnce(
+            key: key, deviceId: deviceId, refreshPosInfoAfterPull: false);
+        final accepted =
+            await _localStore.acceptedOperation(record.type, record.clientId);
+        if (accepted != null) {
+          await _applySuccessfulResponse(record, accepted,
+              key: key, deviceId: deviceId);
+          await _localStore.markOperationAcked(record.id);
+          return QueueOperationResult(
+              operationId: record.id,
+              result: QueueSendResult.sent,
+              type: record.type,
+              clientId: record.clientId,
+              payload: record.payload,
+              responseData: accepted);
+        }
+        if (record.lastErrorCode == 'IDEMPOTENCY_CONFLICT') {
+          await _localStore.markOperationManual(
+              operationId: record.id,
+              errorCode: 'IDEMPOTENCY_CONFLICT',
+              errorMessage: 'Продажа требует сверки с сервером',
+              payload: record.payload);
+          return QueueOperationResult(
+              operationId: record.id,
+              result: QueueSendResult.manual,
+              type: record.type,
+              clientId: record.clientId,
+              payload: record.payload,
+              errorCode: 'IDEMPOTENCY_CONFLICT',
+              errorMessage: 'Продажа требует сверки с сервером');
+        }
+      }
       payloadForSend = await _preparePayloadForSend(record);
+      await _localStore.saveClaimedPayload(record.id, payloadForSend);
       final responseData = await _remote.sendOperation(
         type: record.type,
         key: key,
         payload: {
           ...payloadForSend,
-          'device_id': deviceId,
+          'device_id': payloadForSend['device_id'] ?? deviceId,
         },
       );
+      if ((record.type == OutboxOperationType.sale ||
+              record.type == OutboxOperationType.refund) &&
+          (responseData == null ||
+              (responseData['id'] ?? '').toString().isEmpty)) {
+        throw const FormatException(
+            'Сервер не вернул идентификатор документа. Нужна сверка.');
+      }
       await _applySuccessfulResponse(
         record,
         responseData,
@@ -1534,11 +1764,53 @@ class PosSyncService {
         );
       }
 
+      final accepted =
+          await _localStore.acceptedOperation(record.type, record.clientId);
+      if (accepted != null) {
+        await _localStore.markOperationAcked(record.id);
+        return QueueOperationResult(
+            operationId: record.id,
+            result: QueueSendResult.sent,
+            type: record.type,
+            clientId: record.clientId,
+            payload: record.payload,
+            responseData: accepted);
+      }
       final errorCode = _remote.extractErrorCode(error);
       final errorMessage = _remote.extractErrorMessage(error);
       final errorDetails = _remote.extractErrorDetails(error);
+      final response = errorDetails?['response'];
+      final body = response is Map ? response['data'] : null;
+      final context = body is Map && body['context'] is Map
+          ? Map<String, dynamic>.from(body['context'])
+          : <String, dynamic>{};
+      final errors = <String, List<String>>{};
+      if (body is Map && body['errors'] is Map) {
+        (body['errors'] as Map).forEach((key, value) {
+          errors[key.toString()] = value is List
+              ? value.map((e) => e.toString()).toList()
+              : [value.toString()];
+        });
+      }
 
       if (errorCode == 'IDEMPOTENCY_CONFLICT') {
+        try {
+          await pullOnce(
+              key: key, deviceId: deviceId, refreshPosInfoAfterPull: false);
+          final found =
+              await _localStore.acceptedOperation(record.type, record.clientId);
+          if (found != null) {
+            await _localStore.markOperationAcked(record.id);
+            return QueueOperationResult(
+                operationId: record.id,
+                result: QueueSendResult.sent,
+                type: record.type,
+                clientId: record.clientId,
+                payload: record.payload,
+                responseData: found);
+          }
+        } catch (_) {/* Preserve the conflict, never replace the UUID. */}
+
         await _localStore.markOperationManual(
           operationId: record.id,
           errorCode: errorCode,
@@ -1551,8 +1823,33 @@ class PosSyncService {
           type: record.type,
           clientId: record.clientId,
           payload: payloadForSend,
+          errorCode: errorCode,
+          errorContext: context,
+          fieldErrors: errors,
           errorMessage: errorMessage,
         );
+      }
+
+      if (_remote.isRetryable(error) &&
+          (record.type == OutboxOperationType.sale ||
+              record.type == OutboxOperationType.refund)) {
+        const code = 'NETWORK_RECONCILIATION_REQUIRED';
+        const message =
+            'Ответ сервера не получен. Операция сохранена. Повтор выполнит сверку с сервером с тем же идентификатором.';
+        await _localStore.markOperationManual(
+            operationId: record.id,
+            errorCode: code,
+            errorMessage: message,
+            payload: payloadForSend,
+            errorDetails: errorDetails);
+        return QueueOperationResult(
+            operationId: record.id,
+            result: QueueSendResult.manual,
+            type: record.type,
+            clientId: record.clientId,
+            payload: payloadForSend,
+            errorCode: code,
+            errorMessage: message);
       }
 
       if (_remote.isRetryable(error) && record.retryCount < _maxRetryCount) {
@@ -1576,7 +1873,10 @@ class PosSyncService {
 
       final manualCode = _remote.isManualErrorCode(errorCode)
           ? errorCode
-          : 'MANUAL_REVIEW_REQUIRED';
+          : (record.type == OutboxOperationType.sale ||
+                  record.type == OutboxOperationType.refund)
+              ? 'NETWORK_RECONCILIATION_REQUIRED'
+              : 'MANUAL_REVIEW_REQUIRED';
       await _localStore.markOperationManual(
         operationId: record.id,
         errorCode: manualCode,
@@ -1591,6 +1891,8 @@ class PosSyncService {
         clientId: record.clientId,
         payload: record.payload,
         errorCode: manualCode,
+        errorContext: context,
+        fieldErrors: errors,
         errorMessage: errorMessage,
       );
     }
@@ -1602,6 +1904,19 @@ class PosSyncService {
     required String key,
     required String deviceId,
   }) async {
+    if ((record.type == OutboxOperationType.sale ||
+            record.type == OutboxOperationType.refund) &&
+        responseData != null &&
+        responseData['id'] != null) {
+      await _localStore.saveAcceptedOperation(record.type, {
+        ...record.payload,
+        ...responseData,
+        if (record.type == OutboxOperationType.sale)
+          'client_sale_id': record.clientId,
+        if (record.type == OutboxOperationType.refund)
+          'client_refund_id': record.clientId,
+      });
+    }
     if (record.type == OutboxOperationType.sale ||
         record.type == OutboxOperationType.refund ||
         record.type == OutboxOperationType.payment) {
@@ -1653,7 +1968,8 @@ class PosSyncService {
 
   Future<Map<String, dynamic>> _preparePayloadForSend(
       OutboxOperationRecord record) async {
-    final payload = Map<String, dynamic>.from(record.payload);
+    final payload =
+        Map<String, dynamic>.from(jsonDecode(jsonEncode(record.payload)));
     await _attachServerSessionIdIfReady(record.type, payload);
     await _attachServerProductIdsIfReady(record.type, payload);
     payload['app_version'] = AppBuildInfo.appVersion;
@@ -1719,7 +2035,10 @@ class PosSyncService {
       case OutboxOperationType.productCreate:
         return;
       case OutboxOperationType.sale:
-        await _localStore.upsertSaleFromOutboxPayload(record.payload);
+        if (await _localStore.acceptedOperation(record.type, record.clientId) ==
+            null) {
+          await _localStore.upsertSaleFromOutboxPayload(record.payload);
+        }
         await _localStore.markSaleSynced(record.clientId);
       case OutboxOperationType.payment:
         await _localStore.markPaymentSynced(record.clientId);

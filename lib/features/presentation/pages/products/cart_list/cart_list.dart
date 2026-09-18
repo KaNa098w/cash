@@ -435,8 +435,9 @@ class _CartListState extends State<CartList> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
                             ),
-                            child: SizedBox(
-                              height: kCartRowHeight,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                  minHeight: kCartRowHeight),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 12, vertical: 10),
@@ -467,17 +468,35 @@ class _CartListState extends State<CartList> {
                                                   index: i,
                                                   item: it,
                                                 ),
-                                        child: Text(
-                                          it.product.isUniversal
-                                              ? _shortProductNameKeepEnd(
-                                                  it.product.name)
-                                              : '${_shortProductNameKeepEnd(it.product.name)} (${formatStockQty(it.product.quantity, it.product.measurementUnit)} ${it.product.measurementUnit})',
-                                          style: const TextStyle(
-                                            fontSize: 20,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              it.product.isUniversal
+                                                  ? _shortProductNameKeepEnd(
+                                                      it.product.name)
+                                                  : '${_shortProductNameKeepEnd(it.product.name)} (${formatStockQty(it.product.quantity, it.product.measurementUnit)} ${it.product.measurementUnit})',
+                                              style: const TextStyle(
+                                                fontSize: 20,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            if (it.markingCheck != null &&
+                                                !it.markingCheck!.ready)
+                                              Text(
+                                                  it.markingCheck!.message ??
+                                                      'Не хватает: ${it.markingCheck!.missingQuantity.round()} шт. • Новых коробок: ${it.markingCheck!.requiredCodesCount}',
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                      fontSize: 12,
+                                                      color: Colors.red)),
+                                          ],
                                         ),
                                       ),
                                     ),

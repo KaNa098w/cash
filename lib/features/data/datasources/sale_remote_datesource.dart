@@ -1,11 +1,25 @@
 // lib/features/pos/data/datasources/sale_remote_datasource.dart
 import 'package:dio/dio.dart';
+import 'package:leemon_app/core/models/marking_check.dart';
 import 'package:leemon_app/core/models/sale_item_response.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 
 class SaleRemoteDataSource {
   SaleRemoteDataSource(this._dio);
   final Dio _dio;
+
+  Future<MarkingCheckResponse> checkMarking({
+    required String key,
+    required String storeId,
+    required String deviceId,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    final response = await _dio.post(
+        '/organizations/pos/$key/sales/marking-check',
+        data: {'store_id': storeId, 'device_id': deviceId, 'items': items});
+    return MarkingCheckResponse.fromJson(
+        Map<String, dynamic>.from(response.data as Map));
+  }
 
   Future<SaleModel?> createSale({
     required String key,

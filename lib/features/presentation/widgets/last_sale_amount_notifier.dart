@@ -1,3 +1,3 @@
 import 'package:flutter/foundation.dart';
 
-final ValueNotifier<int?> lastSaleAmountNotifier = ValueNotifier<int?>(null);
+final ValueNotifier<num?> lastSaleAmountNotifier = ValueNotifier<num?>(null);

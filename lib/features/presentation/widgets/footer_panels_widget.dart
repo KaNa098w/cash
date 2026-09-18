@@ -12,6 +12,7 @@ class FooterControlsOnly extends StatelessWidget {
     this.onCancel,
     this.onPayCard,
     this.onPay,
+    this.paymentLabel = 'Оплатить',
   });
 
   final String smallAmountText;
@@ -23,6 +24,7 @@ class FooterControlsOnly extends StatelessWidget {
   final VoidCallback? onCancel;
   final VoidCallback? onPayCard;
   final VoidCallback? onPay;
+  final String paymentLabel;
 
   static const _btnGrey = Color(0xFFCDCDCD);
   static const _btnRed = Color(0xFFCB5B52);
@@ -136,8 +138,7 @@ class FooterControlsOnly extends StatelessWidget {
                     width: smallBtnW,
                     height: smallBtnH,
                     radius: radius,
-                                     background: _btnGrey,
-
+                    background: _btnGrey,
                     onTap: onPayCard,
                     child: Padding(
                       padding: EdgeInsets.symmetric(
@@ -163,13 +164,12 @@ class FooterControlsOnly extends StatelessWidget {
                       ),
                     ),
                   ),
-                  
                   SizedBox(width: rowGap),
                   _SmallBtn(
                     width: smallBtnW,
                     height: smallBtnH,
                     radius: radius,
-                     background: onPayCard == null
+                    background: onPayCard == null
                         ? const Color(0xFFBDBDBD)
                         : _btnYellow,
                     onTap: onQuick,
@@ -221,6 +221,7 @@ class FooterControlsOnly extends StatelessWidget {
                   ),
                   SizedBox(width: rowGap),
                   _PayBtn(
+                    label: paymentLabel,
                     onTap: onPay,
                     width: payW,
                     height: payH,
@@ -335,7 +336,9 @@ class _TotalBox extends StatelessWidget {
 }
 
 class _PayBtn extends StatelessWidget {
+  final String label;
   const _PayBtn({
+    required this.label,
     this.onTap,
     required this.width,
     required this.height,
@@ -372,7 +375,7 @@ class _PayBtn extends StatelessWidget {
           ),
         ),
         child: Text(
-          '\u041e\u041f\u041b\u0410\u0422\u0410',
+          label,
           style: GoogleFonts.inter(
             fontSize: fontSize,
             fontWeight: FontWeight.w700,

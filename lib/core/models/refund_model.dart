@@ -1,3 +1,4 @@
+import 'fiscal_receipt.dart';
 // lib/core/models/refund_model.dart
 
 import 'package:leemon_app/core/models/sale_model.dart'
@@ -13,6 +14,10 @@ class RefundModel {
 
   final String? reason;
   final String? reasonCode;
+  final String? inventoryAction;
+  final String? clientRefundId;
+  final String? clientSaleId;
+  final FiscalReceipt? fiscalReceipt;
   final String? note;
 
   final String? customerId;
@@ -33,6 +38,10 @@ class RefundModel {
     this.paymentMethod,
     this.reason,
     this.reasonCode,
+    this.inventoryAction,
+    this.clientRefundId,
+    this.clientSaleId,
+    this.fiscalReceipt,
     this.note,
     this.customerId,
     this.saleId,
@@ -57,6 +66,10 @@ class RefundModel {
     this.paymentMethod,
     this.reason,
     this.reasonCode,
+    this.inventoryAction,
+    this.clientRefundId,
+    this.clientSaleId,
+    this.fiscalReceipt,
     this.note,
     this.customerId,
     this.items = const <RefundItemModel>[],
@@ -71,6 +84,10 @@ class RefundModel {
     String? paymentMethod,
     String? reason,
     String? reasonCode,
+    String? inventoryAction,
+    String? clientRefundId,
+    String? clientSaleId,
+    FiscalReceipt? fiscalReceipt,
     String? note,
     String? customerId,
     String? saleId,
@@ -88,6 +105,10 @@ class RefundModel {
       paymentMethod: paymentMethod ?? this.paymentMethod,
       reason: reason ?? this.reason,
       reasonCode: reasonCode ?? this.reasonCode,
+      inventoryAction: inventoryAction ?? this.inventoryAction,
+      clientRefundId: clientRefundId ?? this.clientRefundId,
+      clientSaleId: clientSaleId ?? this.clientSaleId,
+      fiscalReceipt: fiscalReceipt ?? this.fiscalReceipt,
       note: note ?? this.note,
       customerId: customerId ?? this.customerId,
       saleId: saleId ?? this.saleId,
@@ -111,6 +132,13 @@ class RefundModel {
       paymentMethod: json['payment_method']?.toString(),
       reason: json['reason']?.toString(),
       reasonCode: json['reason_code']?.toString(),
+      inventoryAction: json['inventory_action']?.toString(),
+      clientRefundId: json['client_refund_id']?.toString(),
+      clientSaleId: json['client_sale_id']?.toString(),
+      fiscalReceipt: json['fiscal_receipt'] is Map
+          ? FiscalReceipt.fromJson(
+              Map<String, dynamic>.from(json['fiscal_receipt']))
+          : null,
       note: json['note']?.toString(),
       customerId: json['customer_id']?.toString(),
       saleId: (json['sale_id'] ?? '').toString(),
@@ -137,6 +165,10 @@ class RefundModel {
       'payment_method': paymentMethod,
       'reason': reason,
       'reason_code': reasonCode,
+      'inventory_action': inventoryAction,
+      'client_refund_id': clientRefundId,
+      'client_sale_id': clientSaleId,
+      'fiscal_receipt': fiscalReceipt?.toJson(),
       'note': note,
       'customer_id': customerId,
       'sale_id': saleId,
@@ -156,7 +188,7 @@ class RefundItemModel {
   final String productId;
 
   final int quantity;
-  final int price;
+  final num price;
   final int maxQuantity;
   final ProductModel? product;
   final List<String> markCodes;
@@ -181,7 +213,7 @@ class RefundItemModel {
     String? saleItemId,
     String? productId,
     int? quantity,
-    int? price,
+    num? price,
     int? maxQuantity,
     ProductModel? product,
     List<String>? markCodes,
@@ -213,7 +245,7 @@ class RefundItemModel {
       saleItemId: (json['sale_item_id'] ?? '').toString(),
       productId: (json['product_id'] ?? '').toString(),
       quantity: _asInt(json['quantity']),
-      price: _asInt(json['price']),
+      price: _asNum(json['price']),
       maxQuantity: _asInt(json['max_quantity']),
       product: product,
       markCodes: (json['mark_codes'] as List?)

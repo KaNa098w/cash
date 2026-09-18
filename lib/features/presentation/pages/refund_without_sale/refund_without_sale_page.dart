@@ -1,3 +1,6 @@
+import 'package:leemon_app/core/service/fiscal_receipt_service.dart';
+import 'package:leemon_app/features/presentation/widgets/payment_panel.dart'
+    show FiscalReceiptDialog;
 import 'dart:async';
 import 'dart:convert';
 
@@ -49,6 +52,7 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
   String _paymentMethod = 'cash';
   String? _selectedBankAccountId;
   String? _reasonCode;
+  RefundInventoryAction _inventoryAction = RefundInventoryAction.returnToStock;
   String? _error;
   bool _accessDialogOpen = false;
   bool _qtyDialogOpen = false;
@@ -547,6 +551,7 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
         returnAccessKey: returnAccessKey,
         userId: isDirector ? activeUserId : null,
         reasonCode: _reasonCode,
+        inventoryAction: _inventoryAction.code,
       );
       _logRefund(
         'createRefund result=${result.result} error=${result.errorMessage ?? ''}',
@@ -559,13 +564,31 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
         });
         return;
       }
-      final refundedItemsCount = _lines.length;
+      final fiscalReceipt =
+          sl<FiscalReceiptService>().fromSaleResponse(result.responseData);
+      final finalizedPayload = result.responseData ?? result.payload;
+      final refundedItemsCount =
+          (finalizedPayload['items'] as List?)?.length ?? _lines.length;
+      final finalizedTotal =
+          num.tryParse(finalizedPayload['total_amount'].toString()) ?? total;
       await _clearDraft();
       _logRefund('refund completed and draft cleared');
+      if (mounted && fiscalReceipt != null) {
+        await showDialog<void>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => FiscalReceiptDialog(
+                initial: fiscalReceipt,
+                posKey: key,
+                deviceId: deviceId,
+                paperMm: auth.receiptPaperMm,
+                printerName: auth.receiptPrinterName,
+                autoPrintEnabled: auth.receiptPrintingEnabled));
+      }
       if (!mounted) return;
       await _showRefundSuccessDialog(
         itemsCount: refundedItemsCount,
-        totalAmount: total,
+        totalAmount: finalizedTotal,
       );
       if (!mounted) return;
       setState(() => _reasonCode = null);
@@ -780,6 +803,9 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
                               bankAccounts: _bankAccounts,
                               selectedBankAccountId: _selectedBankAccountId,
                               selectedReasonCode: _reasonCode,
+                              inventoryAction: _inventoryAction,
+                              onInventoryActionChanged: (action) =>
+                                  setState(() => _inventoryAction = action),
                               submitting: _submitting,
                               error: _error,
                               onPaymentMethodChanged: (method) => setState(() {
@@ -795,7 +821,11 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
                                 () => _selectedBankAccountId = id,
                               ),
                               onReasonChanged: (code) => setState(
-                                () => _reasonCode = code,
+                                () {
+                                  _reasonCode = code;
+                                  _inventoryAction =
+                                      RefundInventoryAction.forReason(code);
+                                },
                               ),
                               onChangeQty: _changeQty,
                               onSetQty: _setQty,
@@ -1226,6 +1256,8 @@ class _RefundCartPanel extends StatelessWidget {
     required this.bankAccounts,
     required this.selectedBankAccountId,
     required this.selectedReasonCode,
+    required this.inventoryAction,
+    required this.onInventoryActionChanged,
     required this.submitting,
     required this.error,
     required this.onPaymentMethodChanged,
@@ -1244,6 +1276,8 @@ class _RefundCartPanel extends StatelessWidget {
   final List<LocalAccount> bankAccounts;
   final String? selectedBankAccountId;
   final String? selectedReasonCode;
+  final RefundInventoryAction inventoryAction;
+  final ValueChanged<RefundInventoryAction> onInventoryActionChanged;
   final bool submitting;
   final String? error;
   final ValueChanged<String> onPaymentMethodChanged;
@@ -1328,6 +1362,8 @@ class _RefundCartPanel extends StatelessWidget {
             onChanged: onReasonChanged,
             compact: true,
           ),
+          RefundInventoryActionSelector(
+              value: inventoryAction, onChanged: onInventoryActionChanged),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(14),

@@ -1,3 +1,5 @@
+import 'package:leemon_app/core/models/refund_inventory_action.dart';
+export 'package:leemon_app/core/models/refund_inventory_action.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -120,4 +122,27 @@ class RefundReasonSelector extends StatelessWidget {
       onChanged: onChanged,
     );
   }
+}
+
+class RefundInventoryActionSelector extends StatelessWidget {
+  const RefundInventoryActionSelector(
+      {super.key, required this.value, required this.onChanged});
+  final RefundInventoryAction value;
+  final ValueChanged<RefundInventoryAction> onChanged;
+
+  @override
+  Widget build(BuildContext context) =>
+      DropdownButtonFormField<RefundInventoryAction>(
+        initialValue: value,
+        key: ValueKey(value),
+        isExpanded: true,
+        decoration: const InputDecoration(labelText: 'Действие с остатками'),
+        items: [
+          for (final action in RefundInventoryAction.values)
+            DropdownMenuItem(value: action, child: Text(action.label))
+        ],
+        onChanged: (action) {
+          if (action != null) onChanged(action);
+        },
+      );
 }

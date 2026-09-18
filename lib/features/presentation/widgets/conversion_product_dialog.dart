@@ -1,4 +1,9 @@
 import 'dart:async';
+import 'package:dio/dio.dart';
+import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/core/provider/auth_provider.dart';
+import 'package:leemon_app/core/models/marking_check.dart';
+import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -85,6 +90,379 @@ Future<void> showDuplicateMarkCodeDialog(BuildContext context) async {
   requestSearchResetAndFocus();
 }
 
+class MarkingPackageCoverage {
+  const MarkingPackageCoverage({
+    required this.quantity,
+    required this.packageQuantity,
+    required this.packageCount,
+    this.alreadyCovered = 0,
+  });
+
+  final int quantity;
+  final int packageQuantity;
+  final int packageCount;
+  final int alreadyCovered;
+
+  int get capacity => alreadyCovered + packageQuantity * packageCount;
+  int get covered => capacity.clamp(0, quantity);
+  int get missing => (quantity - capacity).clamp(0, quantity);
+  bool get needsNewPackage => missing > 0;
+}
+
+int markingPackageQuantity({
+  required double? conversionValue,
+  required bool allowsPartialPackages,
+}) {
+  if (!allowsPartialPackages || conversionValue == null) return 1;
+  return conversionValue.round().clamp(1, 1000000000);
+}
+
+Future<List<String>?> showMarkingPackageScanDialog(
+  BuildContext context, {
+  required String productName,
+  required int quantity,
+  required int packageQuantity,
+  required String? gtin,
+  required List<String> initialCodes,
+  required Set<String> usedCodes,
+  int alreadyCovered = 0,
+  bool initialCodesAlreadyCounted = false,
+  int? requiredCodesCount,
+  String? errorMessage,
+}) {
+  return showDialog<List<String>>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => _MarkingPackageScanDialog(
+      productName: productName,
+      quantity: quantity,
+      packageQuantity: packageQuantity,
+      gtin: gtin,
+      initialCodes: initialCodes,
+      usedCodes: usedCodes,
+      alreadyCovered: alreadyCovered,
+      initialCodesAlreadyCounted: initialCodesAlreadyCounted,
+      requiredCodesCount: requiredCodesCount,
+      errorMessage: errorMessage,
+    ),
+  );
+}
+
+class _MarkingPackageScanDialog extends StatefulWidget {
+  const _MarkingPackageScanDialog({
+    required this.productName,
+    required this.quantity,
+    required this.packageQuantity,
+    required this.gtin,
+    required this.initialCodes,
+    required this.usedCodes,
+    required this.alreadyCovered,
+    required this.initialCodesAlreadyCounted,
+    this.requiredCodesCount,
+    this.errorMessage,
+  });
+
+  final String productName;
+  final int quantity;
+  final int packageQuantity;
+  final String? gtin;
+  final List<String> initialCodes;
+  final Set<String> usedCodes;
+  final int alreadyCovered;
+  final bool initialCodesAlreadyCounted;
+  final int? requiredCodesCount;
+  final String? errorMessage;
+
+  @override
+  State<_MarkingPackageScanDialog> createState() =>
+      _MarkingPackageScanDialogState();
+}
+
+class _MarkingPackageScanDialogState extends State<_MarkingPackageScanDialog> {
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode();
+  late final List<String> _codes = List<String>.from(widget.initialCodes);
+  late final int _initialCodeCount = widget.initialCodes.length;
+  String? _error;
+
+  MarkingPackageCoverage get _coverage => MarkingPackageCoverage(
+        quantity: widget.quantity,
+        packageQuantity: widget.packageQuantity,
+        packageCount: _codes.length -
+            (widget.initialCodesAlreadyCounted ? _initialCodeCount : 0),
+        alreadyCovered: widget.alreadyCovered,
+      );
+
+  @override
+  void initState() {
+    super.initState();
+    _error = widget.errorMessage;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  KeyEventResult _onKey(FocusNode _, KeyEvent event) {
+    if (event is! KeyDownEvent || !_focusNode.hasFocus) {
+      return KeyEventResult.ignored;
+    }
+    if (event.character != '\x1D' &&
+        (HardwareKeyboard.instance.isMetaPressed ||
+            HardwareKeyboard.instance.isControlPressed)) {
+      return KeyEventResult.ignored;
+    }
+    if (event.physicalKey == PhysicalKeyboardKey.enter ||
+        event.physicalKey == PhysicalKeyboardKey.numpadEnter) {
+      _accept();
+      return KeyEventResult.handled;
+    }
+    final character = MarkingKeyboardInputFormatter.scannerCharacter(event);
+    if (character == null) return KeyEventResult.ignored;
+    final value = _controller.value;
+    final selection = value.selection;
+    final start = selection.isValid ? selection.start : value.text.length;
+    final end = selection.isValid ? selection.end : value.text.length;
+    _controller.value = TextEditingValue(
+        text: value.text.replaceRange(start, end, character),
+        selection: TextSelection.collapsed(offset: start + character.length));
+    return KeyEventResult.handled;
+  }
+
+  void _accept() {
+    if (!_needsCodes) return;
+    final code = _controller.text;
+    if (code.isEmpty) return;
+    final duplicate = widget.usedCodes.contains(code) || _codes.contains(code);
+    if (duplicate) {
+      setState(() => _error = 'Эта коробка уже отсканирована');
+      _controller.clear();
+      _focusNode.requestFocus();
+      return;
+    }
+    setState(() {
+      _codes.add(code);
+      _error = null;
+      _controller.clear();
+    });
+    if (widget.requiredCodesCount != null && !_needsCodes) {
+      Navigator.of(context).pop(List<String>.from(_codes));
+      return;
+    }
+    _focusNode.requestFocus();
+  }
+
+  bool get _needsCodes => widget.requiredCodesCount == null
+      ? _coverage.needsNewPackage
+      : _codes.length - _initialCodeCount < widget.requiredCodesCount!;
+
+  Widget _valueCard(String label, int value, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Text('$value',
+                style: TextStyle(
+                    fontSize: 24, fontWeight: FontWeight.w900, color: color)),
+            Text(label,
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final coverage = _coverage;
+    final remainingCodes = widget.requiredCodesCount == null
+        ? (coverage.missing / widget.packageQuantity).ceil()
+        : widget.requiredCodesCount! - (_codes.length - _initialCodeCount);
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      scrollable: true,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+      actionsPadding: const EdgeInsets.all(24),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F8F2),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(Icons.qr_code_scanner_rounded,
+                color: Color(0xFF15966A), size: 28),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Маркировка',
+                    style:
+                        TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                Text(widget.productName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 15, color: Color(0xFF64748B))),
+              ],
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 500,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                _valueCard(
+                    'Количество', coverage.quantity, const Color(0xFF2563EB)),
+                const SizedBox(width: 8),
+                _valueCard(
+                    'Пробито', coverage.covered, const Color(0xFF15966A)),
+                const SizedBox(width: 8),
+                _valueCard(
+                    'Не хватает', coverage.missing, const Color(0xFFDC2626)),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: _needsCodes
+                    ? const Color(0xFFFFF3E6)
+                    : const Color(0xFFE8F8F2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _needsCodes
+                    ? remainingCodes > 1
+                        ? 'Новых коробок: $remainingCodes • по ${widget.packageQuantity} шт.'
+                        : 'Нужна новая коробка • ${widget.packageQuantity} шт.'
+                    : 'Готово • коробок: ${_codes.length}',
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              ),
+            ),
+            if (_needsCodes) ...[
+              const SizedBox(height: 14),
+              Focus(
+                onKeyEvent: _onKey,
+                child: TextField(
+                  controller: _controller,
+                  focusNode: _focusNode,
+                  autofocus: true,
+                  obscureText: true,
+                  inputFormatters: const [MarkingKeyboardInputFormatter()],
+                  onSubmitted: (_) => _accept(),
+                  decoration: InputDecoration(
+                    labelText: 'Сканируйте новую коробку',
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 20),
+                    suffixIcon: IconButton(
+                        onPressed: _accept,
+                        tooltip: 'Проверить код',
+                        icon: const Icon(Icons.check)),
+                    errorText: _error,
+                    prefixIcon: const Icon(Icons.qr_code_scanner_rounded),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide:
+                          const BorderSide(color: Color(0xFF15966A), width: 2),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        SizedBox(
+          width: 500,
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(56),
+                    foregroundColor: const Color(0xFF475569),
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    textStyle: const TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w700),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Отмена'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _controller,
+                  builder: (context, value, _) => FilledButton(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(56),
+                      backgroundColor: const Color(0xFF15966A),
+                      foregroundColor: Colors.white,
+                      textStyle: const TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.w700),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    onPressed: _needsCodes
+                        ? value.text.isEmpty
+                            ? null
+                            : _accept
+                        : () => Navigator.of(context)
+                            .pop(List<String>.from(_codes)),
+                    child: Text(_needsCodes || widget.requiredCodesCount != null
+                        ? 'Проверить'
+                        : 'Добавить в чек'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 Future<bool> addProductToCartWithConversionFlow(
   BuildContext context,
   ProductModel product,
@@ -133,11 +511,13 @@ Future<bool> addMarkedProductToCart(
       product.allowsPartialPackages &&
       (product.conversionValue ?? 0) > 0;
 
-  if (partialMarkedPackage) {
+  {
     final selectedQuantity = await showDialog<double>(
       context: context,
       barrierDismissible: true,
-      builder: (_) => _ConversionProductDialog(product: product),
+      builder: (_) => partialMarkedPackage
+          ? _ConversionProductDialog(product: product)
+          : _MarkedQuantityDialog(productName: product.name),
     );
     if (selectedQuantity == null || selectedQuantity <= 0) {
       requestSearchResetAndFocus();
@@ -148,57 +528,29 @@ Future<bool> addMarkedProductToCart(
 
   if (!context.mounted) return false;
   final posCubit = context.read<PosCubit>();
-  final codes = <String>[
+  final existingIndex = posCubit.state.items
+      .indexWhere((item) => item.product.id == (product.id ?? ''));
+  if (existingIndex >= 0) {
+    return setCartItemQuantityWithMarking(
+      context,
+      index: existingIndex,
+      quantity: posCubit.state.items[existingIndex].qty + quantity,
+      additionalMarkCodes: [
+        if ((initialMarkCode ?? '').isNotEmpty) initialMarkCode!,
+      ],
+    );
+  }
+  var codes = <String>[
     if ((initialMarkCode ?? '').isNotEmpty) initialMarkCode!,
   ];
-  final packageQuantity = partialMarkedPackage ? product.conversionValue! : 1.0;
-  final requiredCodes = partialMarkedPackage
-      ? (quantity / packageQuantity).ceil()
-      : quantity.round();
-
-  bool isUsedInCurrentCheck(String candidate) {
-    final canonical = Gs1DataMatrixValidator.canonicalCode(candidate);
-    return codes.any(
-          (code) => Gs1DataMatrixValidator.canonicalCode(code) == canonical,
-        ) ||
-        posCubit.state.items.expand((item) => item.markCodes).any(
-              (code) => Gs1DataMatrixValidator.canonicalCode(code) == canonical,
-            );
-  }
-
-  if (codes.isNotEmpty &&
-      posCubit.state.items.expand((item) => item.markCodes).any(
-            (code) =>
-                Gs1DataMatrixValidator.canonicalCode(code) ==
-                Gs1DataMatrixValidator.canonicalCode(codes.first),
-          )) {
+  if (codes.toSet().length != codes.length ||
+      codes.any((code) =>
+          posCubit.state.items.any((item) => item.markCodes.contains(code)))) {
     await showDuplicateMarkCodeDialog(context);
     return false;
   }
-
-  while (codes.length < requiredCodes) {
-    final markCode = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _SingleMarkCodeDialog(product: product),
-    );
-    if (markCode == null) {
-      requestSearchResetAndFocus();
-      return false;
-    }
-    if (!context.mounted) return false;
-    if (isUsedInCurrentCheck(markCode)) {
-      await showDuplicateMarkCodeDialog(context);
-      return false;
-    }
-    codes.add(markCode);
-  }
-
-  posCubit.addFromProductModel(
-    product,
-    qty: quantity,
-    markCodes: codes,
-  );
+  posCubit.addFromProductModel(product, qty: quantity, markCodes: codes);
+  await ensureCartMarkingReady(context);
   return true;
 }
 
@@ -206,334 +558,276 @@ Future<bool> setCartItemQuantityWithMarking(
   BuildContext context, {
   required int index,
   required double quantity,
+  List<String> additionalMarkCodes = const [],
 }) async {
   final cubit = context.read<PosCubit>();
-  if (index < 0 || index >= cubit.state.items.length) return false;
-  final item = cubit.state.items[index];
-  if (!item.product.requiresMarking) {
-    cubit.setQty(index, quantity);
-    return true;
-  }
-
-  final target = quantity.round();
-  if ((quantity - target).abs() > 0.000001) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-          content: Text('Маркированный товар продаётся только поштучно')),
-    );
+  if (index < 0 ||
+      index >= cubit.state.items.length ||
+      cubit.state.activeTicket.checkout != null) {
     return false;
   }
-  final partialMarkedPackage = item.product.hasConversion &&
-      item.product.allowsPartialPackages &&
-      (item.product.conversionValue ?? 0) > 0;
-  final requiredCodes = partialMarkedPackage
-      ? (target / item.product.conversionValue!).ceil()
-      : target;
-  if (requiredCodes <= item.markCodes.length) {
-    cubit.setMarkCodes(index, item.markCodes.take(requiredCodes).toList());
-    cubit.setQty(index, target.toDouble());
-    return true;
+  final item = cubit.state.items[index];
+  if (item.product.requiresMarking && quantity != quantity.roundToDouble()) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Маркированный товар продаётся только поштучно')));
+    return false;
   }
-
-  final codes = List<String>.from(item.markCodes);
-  final product = ProductModel(
-    id: item.product.id,
-    name: item.product.name,
-    measurementUnit: item.product.measurementUnit,
-    arrivalCost: item.product.arrivalCost,
-    sellingPrice: item.product.price,
-    wholesalePrice: 0,
-    quantity: item.product.quantity,
-    requiresMarking: true,
-    gtin: item.product.gtin,
-    ntin: item.product.ntin,
-    conversionValue: item.product.conversionValue,
-    conversionUnit: item.product.conversionUnit,
-  );
-  while (codes.length < requiredCodes) {
-    final code = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _SingleMarkCodeDialog(product: product),
-    );
-    if (code == null) {
-      requestSearchResetAndFocus();
-      return false;
-    }
-    if (!context.mounted) return false;
-    final usedInCart =
-        cubit.state.items.expand((cartItem) => cartItem.markCodes).any(
-              (existing) =>
-                  Gs1DataMatrixValidator.canonicalCode(existing) ==
-                  Gs1DataMatrixValidator.canonicalCode(code),
-            );
-    final usedInPending = codes.any(
-      (existing) =>
-          Gs1DataMatrixValidator.canonicalCode(existing) ==
-          Gs1DataMatrixValidator.canonicalCode(code),
-    );
-    if (usedInCart || usedInPending) {
-      await showDuplicateMarkCodeDialog(context);
-      return false;
-    }
-    codes.add(code);
+  final codes = [...item.markCodes, ...additionalMarkCodes];
+  if (codes.toSet().length != codes.length ||
+      additionalMarkCodes.any((code) =>
+          cubit.state.items.any((item) => item.markCodes.contains(code)))) {
+    await showDuplicateMarkCodeDialog(context);
+    return false;
   }
   cubit.setMarkCodes(index, codes);
-  cubit.setQty(index, target.toDouble());
+  cubit.setQty(index, quantity);
+  await ensureCartMarkingReady(context);
   return true;
 }
 
-class _SingleMarkCodeDialog extends StatefulWidget {
-  const _SingleMarkCodeDialog({required this.product});
-
-  final ProductModel product;
-
+class _MarkedQuantityDialog extends StatefulWidget {
+  const _MarkedQuantityDialog({required this.productName});
+  final String productName;
   @override
-  State<_SingleMarkCodeDialog> createState() => _SingleMarkCodeDialogState();
+  State<_MarkedQuantityDialog> createState() => _MarkedQuantityDialogState();
 }
 
-class _SingleMarkCodeDialogState extends State<_SingleMarkCodeDialog> {
-  final _controller = TextEditingController();
-  final _focusNode = FocusNode();
-  String? _error;
-  bool _submitted = false;
-
-  KeyEventResult _handleScannerKey(FocusNode _, KeyEvent event) {
-    if (event is! KeyDownEvent || !_focusNode.hasFocus) {
-      return KeyEventResult.ignored;
-    }
-    if (event.physicalKey == PhysicalKeyboardKey.enter ||
-        event.physicalKey == PhysicalKeyboardKey.numpadEnter) {
-      _submit(_controller.text);
-      return KeyEventResult.handled;
-    }
-    if (event.physicalKey == PhysicalKeyboardKey.backspace) {
-      if (_controller.text.isNotEmpty) {
-        final text = _controller.text.substring(0, _controller.text.length - 1);
-        _controller.value = TextEditingValue(
-          text: text,
-          selection: TextSelection.collapsed(offset: text.length),
-        );
-      }
-      return KeyEventResult.handled;
-    }
-    final character = MarkingKeyboardInputFormatter.scannerCharacter(event);
-    if (character == null) return KeyEventResult.ignored;
-    final text = '${_controller.text}$character';
-    _controller.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-    return KeyEventResult.handled;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusNode.requestFocus();
-    });
+class _MarkedQuantityDialogState extends State<_MarkedQuantityDialog> {
+  final _quantity = TextEditingController();
+  void _submit() {
+    final value = int.tryParse(_quantity.text);
+    if (value != null && value > 0) Navigator.pop(context, value.toDouble());
   }
 
   @override
   void dispose() {
-    _controller.dispose();
-    _focusNode.dispose();
+    _quantity.dispose();
     super.dispose();
   }
 
-  void _submit(String _) {
-    if (_submitted) return;
-    // Enter sent by a hardware scanner is not part of controller.text.
-    // Preserve all other characters, including the ASCII 29 GS separator.
-    final rawCode = MarkingKeyboardInputFormatter.normalize(_controller.text);
-    if (rawCode.isEmpty) return;
-    _submitted = true;
-    final validation = Gs1DataMatrixValidator.validate(
-      rawCode,
-      expectedGtin: (widget.product.gtin ?? '').trim().isNotEmpty
-          ? widget.product.gtin
-          : widget.product.ntin,
-    );
-    if (!validation.isValid) {
-      _submitted = false;
-      setState(() => _error = validation.message);
-      _controller.clear();
-      _focusNode.requestFocus();
-      return;
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text(widget.productName),
+        content: SizedBox(
+            width: 360,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(
+                  controller: _quantity,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration:
+                      const InputDecoration(labelText: 'Количество, шт.'),
+                  onChanged: (_) => setState(() {}),
+                  onSubmitted: (_) => _submit()),
+              const SizedBox(height: 16),
+              AmountKeypad(
+                  text: _quantity.text,
+                  showQuickRows: false,
+                  allowDecimal: false,
+                  onChanged: (text) => setState(() {
+                        _quantity.value = TextEditingValue(
+                            text: text,
+                            selection:
+                                TextSelection.collapsed(offset: text.length));
+                      })),
+            ])),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Отмена')),
+          FilledButton(
+              onPressed:
+                  (int.tryParse(_quantity.text) ?? 0) > 0 ? _submit : null,
+              child: const Text('Продолжить'))
+        ],
+      );
+}
+
+final _markingChecks = Expando<Future<bool>>();
+
+Future<bool> ensureCartMarkingReady(BuildContext context,
+    {bool correctingCheckout = false}) {
+  final cubit = context.read<PosCubit>();
+  final pending = _markingChecks[cubit];
+  if (pending != null) return pending;
+  final future =
+      _checkCartMarking(context, cubit, correctingCheckout: correctingCheckout);
+  _markingChecks[cubit] = future;
+  return future.whenComplete(() => _markingChecks[cubit] = null);
+}
+
+Future<bool> _checkCartMarking(BuildContext context, PosCubit cubit,
+    {required bool correctingCheckout}) async {
+  final auth = context.read<AuthTokenProvider>();
+  final ticketId = cubit.state.activeTicketId;
+  final codeErrors = <String, String>{};
+  void report(String message) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
     }
-    Navigator.of(context).pop(validation.canonical!);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final identifiers = [
-      if ((widget.product.gtin ?? '').isNotEmpty) 'GTIN ${widget.product.gtin}',
-      if ((widget.product.ntin ?? '').isNotEmpty) 'NTIN ${widget.product.ntin}',
-    ].join('  •  ');
-    return AlertDialog(
-      backgroundColor: const Color(0xFFF8FAFC),
-      surfaceTintColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      titlePadding: const EdgeInsets.fromLTRB(24, 24, 16, 0),
-      contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      title: Row(
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F8F2),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(
-              Icons.qr_code_scanner_rounded,
-              color: Color(0xFF15966A),
-              size: 26,
-            ),
-          ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Сканирование маркировки',
-                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
-                ),
-                SizedBox(height: 3),
-                Text(
-                  'Отсканируйте код с упаковки',
-                  style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            tooltip: 'Закрыть',
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B)),
-          ),
-        ],
-      ),
-      content: SizedBox(
-        width: 540,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.product.name,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF0F172A),
-                    ),
-                  ),
-                  if (identifiers.isNotEmpty) ...[
-                    const SizedBox(height: 5),
-                    Text(
-                      identifiers,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
+  while (context.mounted &&
+      !cubit.isClosed &&
+      cubit.state.activeTicketId == ticketId &&
+      cubit.state.items.isNotEmpty) {
+    if (cubit.state.activeTicket.checkout != null &&
+        !(correctingCheckout &&
+            cubit.state.activeTicket.checkout!['needs_marking_check'] ==
+                true)) {
+      return false;
+    }
+    final key = auth.posKey ?? '';
+    final storeId = auth.storeId ?? '';
+    final deviceId = auth.deviceId ?? '';
+    cubit.markingScope = '$key/$storeId/$deviceId';
+    if (key.isEmpty || storeId.isEmpty || deviceId.isEmpty) {
+      report('Не настроены магазин или терминал');
+      return false;
+    }
+    final snapshot = cubit.markingSnapshot;
+    cubit.beginMarkingCheck();
+    final items = List<CartItem>.from(cubit.state.items);
+    MarkingCheckResponse response;
+    try {
+      response = await sl<SaleRemoteDataSource>().checkMarking(
+          key: key,
+          storeId: storeId,
+          deviceId: deviceId,
+          items: items
+              .map((item) => <String, dynamic>{
+                    'product_id': item.product.id,
+                    'quantity': item.qty,
+                    'mark_codes': List<String>.from(item.markCodes),
+                  })
+              .toList());
+    } on DioException catch (error) {
+      if (!context.mounted || snapshot != cubit.markingSnapshot) return false;
+      final body = error.response?.data;
+      final errors = body is Map ? body['errors'] : null;
+      if (error.response?.statusCode == 422 && errors is Map) {
+        var removed = false;
+        for (var i = 0; i < items.length; i++) {
+          final badIndexes = <int>{};
+          String? message;
+          for (final entry in errors.entries) {
+            final match = RegExp(r'^items\.(\d+)\.mark_codes\.(\d+)$')
+                .firstMatch(entry.key.toString());
+            if (match != null && int.parse(match[1]!) == i) {
+              badIndexes.add(int.parse(match[2]!));
+              message = entry.value is List
+                  ? (entry.value as List).join(' ')
+                  : entry.value.toString();
+            }
+          }
+          if (badIndexes.isNotEmpty) {
+            cubit.selectItem(i);
+            codeErrors[items[i].product.id] = message ?? 'Неверный код';
+            report('${items[i].product.name}: $message');
+            cubit.setMarkCodes(
+                i,
+                [
+                  for (var j = 0; j < items[i].markCodes.length; j++)
+                    if (!badIndexes.contains(j)) items[i].markCodes[j]
                 ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.info_outline_rounded,
-                  size: 19,
-                  color: Color(0xFF2563EB),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Наведите сканер на квадратный код. Товар добавится в чек автоматически.',
-                    style: TextStyle(color: Color(0xFF475569), height: 1.4),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Focus(
-              onKeyEvent: _handleScannerKey,
-              child: TextField(
-                controller: _controller,
-                focusNode: _focusNode,
-                inputFormatters: const [MarkingKeyboardInputFormatter()],
-                keyboardType: TextInputType.visiblePassword,
-                textCapitalization: TextCapitalization.none,
-                autocorrect: false,
-                enableSuggestions: false,
-                smartDashesType: SmartDashesType.disabled,
-                smartQuotesType: SmartQuotesType.disabled,
-                autofocus: true,
-                obscureText: true,
-                obscuringCharacter: '•',
-                onSubmitted: _submit,
-                decoration: InputDecoration(
-                  labelText: 'Код маркировки',
-                  hintText: 'Ожидание сканера…',
-                  errorText: _error,
-                  filled: true,
-                  fillColor: Colors.white,
-                  prefixIcon: const Icon(
-                    Icons.center_focus_strong_rounded,
-                    color: Color(0xFF15966A),
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF22B982),
-                      width: 2,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          style: TextButton.styleFrom(
-            foregroundColor: const Color(0xFF475569),
-            minimumSize: const Size(120, 48),
-          ),
-          child: const Text('Отмена'),
-        ),
-      ],
-    );
+                correctingCheckoutMarking: correctingCheckout);
+            removed = true;
+          }
+        }
+        if (removed) continue;
+      }
+      report(body is Map
+          ? (body['message']?.toString() ?? 'Не удалось проверить маркировку')
+          : 'Нет связи. Повторите проверку маркировки');
+      return false;
+    } catch (_) {
+      report('Не удалось проверить маркировку. Повторите проверку');
+      return false;
+    }
+    if (!context.mounted ||
+        cubit.isClosed ||
+        cubit.state.activeTicketId != ticketId) {
+      return false;
+    }
+    if (storeId != auth.storeId ||
+        key != auth.posKey ||
+        deviceId != auth.deviceId ||
+        snapshot != cubit.markingSnapshot) {
+      continue;
+    }
+    // A partial/malformed response must never authorize payment.
+    if (items.any((item) =>
+        !response.items.any((result) => result.productId == item.product.id))) {
+      report('Сервер проверил не все товары. Повторите проверку');
+      return false;
+    }
+    cubit.applyMarkingCheck(snapshot, response);
+    if (response.canPay) return true;
+    var changed = false;
+    for (final result in response.items) {
+      if (result.ready) continue;
+      final index = cubit.state.items
+          .indexWhere((item) => item.product.id == result.productId);
+      if (index < 0) return false;
+      cubit.selectItem(index);
+      final item = cubit.state.items[index];
+      if (result.errorCode == 'EXTRA_MARK_CODE' ||
+          result.errorCode == 'MARK_CODE_CONFLICT') {
+        if (item.markCodes.isEmpty) {
+          report(result.message ?? 'Не удалось проверить код');
+          return false;
+        }
+        // The response identifies the product, not a specific conflicting code.
+        // Remove its newly supplied codes, then let the server request the exact deficit.
+        cubit.setMarkCodes(index, const [],
+            correctingCheckoutMarking: correctingCheckout);
+        if (result.errorCode == 'MARK_CODE_CONFLICT') {
+          codeErrors[item.product.id] =
+              result.message ?? 'Код не подходит. Сканируйте другую коробку';
+          report(codeErrors[item.product.id]!);
+        }
+        changed = true;
+        break;
+      }
+      if (result.scanRequired && result.requiredCodesCount > 0) {
+        final codes = await showMarkingPackageScanDialog(context,
+            productName: item.product.name,
+            quantity: item.qty.round(),
+            packageQuantity:
+                (result.packageQuantity ?? 1).round().clamp(1, 1000000000),
+            gtin: null,
+            initialCodes: item.markCodes,
+            initialCodesAlreadyCounted: true,
+            requiredCodesCount: result.requiredCodesCount,
+            errorMessage: codeErrors.remove(item.product.id),
+            alreadyCovered: (item.qty - result.missingQuantity)
+                .round()
+                .clamp(0, item.qty.round()),
+            usedCodes: {
+              for (var i = 0; i < cubit.state.items.length; i++)
+                if (i != index) ...cubit.state.items[i].markCodes
+            });
+        if (codes == null || !context.mounted) return false;
+        if (snapshot != cubit.markingSnapshot) {
+          changed = true;
+          break;
+        }
+        cubit.setMarkCodes(index, codes,
+            correctingCheckoutMarking: correctingCheckout);
+        changed = true;
+        break;
+      }
+      report(result.message ?? 'Маркировка не прошла проверку');
+      return false;
+    }
+    if (!changed) {
+      report('Маркировка не прошла проверку');
+      return false;
+    }
   }
+  return false;
 }
 
 Future<void> editConvertedCartItem(

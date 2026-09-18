@@ -45,7 +45,22 @@ class _SalePaymentAmounts {
 }
 
 class PosSyncLocalStore {
+  PosSyncLocalStore({sqlite.Database? database}) : _db = database {
+    if (database != null) {
+      _createSchema(database);
+      _migrateSchema(database);
+      _recoverInterruptedOperations(database);
+    }
+  }
+
   sqlite.Database? _db;
+
+  void _recoverInterruptedOperations(sqlite.Database db) {
+    db.execute(
+        "UPDATE outbox_operations SET status = 'manual', last_error_code = 'NETWORK_RECONCILIATION_REQUIRED' WHERE status = 'sending' AND type IN ('sale', 'refund')");
+    db.execute(
+        "UPDATE outbox_operations SET status = 'pending' WHERE status = 'sending'");
+  }
 
   Future<void> initialize() async {
     await _database;
@@ -76,11 +91,18 @@ class PosSyncLocalStore {
     db.execute('PRAGMA foreign_keys = ON;');
     _createSchema(db);
     _migrateSchema(db);
+    _recoverInterruptedOperations(db);
     _db = db;
     return db;
   }
 
   void _createSchema(sqlite.Database db) {
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS accepted_operations (
+        type TEXT NOT NULL, client_id TEXT NOT NULL, response_json TEXT NOT NULL,
+        PRIMARY KEY(type, client_id)
+      )
+    ''');
     db.execute('''
       CREATE TABLE IF NOT EXISTS sync_state (
         pos_key TEXT PRIMARY KEY,
@@ -435,8 +457,6 @@ class PosSyncLocalStore {
       ]) {
         db.execute('DELETE FROM $table;');
       }
-      db.execute(
-          "UPDATE local_counters SET value = 0 WHERE name = 'sale_local_number';");
     });
   }
 
@@ -445,7 +465,6 @@ class PosSyncLocalStore {
     required String deviceId,
   }) async {
     final db = await _database;
-    final now = _nowIso();
     db.execute(
       '''
       INSERT INTO sync_state (
@@ -466,18 +485,6 @@ class PosSyncLocalStore {
     );
     db.execute(
       "INSERT OR IGNORE INTO local_counters (name, value) VALUES ('sale_local_number', 0);",
-    );
-    db.execute(
-      '''
-      UPDATE outbox_operations
-      SET status = ?, updated_at = ?
-      WHERE status = ?
-      ''',
-      [
-        OutboxOperationStatus.pending.value,
-        now,
-        OutboxOperationStatus.sending.value,
-      ],
     );
     await normalizeLegacySessionReferences();
   }
@@ -632,6 +639,7 @@ class PosSyncLocalStore {
       }
       for (final raw in sales) {
         try {
+          _saveAcceptedOperation(db, OutboxOperationType.sale, raw);
           final sale = SaleModel.fromApiJson(raw);
           final saleId = sale.localId.trim();
           if (saleId.isEmpty) continue;
@@ -884,6 +892,87 @@ class PosSyncLocalStore {
     });
   }
 
+  Future<void> saveClaimedPayload(
+      String operationId, Map<String, dynamic> payload) async {
+    final db = await _database;
+    db.execute(
+        "UPDATE outbox_operations SET payload_json = ? WHERE id = ? AND status = 'sending'",
+        [jsonEncode(payload), operationId]);
+  }
+
+  Future<OutboxOperationRecord?> findUnresolvedRefund(
+      String saleId, String? clientSaleId) async {
+    final db = await _database;
+    final rows = db.select(
+        'SELECT * FROM outbox_operations WHERE type = ? AND status != ? ORDER BY created_at',
+        [OutboxOperationType.refund.value, OutboxOperationStatus.acked.value]);
+    for (final row in rows) {
+      final record = _recordFromRow(_rowMap(row));
+      if ((record.payload['sale_id'] ?? '') == saleId.trim() &&
+          (record.payload['client_sale_id'] ?? '') ==
+              (clientSaleId ?? '').trim()) {
+        return record;
+      }
+    }
+    return null;
+  }
+
+  Future<OutboxOperationRecord?> findOperation(
+    OutboxOperationType type,
+    String clientId,
+  ) async {
+    final db = await _database;
+    final row = _firstRow(db.select(
+      'SELECT * FROM outbox_operations WHERE type = ? AND client_id = ?',
+      [type.value, clientId],
+    ));
+    return row == null ? null : _recordFromRow(row);
+  }
+
+  Future<Map<String, dynamic>?> acceptedOperation(
+    OutboxOperationType type,
+    String clientId,
+  ) async {
+    final db = await _database;
+    final row = _firstRow(db.select(
+      'SELECT response_json FROM accepted_operations WHERE type = ? AND client_id = ?',
+      [type.value, clientId],
+    ));
+    return row == null ? null : decodeJsonMap(_string(row['response_json']));
+  }
+
+  void _saveAcceptedOperation(sqlite.Database db, OutboxOperationType type,
+      Map<String, dynamic> response) {
+    final clientId = _string(
+        response[type == OutboxOperationType.sale
+            ? 'client_sale_id'
+            : 'client_refund_id'],
+        fallback: _string(response['id']));
+    if (clientId.isEmpty) return;
+    db.execute(
+      'INSERT OR REPLACE INTO accepted_operations (type, client_id, response_json) VALUES (?, ?, ?)',
+      [type.value, clientId, jsonEncode(response)],
+    );
+    db.execute(
+        'UPDATE outbox_operations SET status = ? WHERE type = ? AND client_id = ?',
+        [OutboxOperationStatus.acked.value, type.value, clientId]);
+  }
+
+  Future<void> saveAcceptedOperation(
+      OutboxOperationType type, Map<String, dynamic> response) async {
+    final db = await _database;
+    _inTransaction<void>(db, () {
+      _saveAcceptedOperation(db, type, response);
+      if (type == OutboxOperationType.sale) {
+        _upsertSalePullRecord(db, response, _nowIso());
+        _upsertSaleHistoryRecord(
+            db: db, salePayload: response, refundPayload: null, now: _nowIso());
+      } else if (type == OutboxOperationType.refund) {
+        _upsertRefundPullRecord(db, response, _nowIso());
+      }
+    });
+  }
+
   Future<void> enqueueOperation({
     required String id,
     required OutboxOperationType type,
@@ -901,7 +990,7 @@ class PosSyncLocalStore {
       ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?)
       ON CONFLICT(type, client_id) DO UPDATE SET
         related_client_id = excluded.related_client_id,
-        payload_json = excluded.payload_json,
+        payload_json = CASE WHEN outbox_operations.status = 'acked' THEN outbox_operations.payload_json ELSE excluded.payload_json END,
         status = CASE
           WHEN outbox_operations.status = ? THEN outbox_operations.status
           ELSE ?
@@ -1301,7 +1390,7 @@ class PosSyncLocalStore {
       final row = _firstRow(
         db.select(
           '''
-          SELECT id, type, client_id
+          SELECT *
           FROM outbox_operations
           WHERE id = ?
           LIMIT 1
@@ -1314,6 +1403,22 @@ class PosSyncLocalStore {
       final type = OutboxOperationTypeX.fromValue(_string(row['type'])) ??
           OutboxOperationType.sale;
       final clientId = _string(row['client_id']);
+      if ((type == OutboxOperationType.sale ||
+              type == OutboxOperationType.refund) &&
+          (row['status'] == 'acked' ||
+              row['status'] == 'sending' ||
+              !const {
+                'MARKING_PACKAGE_CHANGED',
+                'MARKING_CONFLICT',
+                'VALIDATION_FAILED',
+                'INSUFFICIENT_STOCK',
+                'REFERENCE_NOT_FOUND',
+                'ACCOUNT_NOT_ALLOWED',
+                'POS_NOT_CONFIGURED'
+              }.contains(row['last_error_code']))) {
+        throw StateError(
+            'Операцию нельзя менять или удалять до сверки с сервером. Зарегистрированный документ исправляется возвратом.');
+      }
 
       db.execute(
         '''
@@ -1428,7 +1533,7 @@ class PosSyncLocalStore {
       final row = _firstRow(
         db.select(
           '''
-          SELECT id, type, client_id
+          SELECT *
           FROM outbox_operations
           WHERE id = ?
           LIMIT 1
@@ -1441,6 +1546,22 @@ class PosSyncLocalStore {
       final type = OutboxOperationTypeX.fromValue(_string(row['type'])) ??
           OutboxOperationType.sale;
       final clientId = _string(row['client_id']);
+      if ((type == OutboxOperationType.sale ||
+              type == OutboxOperationType.refund) &&
+          (row['status'] == 'acked' ||
+              row['status'] == 'sending' ||
+              !const {
+                'MARKING_PACKAGE_CHANGED',
+                'MARKING_CONFLICT',
+                'VALIDATION_FAILED',
+                'INSUFFICIENT_STOCK',
+                'REFERENCE_NOT_FOUND',
+                'ACCOUNT_NOT_ALLOWED',
+                'POS_NOT_CONFIGURED'
+              }.contains(row['last_error_code']))) {
+        throw StateError(
+            'Операцию нельзя менять или удалять до сверки с сервером. Зарегистрированный документ исправляется возвратом.');
+      }
 
       db.execute(
         'DELETE FROM sync_errors WHERE operation_id = ?',
@@ -1575,6 +1696,7 @@ class PosSyncLocalStore {
   ) {
     final saleId = _string(payload['id']);
     if (saleId.isEmpty) return;
+    _saveAcceptedOperation(db, OutboxOperationType.sale, payload);
 
     final clientSaleId = _string(payload['client_sale_id'], fallback: saleId);
     final existing = _firstRow(
@@ -1731,6 +1853,7 @@ class PosSyncLocalStore {
   ) {
     final refundId = _string(payload['id']);
     if (refundId.isEmpty) return;
+    _saveAcceptedOperation(db, OutboxOperationType.refund, payload);
 
     final clientRefundId =
         _string(payload['client_refund_id'], fallback: refundId);
@@ -1936,6 +2059,16 @@ class PosSyncLocalStore {
       }
     }
 
+    final accepted = _firstRow(db.select(
+        'SELECT response_json FROM accepted_operations WHERE type = ? AND client_id = ?',
+        [
+          OutboxOperationType.refund.value,
+          _string(refundRow['client_refund_id'],
+              fallback: _string(refundRow['id']))
+        ]));
+    if (accepted != null) {
+      return decodeJsonMap(_string(accepted['response_json']));
+    }
     final refundId = _string(refundRow['id']);
     final itemRows = db.select(
       'SELECT * FROM refund_items WHERE refund_id = ? ORDER BY id',
@@ -2457,6 +2590,10 @@ class PosSyncLocalStore {
         final row = _rowMap(opRow);
         final type = OutboxOperationTypeX.fromValue(_string(row['type'])) ??
             OutboxOperationType.sale;
+        if (type == OutboxOperationType.sale ||
+            type == OutboxOperationType.refund) {
+          continue;
+        }
         final payload =
             decodeJsonMap(_string(row['payload_json'], fallback: '{}'));
         var changed = false;
@@ -2719,6 +2856,7 @@ class PosSyncLocalStore {
     required String clientSaleId,
     required int localNumber,
     required Map<String, dynamic> payload,
+    bool completed = false,
   }) async {
     final db = await _database;
     _inTransaction<void>(db, () {
@@ -2730,7 +2868,7 @@ class PosSyncLocalStore {
           pos_session_id, payment_method, cash_amount, card_amount,
           transfer_amount, credit_amount, pos_id, store_id, account_id, customer_id,
           created_by_id, completed, synced
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ''',
         [
           clientSaleId,
@@ -2750,6 +2888,7 @@ class PosSyncLocalStore {
           _nullableString(payload['account_id']),
           _nullableString(payload['customer_id']),
           _nullableString(payload['user_id']),
+          completed ? 1 : 0,
         ],
       );
       final items = payload['items'];
@@ -3365,7 +3504,7 @@ class PosSyncLocalStore {
       localId: (payload['client_sale_id'] ?? '').toString(),
       number: (payload['local_number'] ?? '').toString(),
       date: _parseDt(payload['date']) ?? DateTime.now(),
-      totalAmount: _asInt(payload['total_amount']),
+      totalAmount: _asDouble(payload['total_amount']),
       paymentMethod: (payload['payment_method'] ?? 'cash').toString(),
       paymentType: payload['payment_type']?.toString(),
       paidAmount: _asInt(payload['paid_amount']),
@@ -3473,6 +3612,16 @@ class PosSyncLocalStore {
 
     return rows.map((row) {
       final map = _rowMap(row);
+      final accepted = _firstRow(db.select(
+          'SELECT response_json FROM accepted_operations WHERE type = ? AND client_id = ?',
+          [
+            OutboxOperationType.refund.value,
+            _string(map['client_refund_id'], fallback: _string(map['id']))
+          ]));
+      if (accepted != null) {
+        return RefundModel.fromJson(
+            decodeJsonMap(_string(accepted['response_json'])));
+      }
       final refundId = _string(map['id']);
       final itemRows = db.select(
         'SELECT * FROM refund_items WHERE refund_id = ? ORDER BY id',
@@ -3495,7 +3644,7 @@ class PosSyncLocalStore {
         id: refundId,
         number: _nullableString(map['number']),
         date: _parseDt(_string(map['date'])),
-        totalAmount: _asInt(map['total_amount']),
+        totalAmount: _asDouble(map['total_amount']),
         reason: _nullableString(map['reason']),
         reasonCode: _nullableString(map['reason_code']),
         note: _nullableString(map['note']),

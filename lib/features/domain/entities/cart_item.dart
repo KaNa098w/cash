@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:leemon_app/core/models/marking_check.dart';
 import 'product.dart';
 
 class CartItem extends Equatable {
@@ -10,6 +11,7 @@ class CartItem extends Equatable {
   /// Applied server discount for this line item.
   final bool discountApplied;
   final List<String> markCodes;
+  final MarkingCheckItem? markingCheck;
 
   const CartItem({
     required this.product,
@@ -18,6 +20,7 @@ class CartItem extends Equatable {
     this.customUnitPrice,
     this.discountApplied = false,
     this.markCodes = const <String>[],
+    this.markingCheck,
   });
 
   factory CartItem.fromJson(Map<String, dynamic> json) => CartItem(
@@ -77,6 +80,8 @@ class CartItem extends Equatable {
     bool clearCustomUnitPrice = false,
     bool? discountApplied,
     List<String>? markCodes,
+    MarkingCheckItem? markingCheck,
+    bool clearMarkingCheck = false,
   }) =>
       CartItem(
         product: product ?? this.product,
@@ -87,6 +92,8 @@ class CartItem extends Equatable {
             : (customUnitPrice ?? this.customUnitPrice),
         discountApplied: discountApplied ?? this.discountApplied,
         markCodes: markCodes ?? this.markCodes,
+        markingCheck:
+            clearMarkingCheck ? null : markingCheck ?? this.markingCheck,
       );
 
   Map<String, dynamic> toJson() => {
@@ -99,6 +106,13 @@ class CartItem extends Equatable {
       };
 
   @override
-  List<Object?> get props =>
-      [product, qty, discount, customUnitPrice, discountApplied, markCodes];
+  List<Object?> get props => [
+        product,
+        qty,
+        discount,
+        customUnitPrice,
+        discountApplied,
+        markCodes,
+        markingCheck
+      ];
 }

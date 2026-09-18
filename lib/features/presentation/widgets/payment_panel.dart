@@ -10,7 +10,6 @@ import 'package:pdf/pdf.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/models/fiscal_receipt.dart';
-import 'package:leemon_app/core/marking/gs1_datamatrix_validator.dart';
 import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/service/fiscal_receipt_service.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
@@ -27,6 +26,7 @@ import 'package:leemon_app/features/presentation/pages/search/widgets/customer_c
 import 'package:leemon_app/features/presentation/widgets/last_sale_amount_notifier.dart';
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 import 'package:leemon_app/features/presentation/widgets/receipt_print_confirmation_dialog.dart';
+import 'package:leemon_app/features/presentation/widgets/conversion_product_dialog.dart';
 import 'package:leemon_app/features/presentation/utils/comment_text_controller.dart';
 import 'package:uuid/uuid.dart';
 import '../../data/utils/money.dart';
@@ -40,335 +40,6 @@ class PaymentPanel extends StatefulWidget {
 
   @override
   State<PaymentPanel> createState() => _PaymentPanelState();
-}
-
-class _MarkCodesDialog extends StatefulWidget {
-  const _MarkCodesDialog({
-    required this.productName,
-    required this.requiredCount,
-    required this.initialCodes,
-    required this.usedCodes,
-    this.gtin,
-    this.ntin,
-  });
-
-  final String productName;
-  final int requiredCount;
-  final List<String> initialCodes;
-  final Set<String> usedCodes;
-  final String? gtin;
-  final String? ntin;
-
-  @override
-  State<_MarkCodesDialog> createState() => _MarkCodesDialogState();
-}
-
-class _MarkCodesDialogState extends State<_MarkCodesDialog> {
-  final _controller = TextEditingController();
-  final _focusNode = FocusNode();
-  late final List<String> _codes =
-      widget.initialCodes.take(widget.requiredCount).toList(growable: true);
-  String? _error;
-  String? _lastAcceptedCode;
-  DateTime? _lastAcceptedCodeAt;
-
-  KeyEventResult _handleScannerKey(FocusNode _, KeyEvent event) {
-    if (event is! KeyDownEvent || !_focusNode.hasFocus) {
-      return KeyEventResult.ignored;
-    }
-    if (event.physicalKey == PhysicalKeyboardKey.enter ||
-        event.physicalKey == PhysicalKeyboardKey.numpadEnter) {
-      _acceptScan(_controller.text);
-      return KeyEventResult.handled;
-    }
-    if (event.physicalKey == PhysicalKeyboardKey.backspace) {
-      if (_controller.text.isNotEmpty) {
-        final text = _controller.text.substring(0, _controller.text.length - 1);
-        _controller.value = TextEditingValue(
-          text: text,
-          selection: TextSelection.collapsed(offset: text.length),
-        );
-      }
-      return KeyEventResult.handled;
-    }
-    final character = MarkingKeyboardInputFormatter.scannerCharacter(event);
-    if (character == null) return KeyEventResult.ignored;
-    final text = '${_controller.text}$character';
-    _controller.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-    return KeyEventResult.handled;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _focusNode.requestFocus());
-  }
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _acceptScan(String _) {
-    if (_codes.length >= widget.requiredCount) return;
-    // TextField does not include the scanner's Enter key. Keep every other
-    // character exactly as received (including the GS separator, ASCII 29).
-    final raw = MarkingKeyboardInputFormatter.normalize(_controller.text);
-    if (raw.isEmpty) return;
-    final validation = Gs1DataMatrixValidator.validate(
-      raw,
-      expectedGtin:
-          (widget.gtin ?? '').trim().isNotEmpty ? widget.gtin : widget.ntin,
-    );
-    if (!validation.isValid) {
-      setState(() => _error = validation.message);
-      _controller.clear();
-      _focusNode.requestFocus();
-      return;
-    }
-    final canonical = validation.canonical!;
-    final lastAcceptedAt = _lastAcceptedCodeAt;
-    if (canonical == _lastAcceptedCode &&
-        lastAcceptedAt != null &&
-        DateTime.now().difference(lastAcceptedAt) <
-            const Duration(milliseconds: 1200)) {
-      _controller.clear();
-      _focusNode.requestFocus();
-      return;
-    }
-    final duplicate = widget.usedCodes.contains(canonical) ||
-        _codes.any(
-          (code) => Gs1DataMatrixValidator.canonicalCode(code) == canonical,
-        );
-    if (duplicate) {
-      setState(
-        () => _error = 'Этот код маркировки уже добавлен в продажу.',
-      );
-      _controller.clear();
-      _focusNode.requestFocus();
-      return;
-    }
-    setState(() {
-      _codes.add(canonical);
-      _lastAcceptedCode = canonical;
-      _lastAcceptedCodeAt = DateTime.now();
-      _error = null;
-      _controller.clear();
-    });
-    _focusNode.requestFocus();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final complete = _codes.length == widget.requiredCount;
-    return AlertDialog(
-      backgroundColor: const Color(0xFFF8FAFC),
-      surfaceTintColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      titlePadding: const EdgeInsets.fromLTRB(24, 24, 16, 0),
-      title: Row(
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F8F2),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(
-              Icons.qr_code_scanner_rounded,
-              color: Color(0xFF15966A),
-              size: 26,
-            ),
-          ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Маркировка товара',
-                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
-                ),
-                SizedBox(height: 3),
-                Text(
-                  'Отсканируйте код с упаковки',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            tooltip: 'Закрыть',
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B)),
-          ),
-        ],
-      ),
-      content: SizedBox(
-        width: 540,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Text(
-                widget.productName,
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-              ),
-            ),
-            if ((widget.gtin ?? '').isNotEmpty ||
-                (widget.ntin ?? '').isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text([
-                  if ((widget.gtin ?? '').isNotEmpty) 'GTIN ${widget.gtin}',
-                  if ((widget.ntin ?? '').isNotEmpty) 'NTIN ${widget.ntin}',
-                ].join('  •  ')),
-              ),
-            const SizedBox(height: 20),
-            LinearProgressIndicator(
-              value: widget.requiredCount == 0
-                  ? 1
-                  : _codes.length / widget.requiredCount,
-              minHeight: 8,
-              color: const Color(0xFF22B982),
-              backgroundColor: const Color(0xFFE2E8F0),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Отсканировано ${_codes.length} из ${widget.requiredCount}',
-              style: const TextStyle(
-                color: Color(0xFF475569),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Focus(
-              onKeyEvent: _handleScannerKey,
-              child: TextField(
-                controller: _controller,
-                focusNode: _focusNode,
-                inputFormatters: const [MarkingKeyboardInputFormatter()],
-                keyboardType: TextInputType.visiblePassword,
-                textCapitalization: TextCapitalization.none,
-                autocorrect: false,
-                enableSuggestions: false,
-                smartDashesType: SmartDashesType.disabled,
-                smartQuotesType: SmartQuotesType.disabled,
-                enabled: !complete,
-                autofocus: true,
-                obscureText: true,
-                obscuringCharacter: '•',
-                onSubmitted: _acceptScan,
-                onTapOutside: (_) => _focusNode.requestFocus(),
-                decoration: InputDecoration(
-                  labelText:
-                      complete ? 'Все коды отсканированы' : 'Код маркировки',
-                  hintText: complete ? null : 'Сканируйте маркировку',
-                  errorText: _error,
-                  filled: true,
-                  fillColor: Colors.white,
-                  prefixIcon: const Icon(
-                    Icons.qr_code_scanner_rounded,
-                    color: Color(0xFF15966A),
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF22B982),
-                      width: 2,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            if (_codes.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: List.generate(
-                  _codes.length,
-                  (index) => Chip(
-                    label: Text('Код ${index + 1}'),
-                    avatar: const Icon(
-                      Icons.check_circle_rounded,
-                      size: 18,
-                      color: Color(0xFF15966A),
-                    ),
-                    backgroundColor: const Color(0xFFE8F8F2),
-                    side: BorderSide.none,
-                    onDeleted: () {
-                      setState(() => _codes.removeAt(index));
-                      WidgetsBinding.instance.addPostFrameCallback(
-                        (_) => _focusNode.requestFocus(),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          style: TextButton.styleFrom(
-            foregroundColor: const Color(0xFF475569),
-            minimumSize: const Size(110, 48),
-          ),
-          child: const Text('Закрыть'),
-        ),
-        FilledButton.icon(
-          onPressed: complete
-              ? () => Navigator.of(context).pop(List<String>.from(_codes))
-              : null,
-          icon: const Icon(Icons.check_rounded),
-          label: const Text('Продолжить'),
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF22B982),
-            disabledBackgroundColor: const Color(0xFFCBD5E1),
-            minimumSize: const Size(160, 48),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 class FiscalReceiptDialog extends StatefulWidget {
@@ -664,8 +335,10 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
             ],
             if (failed) ...[
               const SizedBox(height: 12),
-              const Text(
-                'Продажа сохранена. Повторно создавать её не нужно.',
+              Text(
+                _receipt.status == 'needs_review'
+                    ? 'Документ сохранён. Нужна проверка в Webkassa: чек мог уже зарегистрироваться. Автоматический повтор запрещён.'
+                    : 'Документ сохранён. Для повтора фискализации обратитесь к администратору. Повторно создавать документ не нужно.',
                 textAlign: TextAlign.center,
               ),
             ],
@@ -722,12 +395,12 @@ class _PaymentPanelState extends State<PaymentPanel> {
   String? _selectedBankAccountId;
   bool _loadingBankAccounts = false;
   bool _paying = false;
+  bool _preparingPayment = false;
   bool _paymentSuccess = false;
-  bool _saleQueued = false;
+
   bool _openingCustomerPicker = false;
   bool _isMixedPayment = false;
   bool _mixedActiveIsCard = false;
-  bool _markingConflictNeedsExtraCode = false;
 
   @override
   void initState() {
@@ -1002,54 +675,118 @@ class _PaymentPanelState extends State<PaymentPanel> {
   }
 
   Future<bool> _ensureMarkCodes(PosCubit cubit) async {
-    var assignedConflictExtraCode = false;
-    for (var index = 0; index < cubit.state.items.length; index++) {
-      final item = cubit.state.items[index];
-      if (!item.product.requiresMarking) continue;
-      final roundedQuantity = item.qty.round();
-      if ((item.qty - roundedQuantity).abs() > 0.000001) {
-        _showError('Маркированный товар продаётся только целыми единицами');
-        return false;
+    if (cubit.state.activeTicket.checkout != null) return true;
+    if (cubit.markingCheckPassed) return true;
+    _showError('Корзина изменилась. Вернитесь к проверке маркировки');
+    return false;
+  }
+
+  Future<CreateSaleOutcome> _sendConfirmedSale({
+    required SaleRepository repo,
+    required PosCubit cubit,
+    required String key,
+    required String deviceId,
+    required SaleModel sale,
+    required List<Map<String, dynamic>> payments,
+  }) async {
+    final frozen = cubit.state.activeTicket.checkout;
+    if (frozen != null) {
+      sale = SaleModel.fromJson(Map<String, dynamic>.from(frozen['sale']));
+      payments = (frozen['payments'] as List)
+          .map((p) => Map<String, dynamic>.from(p))
+          .toList();
+      final auth = context.read<AuthTokenProvider>();
+      if (sale.storeId != auth.storeId ||
+          (frozen['pos_key'] != null && frozen['pos_key'] != key) ||
+          (frozen['device_id'] != null && frozen['device_id'] != deviceId)) {
+        return CreateSaleOutcome(
+            result: CreateSaleResult.rejected,
+            sale: sale,
+            errorCode: 'CHECKOUT_STORE_CHANGED',
+            errorMessage:
+                'Для завершения оплаты вернитесь в исходный магазин и терминал');
       }
-      final partialMarkedPackage = item.product.hasConversion &&
-          item.product.allowsPartialPackages &&
-          (item.product.conversionValue ?? 0) > 0;
-      var requiredCodes = partialMarkedPackage
-          ? (item.qty / item.product.conversionValue!).ceil()
-          : roundedQuantity;
-      if (_markingConflictNeedsExtraCode &&
-          partialMarkedPackage &&
-          !assignedConflictExtraCode) {
-        requiredCodes = item.markCodes.length + 1;
-        assignedConflictExtraCode = true;
+    }
+    var needsMarkingCheck = frozen?['needs_marking_check'] == true;
+    Future<void> persist() => cubit.saveCheckout({
+          'sale': sale.toJson(),
+          'payments': payments,
+          'needs_marking_check': needsMarkingCheck,
+          'pos_key': key,
+          'device_id': deviceId,
+        });
+    await persist();
+    Future<bool> recheckMarking() async {
+      cubit.invalidateMarkingCheck();
+      var ready = false;
+      try {
+        ready = await ensureCartMarkingReady(context, correctingCheckout: true);
+        sale = sale.copyWith(items: [
+          for (final item in sale.items)
+            item.copyWith(
+                markCodes: cubit.state.items
+                    .firstWhere((cart) => cart.product.id == item.productId)
+                    .markCodes)
+        ]);
+        needsMarkingCheck = !ready;
+        return ready;
+      } finally {
+        await persist();
       }
-      if (item.markCodes.length >= requiredCodes) continue;
-      final codes = await showDialog<List<String>>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => _MarkCodesDialog(
-          productName: item.product.name,
-          gtin: item.product.gtin,
-          ntin: item.product.ntin,
-          requiredCount: requiredCodes,
-          initialCodes: item.markCodes,
-          usedCodes: {
-            for (var otherIndex = 0;
-                otherIndex < cubit.state.items.length;
-                otherIndex++)
-              if (otherIndex != index)
-                for (final code in cubit.state.items[otherIndex].markCodes)
-                  Gs1DataMatrixValidator.canonicalCode(code),
-          },
-        ),
-      );
-      if (!mounted || codes == null) return false;
-      cubit.setMarkCodes(index, codes);
     }
-    if (assignedConflictExtraCode) {
-      _markingConflictNeedsExtraCode = false;
+
+    if (needsMarkingCheck && !await recheckMarking()) {
+      return CreateSaleOutcome(
+          result: CreateSaleResult.rejected,
+          sale: sale,
+          errorCode: 'MARKING_PACKAGE_CHANGED',
+          errorMessage: 'Оплата сохранена. Завершите проверку маркировки');
     }
-    return true;
+    while (true) {
+      final outcome = await repo.createSale(
+          key: key,
+          deviceId: deviceId,
+          sale: sale,
+          payments: payments,
+          requireOnline: true);
+      if (outcome.result != CreateSaleResult.rejected) return outcome;
+      if (outcome.errorCode == 'MARKING_PACKAGE_CHANGED') {
+        needsMarkingCheck = true;
+        await persist();
+        if (!mounted || !await recheckMarking()) return outcome;
+        continue;
+      }
+      if (outcome.errorCode == 'REFERENCE_NOT_FOUND' ||
+          outcome.errorCode == 'ACCOUNT_NOT_ALLOWED') {
+        try {
+          await sl<PosSyncService>().pullOnce(key: key, deviceId: deviceId);
+          final accounts =
+              await sl<PosSyncService>().loadAccountsFromBackend(key: key);
+          if (mounted) {
+            setState(() {
+              _accounts = accounts;
+              _bankAccounts = accounts
+                  .where((a) => a.isBankOrPos && a.visibleToPos)
+                  .toList();
+              if (!_bankAccounts.any((a) => a.id == _selectedBankAccountId)) {
+                _selectedBankAccountId = null;
+              }
+            });
+          }
+        } catch (_) {/* Keep the original API error visible. */}
+      }
+      if (const {
+        'VALIDATION_FAILED',
+        'INSUFFICIENT_STOCK',
+        'REFERENCE_NOT_FOUND',
+        'ACCOUNT_NOT_ALLOWED',
+        'POS_NOT_CONFIGURED',
+        'MARKING_CONFLICT'
+      }.contains(outcome.errorCode)) {
+        cubit.releaseCheckout();
+      }
+      return outcome;
+    }
   }
 
   Future<void> _showMissingDebtCustomerDialog() async {
@@ -1158,558 +895,553 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     state.paymentKind == PaymentKind.credit ||
                     state.received > 0;
             final canSubmitPayment = !_paying &&
-                !_saleQueued &&
+                (state.activeTicket.checkout != null ||
+                    cubit.markingCheckPassed) &&
                 hasItems &&
                 !markedDebtBlocked &&
                 hasSelectedPaymentMethod &&
                 hasSelectedBankAccount;
 
             Future<void> submitPayment() async {
-              if (!canSubmitPayment) return;
+              if (!canSubmitPayment || _preparingPayment) return;
+              _preparingPayment = true;
+              try {
+                final posCubit = context.read<PosCubit>();
+                final ticketId = posCubit.state.activeTicketId;
+                final auth = context.read<AuthTokenProvider>();
 
-              final posCubit = context.read<PosCubit>();
-              final auth = context.read<AuthTokenProvider>();
+                final key = auth.posKey?.trim() ?? '';
+                final deviceId = auth.deviceId?.trim() ?? '';
+                final storeId = auth.storeId?.trim() ?? '';
+                final posId = auth.posId?.trim() ?? '';
+                final userId = auth.activeUserId?.trim() ?? '';
+                final fallbackAccountId = auth.accountId?.trim() ?? '';
 
-              final key = auth.posKey?.trim() ?? '';
-              final deviceId = auth.deviceId?.trim() ?? '';
-              final storeId = auth.storeId?.trim() ?? '';
-              final posId = auth.posId?.trim() ?? '';
-              final userId = auth.activeUserId?.trim() ?? '';
-              final fallbackAccountId = auth.accountId?.trim() ?? '';
-
-              if (key.isEmpty) {
-                _showError('Не найден ключ POS');
-                return;
-              }
-              if (deviceId.isEmpty) {
-                _showError('Не найден device_id терминала');
-                return;
-              }
-              if (storeId.isEmpty) {
-                _showError('Не найден магазин терминала');
-                return;
-              }
-              if (posId.isEmpty) {
-                _showError('Не найден идентификатор POS');
-                return;
-              }
-              if (userId.isEmpty) {
-                _showError('Не выбран кассир');
-                return;
-              }
-              if (fallbackAccountId.isEmpty) {
-                _showError('Не найден наличный счёт POS');
-                return;
-              }
-              if (posCubit.state.items.isEmpty) {
-                _showError('Корзина пустая');
-                return;
-              }
-              if (isDebtSale &&
-                  posCubit.state.items
-                      .any((item) => item.product.requiresMarking)) {
-                _showError(
-                  'Маркированный товар нельзя продавать в долг. Выберите наличную или безналичную оплату.',
-                );
-                return;
-              }
-              final saleComment = _commentCtrl.text.trim();
-              if (saleComment.length > 1000) {
-                _showError('Комментарий не должен превышать 1000 символов');
-                return;
-              }
-
-              if (posCubit.state.paymentKind == PaymentKind.cash &&
-                  !_isMixedPayment &&
-                  posCubit.state.received < posCubit.total) {
-                _showError('Недостаточно наличных для оплаты');
-                return;
-              }
-              if (isDebtSale && posCubit.state.activeCustomer == null) {
-                await _showMissingDebtCustomerDialog();
-                return;
-              }
-
-              var selectedCustomer = posCubit.state.activeCustomer;
-              if (isDebtSale && selectedCustomer != null) {
-                PosCustomer debtCustomer;
-                try {
-                  final verified = await _validateDebtCustomerOnline(
-                    posKey: key,
-                    customer: selectedCustomer,
+                if (key.isEmpty) {
+                  _showError('Не найден ключ POS');
+                  return;
+                }
+                if (deviceId.isEmpty) {
+                  _showError('Не найден device_id терминала');
+                  return;
+                }
+                if (storeId.isEmpty) {
+                  _showError('Не найден магазин терминала');
+                  return;
+                }
+                if (posId.isEmpty) {
+                  _showError('Не найден идентификатор POS');
+                  return;
+                }
+                if (userId.isEmpty) {
+                  _showError('Не выбран кассир');
+                  return;
+                }
+                if (fallbackAccountId.isEmpty) {
+                  _showError('Не найден наличный счёт POS');
+                  return;
+                }
+                if (posCubit.state.items.isEmpty) {
+                  _showError('Корзина пустая');
+                  return;
+                }
+                if (isDebtSale &&
+                    posCubit.state.items
+                        .any((item) => item.product.requiresMarking)) {
+                  _showError(
+                    'Маркированный товар нельзя продавать в долг. Выберите наличную или безналичную оплату.',
                   );
-                  if (verified == null) {
+                  return;
+                }
+                final saleComment = _commentCtrl.text.trim();
+                if (saleComment.length > 1000) {
+                  _showError('Комментарий не должен превышать 1000 символов');
+                  return;
+                }
+
+                if (posCubit.state.paymentKind == PaymentKind.cash &&
+                    !_isMixedPayment &&
+                    posCubit.state.received < posCubit.total) {
+                  _showError('Недостаточно наличных для оплаты');
+                  return;
+                }
+                if (isDebtSale && posCubit.state.activeCustomer == null) {
+                  await _showMissingDebtCustomerDialog();
+                  return;
+                }
+
+                var selectedCustomer = posCubit.state.activeCustomer;
+                if (isDebtSale && selectedCustomer != null) {
+                  PosCustomer debtCustomer;
+                  try {
+                    final verified = await _validateDebtCustomerOnline(
+                      posKey: key,
+                      customer: selectedCustomer,
+                    );
+                    if (verified == null) {
+                      _showError(
+                        'Этот покупатель недоступен для текущей кассы. Выполните синхронизацию или выберите другого покупателя.',
+                      );
+                      return;
+                    }
+                    debtCustomer = verified;
+                    selectedCustomer = verified;
+                    posCubit.setCustomerForActiveTicket(verified);
+                  } catch (error, stackTrace) {
+                    developer.log(
+                      'Debt customer validation failed',
+                      name: 'PaymentPanel',
+                      error: error,
+                      stackTrace: stackTrace,
+                    );
                     _showError(
-                      'Этот покупатель недоступен для текущей кассы. Выполните синхронизацию или выберите другого покупателя.',
+                      'Не удалось проверить покупателя для продажи в долг. Проверьте интернет.',
                     );
                     return;
                   }
-                  debtCustomer = verified;
-                  selectedCustomer = verified;
-                  posCubit.setCustomerForActiveTicket(verified);
-                } catch (error, stackTrace) {
-                  developer.log(
-                    'Debt customer validation failed',
-                    name: 'PaymentPanel',
-                    error: error,
-                    stackTrace: stackTrace,
-                  );
-                  _showError(
-                    'Не удалось проверить покупателя для продажи в долг. Проверьте интернет.',
-                  );
-                  return;
+
+                  if (!debtCustomer.debtAllowed) {
+                    _showError('Клиенту запрещены продажи в долг');
+                    return;
+                  }
+                  final currentDebt = debtCustomer.balance.toDouble();
+                  final debtSalePaidNow =
+                      _parseAmount(_cashCtrl.text).clamp(0, posCubit.total);
+                  final nextDebt =
+                      currentDebt + (posCubit.total - debtSalePaidNow);
+                  final debtLimit = debtCustomer.debtLimit.toDouble();
+                  if (debtLimit > 0 && nextDebt > debtLimit) {
+                    _showError(
+                      'Лимит долга превышен: ${money(nextDebt)} из ${money(debtLimit)}',
+                    );
+                    return;
+                  }
                 }
 
-                if (!debtCustomer.debtAllowed) {
-                  _showError('Клиенту запрещены продажи в долг');
-                  return;
-                }
-                final currentDebt = debtCustomer.balance.toDouble();
-                final debtSalePaidNow =
-                    _parseAmount(_cashCtrl.text).clamp(0, posCubit.total);
-                final nextDebt =
-                    currentDebt + (posCubit.total - debtSalePaidNow);
-                final debtLimit = debtCustomer.debtLimit.toDouble();
-                if (debtLimit > 0 && nextDebt > debtLimit) {
-                  _showError(
-                    'Лимит долга превышен: ${money(nextDebt)} из ${money(debtLimit)}',
-                  );
-                  return;
-                }
-              }
+                if (!await _ensureMarkCodes(posCubit)) return;
 
-              if (!await _ensureMarkCodes(posCubit)) return;
-
-              // Capture amounts before async gap
-              final isMixed = _isMixedPayment;
-              final containsMarkedItems = posCubit.state.items
-                  .any((item) => item.product.requiresMarking);
-              final fiscalizationEnabled = auth.fiscalizationEnabled;
-              final totalAmountInt = posCubit.total.round();
-              final customPricesOk = _validateCustomSalePrices(
-                posCubit.state.items,
-                canCustomPrice: auth.allowCustomSalePrices,
-              );
-              if (!customPricesOk) return;
-
-              final saleItems = <SaleItemModel>[];
-              for (final it in posCubit.state.items) {
-                final qty = _saleQuantityForItem(it);
-                final unitPrice = it.effectiveUnitPrice;
-                final price = double.parse(unitPrice.toStringAsFixed(2));
-                final totalPrice =
-                    double.parse((unitPrice * qty).toStringAsFixed(2));
-
-                saleItems.add(
-                  SaleItemModel(
-                    productId: it.product.id,
-                    quantity: qty,
-                    price: price,
-                    totalPrice: totalPrice,
-                    id: '',
-                    saleId: '',
-                    markCodes: it.markCodes
-                        .map(Gs1DataMatrixValidator.canonicalCode)
-                        .toList(growable: false),
-                  ),
+                // Capture amounts before async gap
+                final isMixed = _isMixedPayment;
+                final fiscalizationEnabled = auth.fiscalizationEnabled;
+                final totalAmountInt = (posCubit.total * 100).round() / 100;
+                final customPricesOk = _validateCustomSalePrices(
+                  posCubit.state.items,
+                  canCustomPrice: auth.allowCustomSalePrices,
                 );
-              }
+                if (!customPricesOk) return;
 
-              final exactTotal = double.parse(
-                saleItems
-                    .fold(0.0, (s, e) => s + e.totalPrice)
-                    .toStringAsFixed(2),
-              );
-              final mixedCashAmount = double.parse(
-                _parseAmount(_cashCtrl.text)
-                    .clamp(0, exactTotal)
-                    .toStringAsFixed(2),
-              );
-              final mixedCardAmount = double.parse(
-                _parseAmount(_cardCtrl.text)
-                    .clamp(0, exactTotal)
-                    .toStringAsFixed(2),
-              );
-              if (isMixed) {
-                final mixedTotal = double.parse(
-                  (mixedCashAmount + mixedCardAmount).toStringAsFixed(2),
-                );
-                if ((mixedTotal - exactTotal).abs() > 0.01) {
-                  _showError(
-                      'Сумма наличных и безналичных должна быть равна итогу');
-                  return;
+                final saleItems = <SaleItemModel>[];
+                for (final it in posCubit.state.items) {
+                  final qty = _saleQuantityForItem(it);
+                  final unitPrice = it.effectiveUnitPrice;
+                  final price = double.parse(unitPrice.toStringAsFixed(2));
+                  final totalPrice =
+                      double.parse((unitPrice * qty).toStringAsFixed(2));
+
+                  saleItems.add(
+                    SaleItemModel(
+                      productId: it.product.id,
+                      quantity: qty,
+                      price: price,
+                      totalPrice: totalPrice,
+                      id: '',
+                      saleId: '',
+                      markCodes: List<String>.from(it.markCodes),
+                    ),
+                  );
                 }
-              }
 
-              final debtPaidNow = isDebtSale
-                  ? _parseAmount(_cashCtrl.text).clamp(0, exactTotal).round()
-                  : 0;
-              final debtAmount =
-                  isDebtSale ? (exactTotal - debtPaidNow).round() : 0;
-              final paymentMethod = isDebtSale
-                  ? 'debt'
-                  : isMixed
-                      ? mixedCashAmount <= 0
-                          ? 'card'
-                          : mixedCardAmount <= 0
-                              ? 'cash'
-                              : 'mixed'
-                      : switch (posCubit.state.paymentKind) {
-                          PaymentKind.cash => 'cash',
-                          PaymentKind.card => 'card',
-                          PaymentKind.credit => 'debt',
-                        };
-              // Only marked goods require an online fiscal receipt. Ordinary
-              // goods remain offline-capable and are queued for later sync.
-              final fiscalizationExpected =
-                  fiscalizationEnabled && containsMarkedItems && !isDebtSale;
+                final exactTotal = double.parse(
+                  saleItems
+                      .fold(0.0, (s, e) => s + e.totalPrice)
+                      .toStringAsFixed(2),
+                );
+                final mixedCashAmount = double.parse(
+                  _parseAmount(_cashCtrl.text)
+                      .clamp(0, exactTotal)
+                      .toStringAsFixed(2),
+                );
+                final mixedCardAmount = double.parse(
+                  _parseAmount(_cardCtrl.text)
+                      .clamp(0, exactTotal)
+                      .toStringAsFixed(2),
+                );
+                if (isMixed) {
+                  final mixedTotal = double.parse(
+                    (mixedCashAmount + mixedCardAmount).toStringAsFixed(2),
+                  );
+                  if ((mixedTotal - exactTotal).abs() > 0.01) {
+                    _showError(
+                        'Сумма наличных и безналичных должна быть равна итогу');
+                    return;
+                  }
+                }
 
-              final customerId = isDebtSale
-                  ? selectedCustomer?.id.trim()
-                  : posCubit.state.activeCustomer?.id.trim();
+                final debtPaidNow = isDebtSale
+                    ? _parseAmount(_cashCtrl.text).clamp(0, exactTotal).round()
+                    : 0;
+                final debtAmount =
+                    isDebtSale ? (exactTotal - debtPaidNow).round() : 0;
+                final paymentMethod = isDebtSale
+                    ? 'debt'
+                    : isMixed
+                        ? mixedCashAmount <= 0
+                            ? 'card'
+                            : mixedCardAmount <= 0
+                                ? 'cash'
+                                : 'mixed'
+                        : switch (posCubit.state.paymentKind) {
+                            PaymentKind.cash => 'cash',
+                            PaymentKind.card => 'card',
+                            PaymentKind.credit => 'debt',
+                          };
+                // The backend decides whether this registered sale needs a fiscal receipt.
+                final fiscalizationExpected =
+                    fiscalizationEnabled && !isDebtSale;
 
-              final saleLocalId = const Uuid().v4();
+                final customerId = isDebtSale
+                    ? selectedCustomer?.id.trim()
+                    : posCubit.state.activeCustomer?.id.trim();
 
-              var sale = SaleModel(
-                localId: saleLocalId,
-                number: '',
-                date: DateTime.now(),
-                totalAmount: totalAmountInt,
-                paymentMethod: paymentMethod,
-                paymentType: isDebtSale ? paymentMethod : null,
-                paidAmount: isDebtSale ? debtPaidNow : totalAmountInt,
-                debtAmount: isDebtSale ? debtAmount : 0,
-                paidPaymentMethod:
-                    isDebtSale && debtPaidNow > 0 ? 'cash' : null,
-                dueDate:
-                    isDebtSale ? _defaultDebtDueDate(DateTime.now()) : null,
-                comment: saleComment.isNotEmpty
-                    ? saleComment
-                    : isDebtSale
-                        ? 'Продажа в долг'
-                        : null,
-                idempotencyKey:
-                    '$posId-${DateTime.now().millisecondsSinceEpoch}-$saleLocalId',
-                posId: posId,
-                storeId: storeId,
-                userId: userId,
-                accountId: fallbackAccountId,
-                posSessionId: auth.shiftId?.trim(),
-                customerId: customerId,
-                items: saleItems
-                    .asMap()
-                    .entries
-                    .map(
-                      (entry) => entry.value.copyWith(
-                        product: ProductModel(
-                          id: posCubit.state.items[entry.key].product.id,
-                          name: posCubit.state.items[entry.key].product.name,
-                          measurementUnit: posCubit
-                              .state.items[entry.key].product.measurementUnit,
-                          arrivalCost: posCubit
-                              .state.items[entry.key].product.arrivalCost,
-                          sellingPrice:
-                              posCubit.state.items[entry.key].product.price,
-                          wholesalePrice: 0,
+                final saleLocalId = posCubit.ensureClientSaleId();
+
+                var sale = SaleModel(
+                  localId: saleLocalId,
+                  number: '',
+                  date: DateTime.now(),
+                  totalAmount: totalAmountInt,
+                  paymentMethod: paymentMethod,
+                  paymentType: isDebtSale ? paymentMethod : null,
+                  paidAmount: isDebtSale ? debtPaidNow : totalAmountInt,
+                  debtAmount: isDebtSale ? debtAmount : 0,
+                  paidPaymentMethod:
+                      isDebtSale && debtPaidNow > 0 ? 'cash' : null,
+                  dueDate:
+                      isDebtSale ? _defaultDebtDueDate(DateTime.now()) : null,
+                  comment: saleComment.isNotEmpty
+                      ? saleComment
+                      : isDebtSale
+                          ? 'Продажа в долг'
+                          : null,
+                  idempotencyKey:
+                      '$posId-${DateTime.now().millisecondsSinceEpoch}-$saleLocalId',
+                  posId: posId,
+                  storeId: storeId,
+                  userId: userId,
+                  accountId: fallbackAccountId,
+                  posSessionId: auth.shiftId?.trim(),
+                  customerId: customerId,
+                  items: saleItems
+                      .asMap()
+                      .entries
+                      .map(
+                        (entry) => entry.value.copyWith(
+                          product: ProductModel(
+                            id: posCubit.state.items[entry.key].product.id,
+                            name: posCubit.state.items[entry.key].product.name,
+                            measurementUnit: posCubit
+                                .state.items[entry.key].product.measurementUnit,
+                            arrivalCost: posCubit
+                                .state.items[entry.key].product.arrivalCost,
+                            sellingPrice:
+                                posCubit.state.items[entry.key].product.price,
+                            wholesalePrice: 0,
+                          ),
                         ),
-                      ),
-                    )
-                    .toList(),
-              );
-
-              // Accounts are prefetched when the payment panel opens. Avoid a
-              // synchronous SQLite read in the button's critical path.
-              final accounts = _accounts.isNotEmpty
-                  ? _accounts
-                  : await sl<PosSyncService>().loadAccounts();
-              final visibleAccounts =
-                  accounts.where((account) => account.visibleToPos).toList();
-              final cashAccount = visibleAccounts
-                  .cast<LocalAccount?>()
-                  .firstWhere((a) => a?.isCash ?? false, orElse: () => null);
-              final bankAccounts = _bankAccounts.isNotEmpty
-                  ? _bankAccounts
-                  : visibleAccounts
-                      .where((account) => account.normalizedType == 'bank')
-                      .toList(growable: false);
-              final cardAccount = _selectedBankAccount;
-
-              final needsBankAccount =
-                  paymentMethod == 'card' || paymentMethod == 'mixed';
-              if (needsBankAccount && bankAccounts.isEmpty) {
-                _showError(
-                  'Не найден банковский счет. Обновите синхронизацию POS или настройте счет типа BANK.',
+                      )
+                      .toList(),
                 );
-                return;
-              }
 
-              if (needsBankAccount &&
-                  (cardAccount?.id.trim().isEmpty ?? true)) {
-                _showError('Выберите счет безналичной оплаты');
-                return;
-              }
+                // Accounts are prefetched when the payment panel opens. Avoid a
+                // synchronous SQLite read in the button's critical path.
+                final accounts = _accounts.isNotEmpty
+                    ? _accounts
+                    : await sl<PosSyncService>().loadAccounts();
+                final visibleAccounts =
+                    accounts.where((account) => account.visibleToPos).toList();
+                final cashAccount = visibleAccounts
+                    .cast<LocalAccount?>()
+                    .firstWhere((a) => a?.isCash ?? false, orElse: () => null);
+                final bankAccounts = _bankAccounts.isNotEmpty
+                    ? _bankAccounts
+                    : visibleAccounts
+                        .where((account) => account.normalizedType == 'bank')
+                        .toList(growable: false);
+                final cardAccount = _selectedBankAccount;
 
-              Map<String, dynamic> accountJson(LocalAccount account) => {
-                    'id': account.id,
-                    'name': account.name,
-                    'type': account.type,
-                    if ((account.logoUrl ?? '').trim().isNotEmpty)
-                      'logo_url': account.logoUrl!.trim(),
-                  };
-              final posCashAccountJson = {
-                'id': fallbackAccountId,
-                'name': (cashAccount?.name.trim().isNotEmpty ?? false)
-                    ? cashAccount!.name
-                    : 'POS cash',
-                'type': cashAccount?.type ?? 'POS',
-              };
+                final needsBankAccount =
+                    paymentMethod == 'card' || paymentMethod == 'mixed';
+                if (needsBankAccount && bankAccounts.isEmpty) {
+                  _showError(
+                    'Не найден банковский счет. Обновите синхронизацию POS или настройте счет типа BANK.',
+                  );
+                  return;
+                }
 
-              sale = sale.copyWith(
-                comment: saleComment.isNotEmpty
-                    ? saleComment
-                    : isDebtSale
-                        ? 'РџСЂРѕРґР°Р¶Р° РІ РґРѕР»Рі'
-                        : null,
-              );
+                if (needsBankAccount &&
+                    (cardAccount?.id.trim().isEmpty ?? true)) {
+                  _showError('Выберите счет безналичной оплаты');
+                  return;
+                }
 
-              final List<Map<String, dynamic>> payments;
-              if (isDebtSale) {
-                payments = debtPaidNow > 0
-                    ? [
-                        {
-                          'account_id': fallbackAccountId,
-                          'amount': debtPaidNow,
-                          'client_payment_id': const Uuid().v4(),
-                          'account': posCashAccountJson,
-                        },
-                      ]
-                    : [];
-              } else if (isMixed) {
-                payments = [
-                  if (mixedCashAmount > 0)
-                    {
-                      'account_id': fallbackAccountId,
-                      'amount': mixedCashAmount,
-                      'client_payment_id': const Uuid().v4(),
-                      'account': posCashAccountJson,
-                    },
-                  if (mixedCardAmount > 0)
+                Map<String, dynamic> accountJson(LocalAccount account) => {
+                      'id': account.id,
+                      'name': account.name,
+                      'type': account.type,
+                      if ((account.logoUrl ?? '').trim().isNotEmpty)
+                        'logo_url': account.logoUrl!.trim(),
+                    };
+                final posCashAccountJson = {
+                  'id': fallbackAccountId,
+                  'name': (cashAccount?.name.trim().isNotEmpty ?? false)
+                      ? cashAccount!.name
+                      : 'POS cash',
+                  'type': cashAccount?.type ?? 'POS',
+                };
+
+                sale = sale.copyWith(
+                  comment: saleComment.isNotEmpty
+                      ? saleComment
+                      : isDebtSale
+                          ? 'РџСЂРѕРґР°Р¶Р° РІ РґРѕР»Рі'
+                          : null,
+                );
+
+                final List<Map<String, dynamic>> payments;
+                if (isDebtSale) {
+                  payments = debtPaidNow > 0
+                      ? [
+                          {
+                            'account_id': fallbackAccountId,
+                            'amount': debtPaidNow,
+                            'client_payment_id': const Uuid().v4(),
+                            'account': posCashAccountJson,
+                          },
+                        ]
+                      : [];
+                } else if (isMixed) {
+                  payments = [
+                    if (mixedCashAmount > 0)
+                      {
+                        'account_id': fallbackAccountId,
+                        'amount': mixedCashAmount,
+                        'client_payment_id': const Uuid().v4(),
+                        'account': posCashAccountJson,
+                      },
+                    if (mixedCardAmount > 0)
+                      {
+                        'account_id': cardAccount!.id,
+                        'amount': mixedCardAmount,
+                        'client_payment_id': const Uuid().v4(),
+                        'account': accountJson(cardAccount),
+                      },
+                  ];
+                } else if (paymentMethod == 'card') {
+                  payments = [
                     {
                       'account_id': cardAccount!.id,
-                      'amount': mixedCardAmount,
+                      'amount': exactTotal,
                       'client_payment_id': const Uuid().v4(),
                       'account': accountJson(cardAccount),
                     },
-                ];
-              } else if (paymentMethod == 'card') {
-                payments = [
-                  {
-                    'account_id': cardAccount!.id,
-                    'amount': exactTotal,
-                    'client_payment_id': const Uuid().v4(),
-                    'account': accountJson(cardAccount),
-                  },
-                ];
-              } else {
-                payments = [
-                  {
-                    'account_id': fallbackAccountId,
-                    'amount': exactTotal,
-                    'client_payment_id': const Uuid().v4(),
-                    'account': posCashAccountJson,
-                  },
-                ];
-              }
-
-              sale = sale.copyWith(
-                payments: payments
-                    .map((payment) => SalePaymentModel.fromJson(payment))
-                    .toList(growable: false),
-              );
-
-              final repo = GetIt.I<SaleRepository>();
-
-              setState(() {
-                _paying = true;
-                _paymentSuccess = false;
-              });
-              var saleCompleted = false;
-              try {
-                final pageFormat = auth.receiptPaperMm == 57
-                    ? PdfPageFormat.roll57
-                    : PdfPageFormat.roll80;
-                final outcome = await repo.createSale(
-                  key: key,
-                  deviceId: deviceId,
-                  sale: sale,
-                  payments: payments,
-                  requireOnline: isDebtSale ||
-                      containsMarkedItems ||
-                      fiscalizationExpected,
-                  discardOnFailure: fiscalizationExpected,
-                );
-                final result = outcome.result;
-                final printedSale = outcome.sale;
-
-                if (result == CreateSaleResult.rejected) {
-                  final message = (outcome.errorMessage ?? '').trim();
-                  final markedSale = containsMarkedItems;
-                  if (outcome.errorCode == 'MARKING_CONFLICT' && mounted) {
-                    setState(() => _markingConflictNeedsExtraCode = true);
-                  }
-                  if (markedSale && outcome.retryScheduled && mounted) {
-                    setState(() => _saleQueued = true);
-                  }
-                  developer.log(
-                    'Sale rejected. method=${sale.paymentMethod}, requireOnline=$isDebtSale, message=$message',
-                    name: 'PaymentPanel',
-                  );
-                  _showError(
-                    fiscalizationExpected
-                        ? 'Проверьте соединение с интернетом. Фискальная продажа не создана.'
-                        : markedSale && outcome.retryScheduled
-                            ? 'Продажа сохранена и будет повторена с тем же идентификатором. Повторно оплату не создавайте.'
-                            : message.isEmpty
-                                ? 'Продажа в долг не прошла. Проверьте интернет и настройки клиента.'
-                                : message,
-                  );
-                  return;
-                }
-
-                var localReceiptPrinted = false;
-                if (!mounted) return;
-                final shouldPrintLocalReceipt = auth.receiptPrintingEnabled
-                    ? await showReceiptPrintConfirmation(
-                        this.context,
-                        title: 'Распечатать чек продажи?',
-                        message:
-                            'Продажа успешно оформлена. Нужен бумажный чек?',
-                      )
-                    : false;
-                if (!mounted) return;
-                if (shouldPrintLocalReceipt) {
-                  final printedPaymentMethod =
-                      printedSale.paymentMethod.trim().toLowerCase();
-                  await _printService.print80mmSilently(
-                    () => buildReceiptPdf(
-                      ReceiptPdfData(
-                        pageFormat: pageFormat,
-                        money: money,
-                        receiptDate: printedSale.date,
-                        receiptNumber: formatPosReceiptNumber(
-                          posNumber: auth.posNumber ?? '',
-                          saleNumber: printedSale.number,
-                          fallback: printedSale.localId,
-                        ),
-                        cashierName: (auth.activeUserName ?? '').trim().isEmpty
-                            ? userId
-                            : auth.activeUserName!.trim(),
-                        storeName: (() {
-                          final name = (auth.storeName ?? '').trim();
-                          if (name.isNotEmpty) return name;
-                          final posName = (auth.posName ?? '').trim();
-                          if (posName.isNotEmpty) return posName;
-                          return 'Магазин';
-                        })(),
-                        items: posCubit.state.items
-                            .map(
-                              (it) => ReceiptPdfItem(
-                                name: it.product.name,
-                                quantity: it.qty,
-                                unitPrice: it.effectiveUnitPrice,
-                                lineTotal: it.sum,
-                                discountPercent: it.effectiveDiscountPercent,
-                              ),
-                            )
-                            .toList(),
-                        total: posCubit.total,
-                        discountSum: posCubit.discountSum,
-                        paymentMethodLabel: _normalizePaymentMethodLabel(
-                            printedSale.paymentMethod),
-                        isCashPayment: printedPaymentMethod == 'cash',
-                        received: isDebtSale
-                            ? printedSale.paidAmount
-                            : posCubit.state.received,
-                        change: isDebtSale ? 0 : posCubit.change,
-                        customerName: selectedCustomer?.name,
-                        previousDebt:
-                            isDebtSale ? selectedCustomer?.balance : null,
-                        newDebt: isDebtSale
-                            ? (selectedCustomer?.balance ?? 0) +
-                                printedSale.debtAmount
-                            : null,
-                        debtAmount: isDebtSale ? printedSale.debtAmount : null,
-                        paidNow: isDebtSale ? printedSale.paidAmount : null,
-                        documentTitle: isDebtSale ? 'ПРОДАЖА В ДОЛГ' : null,
-                      ),
-                    ),
-                    printerName: auth.receiptPrinterName,
-                  );
-                  localReceiptPrinted = true;
-                }
-
-                final fiscalService = sl<FiscalReceiptService>();
-                final fiscalReceipt = fiscalizationExpected
-                    ? fiscalService.fromSaleResponse(outcome.responseData)
-                    : null;
-                if (fiscalizationExpected && fiscalReceipt != null) {
-                  await fiscalService.save(
-                    fiscalReceipt,
-                    localReceiptPrinted: localReceiptPrinted,
-                    saleIds: {
-                      sale.localId,
-                      printedSale.localId,
-                      (outcome.responseData?['id'] ?? '').toString(),
+                  ];
+                } else {
+                  payments = [
+                    {
+                      'account_id': fallbackAccountId,
+                      'amount': exactTotal,
+                      'client_payment_id': const Uuid().v4(),
+                      'account': posCashAccountJson,
                     },
-                  );
-                  fiscalService.startBackgroundPolling(
+                  ];
+                }
+
+                sale = sale.copyWith(
+                  payments: payments
+                      .map((payment) => SalePaymentModel.fromJson(payment))
+                      .toList(growable: false),
+                );
+
+                final repo = GetIt.I<SaleRepository>();
+
+                setState(() {
+                  _paying = true;
+                  _paymentSuccess = false;
+                });
+                var saleCompleted = false;
+                try {
+                  final pageFormat = auth.receiptPaperMm == 57
+                      ? PdfPageFormat.roll57
+                      : PdfPageFormat.roll80;
+                  final outcome = await _sendConfirmedSale(
+                    repo: repo,
+                    cubit: posCubit,
                     key: key,
                     deviceId: deviceId,
-                    receipt: fiscalReceipt,
+                    sale: sale,
+                    payments: payments,
                   );
-                  if (!mounted) return;
-                  await showDialog<void>(
-                    context: this.context,
-                    barrierDismissible: false,
-                    builder: (_) => FiscalReceiptDialog(
-                      initial: fiscalReceipt,
-                      posKey: key,
-                      deviceId: deviceId,
-                      paperMm: auth.receiptPaperMm,
-                      printerName: auth.receiptPrinterName,
-                      autoPrintEnabled: auth.receiptPrintingEnabled,
-                    ),
-                  );
-                } else if (fiscalizationExpected && outcome.retryScheduled) {
-                  _showError(
-                    'Продажа сохранена локально. Фискальный чек станет доступен после синхронизации с backend.',
-                  );
-                } else if (fiscalizationExpected &&
-                    !(outcome.responseData?.containsKey('fiscal_receipt') ??
-                        false)) {
-                  _showError(
-                    'Продажа сохранена, но backend не вернул фискальный чек. Повторно продажу не создавайте — обратитесь к администратору.',
-                  );
-                }
+                  final result = outcome.result;
+                  final printedSale = outcome.sale;
+                  if (result == CreateSaleResult.rejected) {
+                    _showError(outcome.errorMessage ??
+                        'Не удалось зарегистрировать продажу. Корзина и оплата сохранены.');
+                    return;
+                  }
+                  // Registration is final even if printing or polling fails.
+                  saleCompleted = true;
+                  final fiscalService = sl<FiscalReceiptService>();
+                  final fiscalReceipt =
+                      fiscalService.fromSaleResponse(outcome.responseData);
 
-                if (!context.mounted) return;
-                saleCompleted = true;
-                lastSaleAmountNotifier.value = printedSale.totalAmount;
-                setState(() {
-                  _paying = false;
-                  _paymentSuccess = true;
-                });
-                await Future.delayed(const Duration(milliseconds: 250));
-                if (!mounted) return;
-                Navigator.of(this.context).pop();
-                _commentCtrl.clear();
-                posCubit.clearAfterPayment(closeCompletedTicket: true);
-              } catch (_) {
-                _showError('Не удалось провести оплату');
-              } finally {
-                if (mounted && !saleCompleted) {
-                  setState(() => _paying = false);
+                  var localReceiptPrinted = false;
+                  if (!mounted) return;
+                  final shouldPrintLocalReceipt = fiscalReceipt == null &&
+                          outcome.responseData?.containsKey('fiscal_receipt') ==
+                              true &&
+                          auth.receiptPrintingEnabled
+                      ? await showReceiptPrintConfirmation(
+                          this.context,
+                          title: 'Распечатать чек продажи?',
+                          message:
+                              'Продажа успешно оформлена. Нужен бумажный чек?',
+                        )
+                      : false;
+                  if (!mounted) return;
+                  if (shouldPrintLocalReceipt) {
+                    final printedPaymentMethod =
+                        printedSale.paymentMethod.trim().toLowerCase();
+                    await _printService.print80mmSilently(
+                      () => buildReceiptPdf(
+                        ReceiptPdfData(
+                          pageFormat: pageFormat,
+                          money: money,
+                          receiptDate: printedSale.date,
+                          receiptNumber: formatPosReceiptNumber(
+                            posNumber: auth.posNumber ?? '',
+                            saleNumber: printedSale.number,
+                            fallback: printedSale.localId,
+                          ),
+                          cashierName:
+                              (auth.activeUserName ?? '').trim().isEmpty
+                                  ? userId
+                                  : auth.activeUserName!.trim(),
+                          storeName: (() {
+                            final name = (auth.storeName ?? '').trim();
+                            if (name.isNotEmpty) return name;
+                            final posName = (auth.posName ?? '').trim();
+                            if (posName.isNotEmpty) return posName;
+                            return 'Магазин';
+                          })(),
+                          items: posCubit.state.items
+                              .map(
+                                (it) => ReceiptPdfItem(
+                                  name: it.product.name,
+                                  quantity: it.qty,
+                                  unitPrice: it.effectiveUnitPrice,
+                                  lineTotal: it.sum,
+                                  discountPercent: it.effectiveDiscountPercent,
+                                ),
+                              )
+                              .toList(),
+                          total: posCubit.total,
+                          discountSum: posCubit.discountSum,
+                          paymentMethodLabel: _normalizePaymentMethodLabel(
+                              printedSale.paymentMethod),
+                          isCashPayment: printedPaymentMethod == 'cash',
+                          received: isDebtSale
+                              ? printedSale.paidAmount
+                              : posCubit.state.received,
+                          change: isDebtSale ? 0 : posCubit.change,
+                          customerName: selectedCustomer?.name,
+                          previousDebt:
+                              isDebtSale ? selectedCustomer?.balance : null,
+                          newDebt: isDebtSale
+                              ? (selectedCustomer?.balance ?? 0) +
+                                  printedSale.debtAmount
+                              : null,
+                          debtAmount:
+                              isDebtSale ? printedSale.debtAmount : null,
+                          paidNow: isDebtSale ? printedSale.paidAmount : null,
+                          documentTitle: isDebtSale ? 'ПРОДАЖА В ДОЛГ' : null,
+                        ),
+                      ),
+                      printerName: auth.receiptPrinterName,
+                    );
+                    localReceiptPrinted = true;
+                  }
+
+                  if (fiscalReceipt != null) {
+                    await fiscalService.save(
+                      fiscalReceipt,
+                      localReceiptPrinted: localReceiptPrinted,
+                      saleIds: {
+                        sale.localId,
+                        printedSale.localId,
+                        (outcome.responseData?['id'] ?? '').toString(),
+                      },
+                    );
+                    fiscalService.startBackgroundPolling(
+                      key: key,
+                      deviceId: deviceId,
+                      receipt: fiscalReceipt,
+                    );
+                    if (!mounted) return;
+                    await showDialog<void>(
+                      context: this.context,
+                      barrierDismissible: false,
+                      builder: (_) => FiscalReceiptDialog(
+                        initial: fiscalReceipt,
+                        posKey: key,
+                        deviceId: deviceId,
+                        paperMm: auth.receiptPaperMm,
+                        printerName: auth.receiptPrinterName,
+                        autoPrintEnabled: auth.receiptPrintingEnabled,
+                      ),
+                    );
+                  } else if (fiscalizationExpected && outcome.retryScheduled) {
+                    _showError(
+                      'Продажа сохранена локально. Фискальный чек станет доступен после синхронизации с backend.',
+                    );
+                  } else if (fiscalizationExpected &&
+                      !(outcome.responseData?.containsKey('fiscal_receipt') ??
+                          false)) {
+                    _showError(
+                      'Продажа сохранена, но backend не вернул фискальный чек. Повторно продажу не создавайте — обратитесь к администратору.',
+                    );
+                  }
+
+                  if (!context.mounted) return;
+                  saleCompleted = true;
+                  lastSaleAmountNotifier.value = printedSale.totalAmount;
+                  setState(() {
+                    _paying = false;
+                    _paymentSuccess = true;
+                  });
+                  await Future.delayed(const Duration(milliseconds: 250));
+                  if (!mounted) return;
+                  _commentCtrl.clear();
+                  posCubit.completeCheckout(ticketId);
+                  await posCubit.flushPendingState();
+                  if (mounted) Navigator.of(this.context).pop();
+                } catch (_) {
+                  _showError(saleCompleted
+                      ? 'Продажа зарегистрирована. Чек доступен в истории продаж.'
+                      : 'Не удалось получить результат оплаты. Исходный запрос сохранён.');
+                } finally {
+                  if (saleCompleted &&
+                      posCubit.state.tickets
+                          .any((t) => t.id == ticketId && t.checkout != null)) {
+                    posCubit.completeCheckout(ticketId);
+                    await posCubit.flushPendingState();
+                    if (mounted) Navigator.of(this.context).pop();
+                  }
+                  if (mounted && !saleCompleted) {
+                    setState(() => _paying = false);
+                  }
                 }
+              } finally {
+                _preparingPayment = false;
               }
             }
 

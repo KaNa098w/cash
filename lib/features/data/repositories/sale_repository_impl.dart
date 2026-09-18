@@ -31,7 +31,10 @@ class SaleRepositoryImpl implements SaleRepository {
       );
 
       final localNumber = queueResult.payload['local_number']?.toString() ?? '';
-      final printedSale = sale.copyWith(number: localNumber);
+      final response = queueResult.responseData;
+      final printedSale = response != null && response['id'] != null
+          ? SaleModel.fromApiJson(response)
+          : sale.copyWith(number: localNumber);
 
       return CreateSaleOutcome(
         result: requireOnline
@@ -44,6 +47,8 @@ class SaleRepositoryImpl implements SaleRepository {
         sale: printedSale,
         errorMessage: queueResult.errorMessage,
         errorCode: queueResult.errorCode,
+        errorContext: queueResult.errorContext,
+        fieldErrors: queueResult.fieldErrors,
         responseData: queueResult.responseData,
         retryScheduled:
             !discardOnFailure && queueResult.result == QueueSendResult.queued,

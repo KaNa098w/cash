@@ -63,6 +63,10 @@ class _RefundMarkCodeDialogState extends State<_RefundMarkCodeDialog> {
     if (event is! KeyDownEvent || !_focusNode.hasFocus) {
       return KeyEventResult.ignored;
     }
+    if (HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isControlPressed) {
+      return KeyEventResult.ignored;
+    }
     if (event.physicalKey == PhysicalKeyboardKey.enter ||
         event.physicalKey == PhysicalKeyboardKey.numpadEnter) {
       _submit();
@@ -101,11 +105,7 @@ class _RefundMarkCodeDialogState extends State<_RefundMarkCodeDialog> {
       _reject('Код маркировки пустой или слишком длинный.');
       return;
     }
-    final expectedGtin = (widget.item.markingGtin ?? '').trim().isNotEmpty
-        ? widget.item.markingGtin
-        : (widget.item.markingNtin ?? '').trim().isNotEmpty
-            ? widget.item.markingNtin
-            : null;
+    final expectedGtin = widget.item.markingGtin;
     final validation = Gs1DataMatrixValidator.validate(
       rawCode,
       expectedGtin: expectedGtin,

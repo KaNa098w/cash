@@ -56,8 +56,6 @@ class _SearchBarState extends State<SearchBar> {
   bool _showClearSearchButton = false;
   bool _creatingMissingProduct = false;
   bool _submittedSearchInProgress = false;
-  String? _lastAcceptedMarkCode;
-  DateTime? _lastAcceptedMarkCodeAt;
   List<ProductModel> _chooserProducts = const [];
   int _chooserSelectedIndex = 0;
   final _chooserScrollController = ScrollController();
@@ -481,6 +479,14 @@ class _SearchBarState extends State<SearchBar> {
     _scheduleHardwareScanReset();
   }
 
+  bool _canStartHardwareScan(String first, String second) {
+    // Product barcodes and GS1/DataMatrix payloads start with digits. Requiring
+    // two leading digits keeps rapid Russian/Kazakh typing in the TextField:
+    // its physical keys also have US letters, so timing alone cannot tell a
+    // cashier from a HID scanner.
+    return RegExp(r'^\d$').hasMatch(first) && RegExp(r'^\d$').hasMatch(second);
+  }
+
   void _backspaceSearchText() {
     final value = _controller.value;
     final selection = value.selection;
@@ -540,6 +546,10 @@ class _SearchBarState extends State<SearchBar> {
       return KeyEventResult.ignored;
     }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isControlPressed) {
+      return KeyEventResult.ignored;
+    }
 
     final physicalDigit = _digitFromPhysicalKey(event.physicalKey);
     final scannerCharacter =
@@ -568,7 +578,9 @@ class _SearchBarState extends State<SearchBar> {
         return KeyEventResult.handled;
       }
 
-      if (isRapidContinuation && _pendingHardwareDigit != null) {
+      if (isRapidContinuation &&
+          _pendingHardwareDigit != null &&
+          _canStartHardwareScan(_pendingHardwareDigit!, scannedCharacter)) {
         _startHardwareScan();
         // The first two fast characters identify a hardware scanner. Replace
         // the whole search value so a barcode is never appended to a name or
@@ -706,96 +718,18 @@ class _SearchBarState extends State<SearchBar> {
     String rawCode,
     List<ProductModel> products,
   ) async {
-    final normalizedCode = MarkingKeyboardInputFormatter.normalize(rawCode);
-    final scannedGtin = Gs1DataMatrixValidator.gtin(normalizedCode);
-    if (scannedGtin == null) return false;
-
-    final candidateCanonical =
-        Gs1DataMatrixValidator.canonicalCode(normalizedCode);
-    final lastAcceptedAt = _lastAcceptedMarkCodeAt;
-    if (candidateCanonical.isNotEmpty &&
-        candidateCanonical == _lastAcceptedMarkCode &&
-        lastAcceptedAt != null &&
-        DateTime.now().difference(lastAcceptedAt) <
-            const Duration(milliseconds: 1200)) {
-      // Some HID scanners emit Enter through more than one Flutter input
-      // path. Silently consume the duplicate event from the same scan.
-      _controller.clear();
-      _restoreSearchFocus();
-      return true;
+    // Marking belongs to the product selected by its barcode. GTIN validation
+    // and GS1 parsing are performed exclusively by marking-check on the server.
+    if (!(rawCode.startsWith(']d2') ||
+        rawCode.startsWith('(01)') ||
+        rawCode.contains('\x1D') ||
+        (rawCode.startsWith('01') && rawCode.length > 20))) {
+      return false;
     }
-
-    _scanDebounce?.cancel();
-    _typingDebounce?.cancel();
-    _missingProductDebounce?.cancel();
-    _removeChooser();
-    _closeKeyboard();
-
-    final indexedProduct =
-        context.read<ProductsCubit>().findByGtin(scannedGtin);
-    final matches = indexedProduct == null
-        ? const <ProductModel>[]
-        : <ProductModel>[indexedProduct];
-
-    if (matches.isEmpty) {
-      _controller.clear();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Товар с таким кодом маркировки не найден'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        _restoreSearchFocus();
-      }
-      return true;
-    }
-
-    final product = matches.first;
-    final validation = Gs1DataMatrixValidator.validate(
-      normalizedCode,
-      expectedGtin:
-          (product.gtin ?? '').trim().isNotEmpty ? product.gtin : product.ntin,
-    );
-    if (!validation.isValid) {
-      _controller.clear();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(validation.message ?? 'Код маркировки не распознан'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        _restoreSearchFocus();
-      }
-      return true;
-    }
-
-    final canonicalCode = validation.canonical!;
-    final posCubit = context.read<PosCubit>();
-    final alreadyScanned =
-        posCubit.state.items.expand((item) => item.markCodes).any(
-              (code) =>
-                  Gs1DataMatrixValidator.canonicalCode(code) == canonicalCode,
-            );
-    if (alreadyScanned) {
-      _controller.clear();
-      await showDuplicateMarkCodeDialog(context);
-      return true;
-    }
-
-    final added = await _runWithDialogFocus(
-      () => addMarkedProductToCart(
-        context,
-        product,
-        initialMarkCode: canonicalCode,
-      ),
-      restoreFocus: false,
-    );
-    if (!mounted || added != true) return true;
-    _lastAcceptedMarkCode = canonicalCode;
-    _lastAcceptedMarkCodeAt = DateTime.now();
-    _finishSuccessfulProductAdd();
+    _controller.clear();
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content:
+            Text('Сначала сканируйте штрихкод товара и введите количество')));
     return true;
   }
 
@@ -1385,7 +1319,7 @@ class _SearchBarState extends State<SearchBar> {
         ),
         SizedBox(width: customerGapWidth),
         const Spacer(),
-        ValueListenableBuilder<int?>(
+        ValueListenableBuilder<num?>(
           valueListenable: lastSaleAmountNotifier,
           builder: (context, lastSaleAmount, _) {
             final amountLabel = _loadingLastSale

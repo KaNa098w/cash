@@ -1,10 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:get_it/get_it.dart';
 
 import 'package:leemon_app/core/models/sale_model.dart';
-import 'package:leemon_app/features/data/datasources/refunds_remote_datasource.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/models/refund_pick.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/utils/formatters.dart';
 
@@ -161,6 +159,7 @@ class SalesHistoryController {
         refundedQuantity: refundedQty,
         price: toNum(item.price),
         originalMarkCodes: List<String>.from(item.markCodes),
+        markingParts: item.markingParts,
         previouslyReturnedMarkCodes:
             List<String>.from(previouslyReturnedMarkCodes),
       ),
@@ -290,32 +289,8 @@ class SalesHistoryController {
   }) {
     _refundPutDebounce?.cancel();
 
-    _refundPutDebounce = Timer(const Duration(milliseconds: 600), () async {
-      if (isRefundLoading(saleId)) return;
-
-      setRefundLoading(saleId, true, notifyLoading);
-      try {
-        final refundsRemote = GetIt.I<RefundsRemoteDatasource>();
-
-        await refundsRemote.updateRefundV2(
-          key: key,
-          refundId: refundId,
-          saleId: saleId,
-          customerId: sale.customerId,
-          totalAmount: totalAmount,
-          items: items.cast<RefundItemPayload>(),
-          date: DateTime.now(),
-          returnAccessKey: returnAccessKey,
-          userId: userId,
-        );
-
-        toast('Возврат обновлён');
-      } catch (e) {
-        toast('Ошибка обновления возврата: $e');
-      } finally {
-        setRefundLoading(saleId, false, notifyLoading);
-      }
-    });
+    toast(
+        'Зарегистрированный возврат нельзя изменять. Оформите отдельный возврат.');
   }
 
   void dispose() {

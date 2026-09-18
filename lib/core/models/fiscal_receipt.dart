@@ -12,6 +12,7 @@ class FiscalReceipt {
     this.lastErrorCodes = const <int>[],
     this.provider,
     this.operation,
+    this.checkNumber,
   });
 
   final String id;
@@ -26,6 +27,7 @@ class FiscalReceipt {
   final List<int> lastErrorCodes;
   final String? provider;
   final String? operation;
+  final String? checkNumber;
 
   bool get isPending => status == 'pending' || status == 'processing';
   bool get canPrint => status == 'succeeded' && printable;
@@ -54,7 +56,7 @@ class FiscalReceipt {
       status: (json['status'] ?? 'pending').toString().toLowerCase(),
       printable: asBool(json['printable']),
       ticketPrintUrl: json['ticket_print_url']?.toString(),
-      pollAfterSeconds: (poll ?? 2).clamp(1, 30),
+      pollAfterSeconds: poll != null && poll > 0 ? poll : 2,
       errorMessage:
           (json['last_error'] ?? json['error_message'] ?? json['message'])
               ?.toString(),
@@ -68,6 +70,7 @@ class FiscalReceipt {
           const <int>[],
       provider: json['provider']?.toString(),
       operation: json['operation']?.toString(),
+      checkNumber: json['check_number']?.toString(),
     );
   }
 
@@ -84,5 +87,6 @@ class FiscalReceipt {
         'last_error_codes': lastErrorCodes,
         'provider': provider,
         'operation': operation,
+        'check_number': checkNumber,
       };
 }

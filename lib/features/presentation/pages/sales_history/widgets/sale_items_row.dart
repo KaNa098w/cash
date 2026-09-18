@@ -104,7 +104,7 @@ class SaleItemRow extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          'Кодов: ${pick?.markCodes.length ?? 0} / $qty',
+                          'Кодов упаковок: ${pick?.markCodes.length ?? 0}',
                           style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,

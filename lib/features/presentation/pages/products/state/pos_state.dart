@@ -2,6 +2,8 @@ part of 'pos_cubit.dart';
 
 class PosTicket extends Equatable {
   final int id;
+  final String? clientSaleId;
+  final Map<String, dynamic>? checkout;
   final List<CartItem> items;
 
   // ✅ выбранный покупатель для этого чека
@@ -9,6 +11,8 @@ class PosTicket extends Equatable {
 
   const PosTicket({
     required this.id,
+    this.clientSaleId,
+    this.checkout,
     this.items = const [],
     this.customer,
   });
@@ -24,6 +28,10 @@ class PosTicket extends Equatable {
     final customerRaw = json['customer'];
     return PosTicket(
       id: (json['id'] as num?)?.toInt() ?? 1,
+      clientSaleId: json['clientSaleId']?.toString(),
+      checkout: json['checkout'] is Map
+          ? Map<String, dynamic>.from(json['checkout'])
+          : null,
       items: items,
       customer: customerRaw is Map
           ? PosCustomer.fromJson(Map<String, dynamic>.from(customerRaw))
@@ -35,9 +43,14 @@ class PosTicket extends Equatable {
     List<CartItem>? items,
     PosCustomer? customer,
     bool clearCustomer = false,
+    String? clientSaleId,
+    Map<String, dynamic>? checkout,
+    bool clearCheckout = false,
   }) {
     return PosTicket(
       id: id,
+      clientSaleId: clientSaleId ?? this.clientSaleId,
+      checkout: clearCheckout ? null : (checkout ?? this.checkout),
       items: items ?? this.items,
       customer: clearCustomer ? null : (customer ?? this.customer),
     );
@@ -45,12 +58,14 @@ class PosTicket extends Equatable {
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        'clientSaleId': clientSaleId,
+        'checkout': checkout,
         'items': items.map((e) => e.toJson()).toList(growable: false),
         'customer': customer?.toJson(),
       };
 
   @override
-  List<Object?> get props => [id, items, customer];
+  List<Object?> get props => [id, items, customer, clientSaleId, checkout];
 }
 
 class PosState extends Equatable {

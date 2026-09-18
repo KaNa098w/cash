@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'marking_cart_observer.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -23,12 +24,12 @@ class FooterStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
+    return MarkingCartObserver(child: LayoutBuilder(
       builder: (context, c) {
         if (c.maxWidth < _mobileBp) return const SizedBox.shrink();
         return const _FooterDesktop();
       },
-    );
+    ));
   }
 }
 
@@ -227,6 +228,12 @@ class _FooterDesktop extends StatelessWidget {
                               }
 
                               return FooterControlsOnly(
+                                paymentLabel:
+                                    cubit.state.activeTicket.checkout != null
+                                        ? 'Продолжить'
+                                        : cubit.markingCheckPassed
+                                            ? 'Оплатить'
+                                            : 'Проверить',
                                 smallAmountText: money(beforeDiscount),
                                 bigAmountText: money(total),
                                 onMinus: () async {
@@ -326,6 +333,14 @@ class _FooterDesktop extends StatelessWidget {
                                   }
                                 },
                                 onCancel: () async {
+                                  if (cubit.state.activeTicket.checkout !=
+                                      null) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                            content: Text(
+                                                'Оплата уже отправлена. Сначала выполните сверку через повтор оплаты.')));
+                                    return;
+                                  }
                                   final ok = await _confirmClearCart(context);
                                   if (ok) cubit.clearAfterPayment();
                                 },
@@ -373,6 +388,12 @@ class _FooterDesktop extends StatelessWidget {
   }
 
   Future<void> _showPaymentPanelCenter(BuildContext context) async {
+    final cubit = context.read<PosCubit>();
+    if (cubit.state.activeTicket.checkout == null &&
+        !await ensureCartMarkingReady(context)) {
+      return;
+    }
+    if (!context.mounted) return;
     await showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,

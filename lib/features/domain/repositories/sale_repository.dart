@@ -9,6 +9,8 @@ class CreateSaleOutcome {
     required this.sale,
     this.errorMessage,
     this.errorCode,
+    this.errorContext = const {},
+    this.fieldErrors = const {},
     this.responseData,
     this.retryScheduled = false,
   });
@@ -17,6 +19,8 @@ class CreateSaleOutcome {
   final SaleModel sale;
   final String? errorMessage;
   final String? errorCode;
+  final Map<String, dynamic> errorContext;
+  final Map<String, List<String>> fieldErrors;
   final Map<String, dynamic>? responseData;
   final bool retryScheduled;
 }

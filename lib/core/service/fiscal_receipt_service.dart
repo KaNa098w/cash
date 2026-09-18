@@ -152,16 +152,20 @@ class FiscalReceiptService {
     required String key,
     required String deviceId,
     required int paperMm,
+    int? paperKind,
     String? printerName,
   }) async {
     if (!receipt.canPrint) {
       throw StateError('Фискальный чек ещё не готов к печати');
     }
+    if (paperKind != null && !const {0, 3, 12, 13}.contains(paperKind)) {
+      throw ArgumentError.value(paperKind, 'paperKind');
+    }
     final response = await _dio.get<dynamic>(
       '/organizations/pos/$key/fiscal-receipts/${receipt.id}/print-format',
       queryParameters: {
         'device_id': deviceId,
-        'paper_kind': paperMm == 80 ? 0 : 3,
+        'paper_kind': paperKind ?? (paperMm == 80 ? 0 : 3),
       },
     );
     final body = response.data is Map
@@ -176,10 +180,10 @@ class FiscalReceiptService {
     }
 
     final lines = rawLines
-        .whereType<Map>()
-        .map((line) => Map<String, dynamic>.from(line))
-        .toList(growable: false)
-      ..sort((a, b) => _lineInt(a, 'Order').compareTo(_lineInt(b, 'Order')));
+        .map((line) => line is Map
+            ? Map<String, dynamic>.from(line)
+            : <String, dynamic>{'Type': 0, 'Value': line.toString()})
+        .toList(growable: false);
     final regularFont = await PdfGoogleFonts.robotoRegular();
     final boldFont = await PdfGoogleFonts.robotoBold();
     final widgets = <pw.Widget>[];
