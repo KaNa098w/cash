@@ -91,8 +91,8 @@ class _FiscalReceiptDialogState extends State<FiscalReceiptDialog> {
 
   void _schedulePoll() {
     _timer?.cancel();
-    if (!_receipt.isPending) return;
-    _timer = Timer(Duration(seconds: _receipt.pollAfterSeconds), _poll);
+    if (!_receipt.isPending || _receipt.pollAfterSeconds == null) return;
+    _timer = Timer(Duration(seconds: _receipt.pollAfterSeconds!), _poll);
   }
 
   Future<void> _poll() async {
@@ -883,9 +883,6 @@ class _PaymentPanelState extends State<PaymentPanel> {
             final change = cubit.change.clamp(0, double.infinity);
             final hasItems = state.items.isNotEmpty;
             final isDebtSale = state.paymentKind == PaymentKind.credit;
-            final hasMarkedItems =
-                state.items.any((item) => item.product.requiresMarking);
-            final markedDebtBlocked = isDebtSale && hasMarkedItems;
             final requiresBankAccount =
                 state.paymentKind == PaymentKind.card || _isMixedPayment;
             final hasSelectedBankAccount =
@@ -898,7 +895,6 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 (state.activeTicket.checkout != null ||
                     cubit.markingCheckPassed) &&
                 hasItems &&
-                !markedDebtBlocked &&
                 hasSelectedPaymentMethod &&
                 hasSelectedBankAccount;
 
@@ -937,20 +933,13 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   _showError('Не выбран кассир');
                   return;
                 }
-                if (fallbackAccountId.isEmpty) {
+                if (fallbackAccountId.isEmpty &&
+                    (!isDebtSale || _parseAmount(_cashCtrl.text) > 0)) {
                   _showError('Не найден наличный счёт POS');
                   return;
                 }
                 if (posCubit.state.items.isEmpty) {
                   _showError('Корзина пустая');
-                  return;
-                }
-                if (isDebtSale &&
-                    posCubit.state.items
-                        .any((item) => item.product.requiresMarking)) {
-                  _showError(
-                    'Маркированный товар нельзя продавать в долг. Выберите наличную или безналичную оплату.',
-                  );
                   return;
                 }
                 final saleComment = _commentCtrl.text.trim();
@@ -1296,7 +1285,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
                   var localReceiptPrinted = false;
                   if (!mounted) return;
-                  final shouldPrintLocalReceipt = fiscalReceipt == null &&
+                  final shouldPrintLocalReceipt = !isDebtSale &&
+                          fiscalReceipt == null &&
                           outcome.responseData?.containsKey('fiscal_receipt') ==
                               true &&
                           auth.receiptPrintingEnabled
@@ -1399,6 +1389,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
                         autoPrintEnabled: auth.receiptPrintingEnabled,
                       ),
                     );
+                  } else if (isDebtSale) {
+                    _showError(
+                        'Продажа в долг. Фискальный чек будет сформирован после полного погашения.');
                   } else if (fiscalizationExpected && outcome.retryScheduled) {
                     _showError(
                       'Продажа сохранена локально. Фискальный чек станет доступен после синхронизации с backend.',
@@ -1986,12 +1979,6 @@ class _PaymentPanelState extends State<PaymentPanel> {
                             text: 'В ДОЛГ',
                             onTap: hasItems
                                 ? () {
-                                    if (hasMarkedItems) {
-                                      _showError(
-                                        'Маркированный товар нельзя продавать в долг',
-                                      );
-                                      return;
-                                    }
                                     setState(() {
                                       _isMixedPayment = false;
                                       _mixedActiveIsCard = false;

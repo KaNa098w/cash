@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../datasources/customers_remote_datasource.dart';
 import 'package:leemon_app/core/models/refund_inventory_action.dart';
 import 'dart:async';
 
@@ -30,6 +31,9 @@ class PosSyncService {
   final _uuid = const Uuid();
 
   static const int _maxRetryCount = 50;
+
+  final Map<String, Timer> _debtReceiptTimers = {};
+  bool _disposed = false;
 
   Timer? _pullTimer;
   Timer? _pushTimer;
@@ -67,6 +71,11 @@ class PosSyncService {
   }
 
   Future<void> dispose() async {
+    _disposed = true;
+    for (final timer in _debtReceiptTimers.values) {
+      timer.cancel();
+    }
+    _debtReceiptTimers.clear();
     _pullTimer?.cancel();
     _pushTimer?.cancel();
     await _syncedController.close();
@@ -803,6 +812,94 @@ class PosSyncService {
     return result;
   }
 
+  Future<QueueOperationResult> settleCustomerDebt({
+    required String key,
+    required String deviceId,
+    required String customerId,
+    required String accountId,
+    required num amount,
+    required String userId,
+    String? posSessionId,
+  }) async {
+    if (customerId.trim().isEmpty ||
+        userId.trim().isEmpty ||
+        key.trim().isEmpty) {
+      throw ArgumentError('Не указан покупатель, кассир или POS');
+    }
+    if (!amount.isFinite ||
+        amount < 0.01 ||
+        (amount * 100 - (amount * 100).round()).abs() > 0.000001) {
+      throw ArgumentError(
+          'Сумма должна быть от 0.01, не более двух знаков после запятой');
+    }
+    final accounts = await loadAccounts();
+    if (!accounts
+        .any((a) => a.id == accountId && (a.isCash || a.isBankOrPos))) {
+      throw ArgumentError('Выберите наличный, POS или банковский счёт');
+    }
+    final clientId = '$deviceId-settlement-${_uuid.v4()}';
+    return _queueAndTrySend(
+      key: key,
+      deviceId: deviceId,
+      type: OutboxOperationType.settlement,
+      clientId: clientId,
+      payload: {
+        'customer_id': customerId,
+        'account_id': accountId,
+        'amount': amount,
+        'date': _formatDate(DateTime.now()),
+        'user_id': userId,
+        'client_settlement_id': clientId,
+        if ((posSessionId ?? '').trim().isNotEmpty)
+          'pos_session_id': posSessionId,
+        'note': 'Погашение долга через POS',
+      },
+    );
+  }
+
+  /// Discover receipts even when a fully paid customer leaves the debt list.
+  /// Receipt discovery is bounded; receipt status polling follows backend hints.
+  Future<void> refreshCustomerDebtSales({
+    required String key,
+    required String deviceId,
+    required String customerId,
+    int attemptsLeft = 15,
+  }) async {
+    if (_disposed) return;
+    _debtReceiptTimers.remove(customerId)?.cancel();
+    var retry = true;
+    try {
+      final sales =
+          await _remote.fetchCustomerSales(key: key, customerId: customerId);
+      if (_disposed) return;
+      await upsertSalesHistory(sales);
+      final debtSales = sales.where((s) => s.isDebtSale);
+      retry = debtSales.any((s) => s.fiscalReceipt == null);
+      for (final sale in debtSales) {
+        final receipt = sale.fiscalReceipt;
+        final service = _fiscalReceiptService;
+        if (receipt == null || service == null) continue;
+        await service.save(receipt, saleIds: {
+          sale.localId,
+          if (sale.clientSaleId != null) sale.clientSaleId!
+        });
+        service.startBackgroundPolling(
+            key: key, deviceId: deviceId, receipt: receipt);
+      }
+    } catch (_) {
+      // A successful settlement must not be retried because a GET failed.
+    }
+    if (!_disposed && retry && attemptsLeft > 1) {
+      _debtReceiptTimers[customerId] = Timer(const Duration(seconds: 2), () {
+        unawaited(refreshCustomerDebtSales(
+            key: key,
+            deviceId: deviceId,
+            customerId: customerId,
+            attemptsLeft: attemptsLeft - 1));
+      });
+    }
+  }
+
   final Map<String, Future<QueueOperationResult>> _saleRequests = {};
 
   Future<QueueOperationResult> createSale({
@@ -837,6 +934,10 @@ class PosSyncService {
     bool requireOnline = false,
     bool discardOnFailure = false,
   }) async {
+    if (sale.paymentMethod.trim().toLowerCase() == 'debt' &&
+        (sale.customerId ?? '').trim().isEmpty) {
+      throw ArgumentError('Для продажи в долг требуется покупатель');
+    }
     final localPosSessionId = sale.posSessionId?.trim() ?? '';
     final previous =
         await _localStore.findOperation(OutboxOperationType.sale, sale.localId);
@@ -1904,6 +2005,37 @@ class PosSyncService {
     required String key,
     required String deviceId,
   }) async {
+    if (record.type == OutboxOperationType.settlement) {
+      final customerId = record.payload['customer_id'].toString();
+      final rawAgent = responseData?['agent'];
+      if (rawAgent is! Map ||
+          num.tryParse('${rawAgent['debt_balance']}') == null) {
+        throw const FormatException('Сервер не вернул баланс покупателя');
+      }
+      final customers = await _localStore.loadCustomers();
+      final previous = customers.where((c) => c.id == customerId).firstOrNull;
+      final agent = CustomerDto.fromJson({
+        ...?previous?.rawJson,
+        ...Map<String, dynamic>.from(rawAgent),
+        'id': customerId,
+        'balance': rawAgent['debt_balance'],
+        'debt_state': num.parse('${rawAgent['debt_balance']}') > 0
+            ? 'debt'
+            : num.parse('${rawAgent['debt_balance']}') < 0
+                ? 'advance'
+                : 'settled',
+      });
+      await _localStore.upsertCustomersRaw([agent.toJson()]);
+      await _localStore.saveAcceptedOperation(record.type, {
+        ...?responseData,
+        'client_settlement_id': record.clientId,
+        'agent': agent.toJson(),
+      });
+      _notifyDebtsChanged();
+      unawaited(refreshCustomerDebtSales(
+          key: key, deviceId: deviceId, customerId: customerId));
+      return;
+    }
     if ((record.type == OutboxOperationType.sale ||
             record.type == OutboxOperationType.refund) &&
         responseData != null &&
@@ -1985,6 +2117,7 @@ class PosSyncService {
         return;
       case OutboxOperationType.sale:
       case OutboxOperationType.payment:
+      case OutboxOperationType.settlement:
       case OutboxOperationType.refund:
         final currentSessionId =
             (payload['pos_session_id'] ?? '').toString().trim();
@@ -2032,6 +2165,7 @@ class PosSyncService {
     OutboxOperationRecord record,
   ) async {
     switch (record.type) {
+      case OutboxOperationType.settlement:
       case OutboxOperationType.productCreate:
         return;
       case OutboxOperationType.sale:
@@ -2070,6 +2204,8 @@ class PosSyncService {
   String _queueRecordTitle(OutboxOperationRecord record) {
     final payload = record.payload;
     return switch (record.type) {
+      OutboxOperationType.settlement =>
+        'Погашение долга ${payload['amount'] ?? record.clientId}',
       OutboxOperationType.productCreate =>
         'Товар ${payload['name'] ?? payload['barcode'] ?? record.clientId}',
       OutboxOperationType.sale =>

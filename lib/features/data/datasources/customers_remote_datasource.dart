@@ -32,7 +32,7 @@ class CustomerDto {
       phone: phone,
       balance: _readNum(
         json,
-        const ['balance', 'debt_balance', 'current_debt', 'current_balance'],
+        const ['debt_balance', 'balance', 'current_debt', 'current_balance'],
       ),
       debtBalance: _readNum(
         json,
@@ -345,7 +345,9 @@ class CustomersRemoteDataSource {
     if (safeUserId.isEmpty) {
       throw ArgumentError.value(userId, 'userId', 'User is required');
     }
-    if (amount <= 0) {
+    if (!amount.isFinite ||
+        amount < 0.01 ||
+        (amount * 100 - (amount * 100).round()).abs() > 0.000001) {
       throw ArgumentError.value(amount, 'amount', 'Amount must be positive');
     }
 
@@ -365,7 +367,11 @@ class CustomersRemoteDataSource {
     );
 
     final payload = _extractDataMap(resp.data, op: 'settleDebt');
-    return CustomerSettlementDto.fromJson(payload);
+    final agent = payload['agent'];
+    return CustomerSettlementDto.fromJson({
+      ...payload,
+      if (agent is Map) 'agent': {'id': safeCustomerId, ...agent},
+    });
   }
 
   Future<List<CustomerSettlementHistoryDto>> listDebtSettlements({

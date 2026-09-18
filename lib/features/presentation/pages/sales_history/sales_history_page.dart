@@ -17,6 +17,7 @@ import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/core/service/fiscal_receipt_service.dart';
 import 'package:leemon_app/features/data/datasources/refunds_remote_datasource.dart';
+import 'package:leemon_app/features/data/datasources/sale_remote_datesource.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart'
     show LocalAccount, LocalSession, QueueOperationResult, QueueSendResult;
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
@@ -364,7 +365,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     final fiscal = sale.fiscalReceipt ??
         await GetIt.I<FiscalReceiptService>().findBySaleId(sale.localId);
     if (!mounted) return;
-    if (fiscal != null) {
+    if (fiscal != null || sale.isDebtSale) {
       await _printFiscalSaleReceipt(sale);
       return;
     }
@@ -443,38 +444,58 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   Future<void> _printFiscalSaleReceipt(SaleModel sale) async {
     final saleKey = _salePrintKey(sale);
     if (_controller.isReceiptPrintDisabled(saleKey)) return;
-    final shouldPrint = await showReceiptPrintConfirmation(
-      context,
-      title: 'Распечатать фискальный чек?',
-      message: 'Отправить фискальный чек этой продажи на принтер?',
-    );
-    if (!mounted || !shouldPrint) return;
     _controller.setReceiptPrintLoading(saleKey, true, _notifyPrintStateChanged);
     final auth = context.read<AuthTokenProvider>();
     try {
       final service = GetIt.I<FiscalReceiptService>();
-      var receipt =
-          sale.fiscalReceipt ?? await service.findBySaleId(sale.localId);
-      if (receipt == null) {
-        throw StateError('Для этой продажи не найден фискальный чек Webkassa');
-      }
       final posKey = (auth.posKey ?? '').trim();
       final deviceId = (auth.deviceId ?? '').trim();
       if (posKey.isEmpty || deviceId.isEmpty) {
         throw StateError('Не найдены данные подключения кассы');
       }
-      if (receipt.isPending) {
-        receipt = await service.refresh(
+      var receipt =
+          await service.findBySaleId(sale.localId) ?? sale.fiscalReceipt;
+      if (receipt == null) {
+        final updated = await sl<SaleRemoteDataSource>().fetchSaleById(
           key: posKey,
-          deviceId: deviceId,
-          receiptId: receipt.id,
+          saleId: sale.localId,
         );
+        await sl<PosSyncService>().upsertSalesHistory([updated]);
+        receipt = updated.fiscalReceipt;
+        if (receipt != null) {
+          await service.save(receipt, saleIds: {sale.localId});
+        }
       }
+      if (receipt == null) {
+        throw StateError(sale.isDebtSale
+            ? 'Продажа в долг. Фискальный чек будет сформирован после полного погашения.'
+            : 'Для этой продажи не найден фискальный чек Webkassa');
+      }
+      receipt = await service.refresh(
+        key: posKey,
+        deviceId: deviceId,
+        receiptId: receipt.id,
+      );
+      if (!mounted) return;
       if (!receipt.canPrint) {
-        throw StateError(
-          receipt.errorMessage ?? 'Фискальный чек ещё не готов к печати',
-        );
+        await showDialog<void>(
+            context: context,
+            builder: (_) => FiscalReceiptDialog(
+                  initial: receipt!,
+                  posKey: posKey,
+                  deviceId: deviceId,
+                  paperMm: auth.receiptPaperMm,
+                  printerName: auth.receiptPrinterName,
+                  autoPrintEnabled: false,
+                ));
+        return;
       }
+      final shouldPrint = await showReceiptPrintConfirmation(
+        context,
+        title: 'Распечатать фискальный чек?',
+        message: 'Отправить фискальный чек этой продажи на принтер?',
+      );
+      if (!mounted || !shouldPrint) return;
       await service.printTicket(
         receipt,
         key: posKey,
@@ -892,6 +913,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     // Build payments[] based on the original sale's payment method
     final salePaymentMethod = sale.paymentMethod.trim().toLowerCase();
     final refundPaymentMethod = switch (salePaymentMethod) {
+      'debt' || 'partial_debt' || 'credit' => 'debt',
       'card' => 'card',
       'mixed' => 'mixed',
       _ => 'cash',
@@ -936,7 +958,9 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 
     final refundClientId = 'refund_${DateTime.now().microsecondsSinceEpoch}';
     final List<Map<String, dynamic>> refundPayments;
-    if (refundPaymentMethod == 'mixed') {
+    if (sale.isDebtSale) {
+      refundPayments = const [];
+    } else if (refundPaymentMethod == 'mixed') {
       final half = totalAmount ~/ 2;
       refundPayments = [
         {

@@ -4,6 +4,8 @@ import 'package:leemon_app/core/di/utils/dio_error_utils.dart';
 import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
 
 import 'pos_sync_models.dart';
+import '../datasources/sale_remote_datesource.dart';
+import '../../../core/models/sale_model.dart';
 
 class PosSyncRemoteDataSource {
   PosSyncRemoteDataSource(this._dio, {PosDiagnosticsService? diagnostics})
@@ -195,12 +197,27 @@ class PosSyncRemoteDataSource {
     );
   }
 
+  Future<List<SaleModel>> fetchCustomerSales({
+    required String key,
+    required String customerId,
+  }) =>
+      SaleRemoteDataSource(_dio)
+          .getAllSales(key: key, customerId: customerId, perPage: 100);
+
   Future<Map<String, dynamic>?> sendOperation({
     required OutboxOperationType type,
     required String key,
     required Map<String, dynamic> payload,
   }) async {
     switch (type) {
+      case OutboxOperationType.settlement:
+        final body = Map<String, dynamic>.from(payload);
+        final customerId = body.remove('customer_id');
+        return _extractResponseData(await _dio.post(
+          '/organizations/pos/$key/customers/$customerId/settlements',
+          data: body,
+          options: _silentOptions,
+        ));
       case OutboxOperationType.productCreate:
         return _extractResponseData(
           await _dio.post(

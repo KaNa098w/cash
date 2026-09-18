@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:uuid/uuid.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
@@ -43,6 +43,7 @@ class _DebtsPageState extends State<DebtsPage> {
   String? _salesError;
   String? _settlementsError;
   StreamSubscription<void>? _debtsChangedSub;
+  StreamSubscription<void>? _salesChangedSub;
   final _customersScrollController = ScrollController();
   final _salesScrollController = ScrollController();
 
@@ -60,12 +61,19 @@ class _DebtsPageState extends State<DebtsPage> {
       _customerDataRevision += 1;
       unawaited(_loadDebts(refreshOnline: false));
     });
+    _salesChangedSub = _sync.onSalesHistoryChanged.listen((_) {
+      final customer = _selectedItem;
+      if (mounted && customer != null) {
+        unawaited(_loadCustomerSalesLocal(customer));
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadDebts());
   }
 
   @override
   void dispose() {
     _debtsChangedSub?.cancel();
+    _salesChangedSub?.cancel();
     _customersScrollController.dispose();
     _salesScrollController.dispose();
     super.dispose();
@@ -223,13 +231,14 @@ class _DebtsPageState extends State<DebtsPage> {
 
     try {
       final sales = await _sync.loadAllSalesHistory();
-      final unpaidSales = sales
+      final debtSales = sales
           .where((sale) =>
-              sale.customerId == customer.id && sale.documentUnpaidAmount > 0)
+              sale.customerId == customer.id &&
+              (sale.isDebtSale || sale.documentUnpaidAmount > 0))
           .toList(growable: false);
       if (!mounted || _selectedItem?.id != customer.id) return;
       setState(() {
-        _customerSales = unpaidSales;
+        _customerSales = debtSales;
         _salesLoading = false;
       });
     } catch (e) {
@@ -258,12 +267,12 @@ class _DebtsPageState extends State<DebtsPage> {
         customerId: customer.id,
       );
       await _sync.upsertSalesHistory(sales);
-      final unpaidSales = sales
-          .where((sale) => sale.documentUnpaidAmount > 0)
+      final debtSales = sales
+          .where((sale) => sale.isDebtSale || sale.documentUnpaidAmount > 0)
           .toList(growable: false);
       if (!mounted || _selectedItem?.id != customer.id) return;
       setState(() {
-        _customerSales = unpaidSales;
+        _customerSales = debtSales;
         _salesLoading = false;
       });
     } catch (e) {
@@ -328,7 +337,30 @@ class _DebtsPageState extends State<DebtsPage> {
     final key = auth.posKey?.trim() ?? '';
     final userId = auth.activeUserId?.trim() ?? '';
     final deviceId = auth.deviceId?.trim() ?? 'pos';
-    final accountId = auth.accountId?.trim() ?? '';
+    final accounts = (await _sync.loadAccounts())
+        .where((a) => a.visibleToPos && (a.isCash || a.isBankOrPos))
+        .toList();
+    if (!mounted) return;
+    final accountId = accounts.length == 1
+        ? accounts.single.id
+        : await showDialog<String>(
+            context: context,
+            builder: (dialogContext) => SimpleDialog(
+                  title: const Text('Счёт погашения'),
+                  children: [
+                    for (final account in accounts)
+                      SimpleDialogOption(
+                          onPressed: () =>
+                              Navigator.pop(dialogContext, account.id),
+                          child: Text(account.name)),
+                    if (accounts.isEmpty)
+                      const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text(
+                              'Нет доступных наличных, POS или банковских счетов')),
+                  ],
+                ));
+    if (!mounted || accountId == null) return;
     if (key.isEmpty || userId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Не найдены данные кассы или кассира')),
@@ -349,59 +381,40 @@ class _DebtsPageState extends State<DebtsPage> {
       _customerDataRevision += 1;
     });
     try {
-      final localSessionId = auth.shiftId?.trim() ?? '';
-      final resolvedSessionId = localSessionId.isEmpty
-          ? ''
-          : await _sync.resolveServerSessionId(localSessionId);
-      final posSessionId =
-          resolvedSessionId.startsWith('session_') ? null : resolvedSessionId;
-
-      final settlement = await _customersDs.settleDebt(
+      final result = await _sync.settleCustomerDebt(
         key: key,
+        deviceId: deviceId,
         customerId: selected.id,
         accountId: accountId,
         amount: amount,
-        date: DateTime.now(),
         userId: userId,
-        posSessionId: posSessionId,
-        clientSettlementId: '$deviceId-settlement-${const Uuid().v4()}',
-        note: 'Погашение долга через POS',
+        posSessionId: auth.shiftId,
       );
-      await _sync.upsertCustomersRaw([settlement.agent.toJson()]);
+      if (!mounted) return;
+      if (result.result != QueueSendResult.sent) {
+        setState(() => _settling = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+          result.result == QueueSendResult.queued
+              ? 'Погашение сохранено и ожидает синхронизации. Не вводите платёж повторно.'
+              : '${result.errorMessage ?? "Погашение требует проверки"}. Проверьте операцию в очереди синхронизации.',
+        )));
+        return;
+      }
+      // The sync service already persisted the authoritative balance, including advances.
+      final local =
+          (await _sync.loadCustomers()).firstWhere((c) => c.id == selected.id);
+      final updated = CustomerDto.fromJson(local.rawJson);
 
       if (!mounted) return;
-      setState(() {
-        final nextItems = List<CustomerDto>.from(_items);
-        final removed = settlement.agent.debtBalance == 0;
-        if (removed) {
-          nextItems.removeAt(index);
-        } else {
-          nextItems[index] = settlement.agent;
-        }
-        nextItems
-            .sort((a, b) => b.debtBalance.abs().compareTo(a.debtBalance.abs()));
-        _items = nextItems;
-        _selectedIndex = nextItems.isEmpty
-            ? null
-            : removed
-                ? index.clamp(0, nextItems.length - 1).toInt()
-                : nextItems.indexWhere(
-                    (item) => item.id == settlement.agent.id,
-                  );
-        _settling = false;
-      });
-      final nextSelected = _selectedItem;
-      if (nextSelected != null) {
-        await _loadCustomerSales(nextSelected);
-        unawaited(_loadCustomerSettlements(nextSelected));
-      }
+      setState(() => _settling = false);
       await _loadDebts(refreshOnline: true);
       if (!mounted) return;
       await _showSettlementSuccessDialog(
         context,
-        customerName: settlement.agent.name,
+        customerName: updated.name,
         paidAmount: amount,
-        remainingDebt: settlement.agent.debtBalance,
+        remainingDebt: updated.debtBalance,
       );
     } catch (e) {
       if (!mounted) return;
@@ -1244,7 +1257,7 @@ class _DebtActionPanel extends StatelessWidget {
             else if (sales.isEmpty)
               const _MiniState(
                 icon: Icons.receipt_long_rounded,
-                text: 'Неоплаченных продаж не найдено',
+                text: 'Долговых продаж не найдено',
               )
             else
               for (var index = 0; index < sales.length; index++) ...[
@@ -1384,6 +1397,9 @@ class _DebtSaleRow extends StatelessWidget {
                     color: const Color(0xFF111827),
                   ),
                 ),
+                if (sale.debtFiscalStatus != null)
+                  Text(sale.debtFiscalStatus!,
+                      style: const TextStyle(fontSize: 11)),
                 const SizedBox(height: 3),
                 Text(
                   _formatDate(sale.date),
@@ -1757,8 +1773,9 @@ Future<num?> _showDebtAmountDialog(
       return StatefulBuilder(
         builder: (context, setState) {
           final amount = parseAmount();
-          final exceedsLimit = maxAmount != null && amount > maxAmount;
-          final valid = amount > 0 && !exceedsLimit;
+          final valid = amount.isFinite &&
+              amount >= 0.01 &&
+              (amount * 100 - (amount * 100).round()).abs() < 0.000001;
           return Dialog(
             backgroundColor: Colors.transparent,
             insetPadding:
@@ -1812,8 +1829,8 @@ Future<num?> _showDebtAmountDialog(
                         onChanged: (_) => setState(() {}),
                         decoration: InputDecoration(
                           hintText: 'Введите сумму',
-                          errorText: exceedsLimit
-                              ? 'Сумма больше текущего долга'
+                          errorText: controller.text.isNotEmpty && !valid
+                              ? 'Минимум 0.01, не более двух знаков после запятой'
                               : null,
                           hintStyle: GoogleFonts.inter(
                             fontWeight: FontWeight.w700,
@@ -1994,8 +2011,12 @@ Future<void> _showSettlementSuccessDialog(
                   ),
                   const SizedBox(height: 10),
                   _SettlementResultRow(
-                    label: settled ? 'Остаток закрыт' : 'Осталось',
-                    value: settled ? '0тг' : _formatMoney(remainingDebt),
+                    label: remainingDebt < 0
+                        ? 'Аванс'
+                        : settled
+                            ? 'Остаток закрыт'
+                            : 'Осталось',
+                    value: _formatMoney(remainingDebt.abs()),
                     color: settled
                         ? const Color(0xFF0F766E)
                         : const Color(0xFFB7791F),

@@ -119,7 +119,7 @@ class SaleRemoteDataSource {
     if (sid.isEmpty) throw Exception('fetchSaleById: saleId is empty');
 
     final resp = await _dio.get(
-      '/organizations/pos/sales/$sid',
+      '/organizations/pos/$safeKey/sales/$sid',
       queryParameters: {
         'include': 'refund.items,payments.account',
       },

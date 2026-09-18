@@ -311,6 +311,10 @@ class SaleCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        if (sale.debtFiscalStatus != null) ...[
+                          Text(sale.debtFiscalStatus!),
+                          const SizedBox(height: 12),
+                        ],
                         SaleItemsBox(
                           items: sale.items,
                           picks: picks,
@@ -358,7 +362,9 @@ class SaleCard extends StatelessWidget {
                           if (showFiscalPrint) ...[
                             const SizedBox(height: 12),
                             BottomActionButton(
-                              label: 'Фискальный чек',
+                              label: sale.fiscalReceipt?.canPrint == true
+                                  ? 'Фискальный чек'
+                                  : 'Статус чека',
                               width: actionWidth,
                               fontSize: 16,
                               bg: actionBlueMuted,
@@ -406,7 +412,9 @@ class SaleCard extends StatelessWidget {
                               if (showFiscalPrint) ...[
                                 const SizedBox(width: 12),
                                 BottomActionButton(
-                                  label: 'Фискальный чек',
+                                  label: sale.fiscalReceipt?.canPrint == true
+                                      ? 'Фискальный чек'
+                                      : 'Статус чека',
                                   width: printBtnWidth,
                                   fontSize: 16,
                                   bg: actionBlueMuted,

@@ -4,6 +4,24 @@ import 'package:leemon_app/core/models/fiscal_receipt.dart';
 import 'package:leemon_app/features/presentation/widgets/payment_panel.dart';
 
 void main() {
+  testWidgets(
+      'pending receipt with null poll hint does not poll or offer printing',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+        home: Scaffold(
+            body: FiscalReceiptDialog(
+      initial: FiscalReceipt(
+          id: 'R', status: 'pending', printable: false, pollAfterSeconds: null),
+      posKey: 'KEY',
+      deviceId: 'DEVICE',
+      paperMm: 80,
+    ))));
+    await tester.pump(const Duration(seconds: 10));
+    expect(tester.takeException(), isNull);
+    expect(find.text('Распечатать фискальный чек?'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('declining fiscal receipt printing closes the dialog',
       (tester) async {
     var dialogClosed = false;

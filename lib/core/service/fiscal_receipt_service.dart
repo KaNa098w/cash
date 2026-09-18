@@ -52,9 +52,9 @@ class FiscalReceiptService {
     required FiscalReceipt receipt,
   }) {
     _pollTimers.remove(receipt.id)?.cancel();
-    if (!receipt.isPending) return;
+    if (!receipt.isPending || receipt.pollAfterSeconds == null) return;
     _pollTimers[receipt.id] = Timer(
-      Duration(seconds: receipt.pollAfterSeconds),
+      Duration(seconds: receipt.pollAfterSeconds!),
       () async {
         try {
           final updated = await refresh(

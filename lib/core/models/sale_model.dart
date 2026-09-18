@@ -3,6 +3,26 @@ import 'refund_model.dart';
 import 'fiscal_receipt.dart';
 
 class SaleModel {
+  bool get isDebtSale => const {'debt', 'partial_debt', 'credit'}
+      .contains(paymentMethod.trim().toLowerCase());
+
+  String? get debtFiscalStatus {
+    if (!isDebtSale) return null;
+    final receipt = fiscalReceipt;
+    if (receipt == null) {
+      return 'Продажа в долг. Фискальный чек будет сформирован после полного погашения.';
+    }
+    return switch (receipt.status) {
+      'succeeded' => 'Фискальный чек сформирован',
+      'pending' || 'processing' => 'Фискальный чек формируется',
+      'needs_review' =>
+        '${receipt.errorMessage ?? "Требуется сверка"}. Проверьте Webkassa.',
+      'failed' => receipt.errorMessage ??
+          'Ошибка фискализации. Backend выполнит повторные попытки.',
+      _ => 'Статус чека: ${receipt.status}',
+    };
+  }
+
   final String localId; // id продажи
   final String? clientSaleId;
   final bool completed;

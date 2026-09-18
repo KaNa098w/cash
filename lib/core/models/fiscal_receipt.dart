@@ -19,7 +19,7 @@ class FiscalReceipt {
   final String status;
   final bool printable;
   final String? ticketPrintUrl;
-  final int pollAfterSeconds;
+  final int? pollAfterSeconds;
   final String? errorMessage;
   final String? ticketUrl;
   final bool offlineMode;
@@ -42,6 +42,9 @@ class FiscalReceipt {
     if (lastErrorCodes.contains(10)) {
       return 'Лицензия кассы неактивна. Обратитесь к администратору для добавления лицензии.';
     }
+    if (status == 'needs_review') {
+      return 'Проверьте чек в Webkassa. Требуется сверка; автоматический повтор запрещён.';
+    }
     return null;
   }
 
@@ -56,7 +59,9 @@ class FiscalReceipt {
       status: (json['status'] ?? 'pending').toString().toLowerCase(),
       printable: asBool(json['printable']),
       ticketPrintUrl: json['ticket_print_url']?.toString(),
-      pollAfterSeconds: poll != null && poll > 0 ? poll : 2,
+      pollAfterSeconds: json.containsKey('poll_after_seconds')
+          ? (poll != null && poll > 0 ? poll : null)
+          : 2,
       errorMessage:
           (json['last_error'] ?? json['error_message'] ?? json['message'])
               ?.toString(),

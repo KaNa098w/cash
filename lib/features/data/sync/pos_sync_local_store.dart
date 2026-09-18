@@ -946,7 +946,9 @@ class PosSyncLocalStore {
     final clientId = _string(
         response[type == OutboxOperationType.sale
             ? 'client_sale_id'
-            : 'client_refund_id'],
+            : type == OutboxOperationType.settlement
+                ? 'client_settlement_id'
+                : 'client_refund_id'],
         fallback: _string(response['id']));
     if (clientId.isEmpty) return;
     db.execute(
@@ -1404,7 +1406,8 @@ class PosSyncLocalStore {
           OutboxOperationType.sale;
       final clientId = _string(row['client_id']);
       if ((type == OutboxOperationType.sale ||
-              type == OutboxOperationType.refund) &&
+              type == OutboxOperationType.refund ||
+              type == OutboxOperationType.settlement) &&
           (row['status'] == 'acked' ||
               row['status'] == 'sending' ||
               !const {
@@ -1520,6 +1523,7 @@ class PosSyncLocalStore {
               clientId,
             ],
           );
+        case OutboxOperationType.settlement:
         case OutboxOperationType.sessionOpen:
         case OutboxOperationType.sessionClose:
           break;
@@ -1547,7 +1551,8 @@ class PosSyncLocalStore {
           OutboxOperationType.sale;
       final clientId = _string(row['client_id']);
       if ((type == OutboxOperationType.sale ||
-              type == OutboxOperationType.refund) &&
+              type == OutboxOperationType.refund ||
+              type == OutboxOperationType.settlement) &&
           (row['status'] == 'acked' ||
               row['status'] == 'sending' ||
               !const {
@@ -1598,6 +1603,7 @@ class PosSyncLocalStore {
             'DELETE FROM refunds WHERE client_refund_id = ? AND synced = 0',
             [clientId],
           );
+        case OutboxOperationType.settlement:
         case OutboxOperationType.sessionOpen:
         case OutboxOperationType.sessionClose:
           break;
@@ -2591,7 +2597,8 @@ class PosSyncLocalStore {
         final type = OutboxOperationTypeX.fromValue(_string(row['type'])) ??
             OutboxOperationType.sale;
         if (type == OutboxOperationType.sale ||
-            type == OutboxOperationType.refund) {
+            type == OutboxOperationType.refund ||
+            type == OutboxOperationType.settlement) {
           continue;
         }
         final payload =
@@ -2705,6 +2712,7 @@ class PosSyncLocalStore {
                 ) ||
                 changed;
             break;
+          case OutboxOperationType.settlement:
           case OutboxOperationType.sessionOpen:
             break;
         }
@@ -3410,6 +3418,8 @@ class PosSyncLocalStore {
             OutboxOperationType.sale;
     final payload = decodeJsonMap((row['payload_json'] ?? '{}').toString());
     final title = switch (type) {
+      OutboxOperationType.settlement =>
+        'Погашение долга ${payload['amount'] ?? ''}',
       OutboxOperationType.productCreate =>
         'Товар ${payload['name'] ?? payload['barcode'] ?? row['client_id']}',
       OutboxOperationType.sale =>

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 enum OutboxOperationType {
+  settlement,
   productCreate,
   sale,
   payment,
@@ -11,6 +12,7 @@ enum OutboxOperationType {
 
 extension OutboxOperationTypeX on OutboxOperationType {
   String get value => switch (this) {
+        OutboxOperationType.settlement => 'settlement',
         OutboxOperationType.productCreate => 'product_create',
         OutboxOperationType.sale => 'sale',
         OutboxOperationType.payment => 'payment',
@@ -20,6 +22,7 @@ extension OutboxOperationTypeX on OutboxOperationType {
       };
 
   String get label => switch (this) {
+        OutboxOperationType.settlement => 'Погашение долга',
         OutboxOperationType.productCreate => 'Создание товара',
         OutboxOperationType.sale => 'Продажа',
         OutboxOperationType.payment => 'Платеж',

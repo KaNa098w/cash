@@ -2627,6 +2627,11 @@ Future<bool?> _showEditableQueueItemDetailsDialog(
                       : 'Ошибка отправки, нужна ручная проверка',
                 null => 'Запись не удалось взять в отправку',
               };
+              if (currentDetails.type == OutboxOperationType.sale &&
+                  result?.result == QueueSendResult.manual) {
+                actionMessage =
+                    '$actionMessage\nЕсли продажа уже погашена, оформите возврат вместо изменения продажи.';
+              }
             });
           }
 
