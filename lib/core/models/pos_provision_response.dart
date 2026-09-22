@@ -138,6 +138,7 @@ class PosFiscalizationConfig {
   const PosFiscalizationConfig({
     required this.enabled,
     this.provider,
+    this.markedProductsOnly = false,
     this.asynchronous = true,
     this.printLocalReceiptImmediately = true,
     this.pollIntervalSeconds = 2,
@@ -148,6 +149,7 @@ class PosFiscalizationConfig {
   const PosFiscalizationConfig.disabled()
       : enabled = false,
         provider = null,
+        markedProductsOnly = false,
         asynchronous = true,
         printLocalReceiptImmediately = true,
         pollIntervalSeconds = 2,
@@ -156,6 +158,7 @@ class PosFiscalizationConfig {
 
   final bool enabled;
   final String? provider;
+  final bool markedProductsOnly;
   final bool asynchronous;
   final bool printLocalReceiptImmediately;
   final int pollIntervalSeconds;
@@ -181,6 +184,7 @@ class PosFiscalizationConfig {
     return PosFiscalizationConfig(
       enabled: boolValue('enabled'),
       provider: json['provider']?.toString(),
+      markedProductsOnly: boolValue('marked_products_only'),
       asynchronous: boolValue('asynchronous', fallback: true),
       printLocalReceiptImmediately:
           boolValue('print_local_receipt_immediately', fallback: true),

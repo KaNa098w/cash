@@ -1,3 +1,4 @@
+import 'package:leemon_app/core/models/fiscalization_mode.dart';
 import 'dart:convert';
 import '../datasources/customers_remote_datasource.dart';
 import 'package:leemon_app/core/models/refund_inventory_action.dart';
@@ -60,6 +61,25 @@ class PosSyncService {
       _salesHistoryChangedController.stream;
 
   Stream<void> get onDebtsChanged => _debtsChangedController.stream;
+
+  /// Checks registration without submitting another sale.
+  Future<bool> isSaleRegistered({
+    required String clientSaleId,
+    required String key,
+    required String deviceId,
+  }) async {
+    if (clientSaleId.trim().isEmpty) return false;
+    Future<bool> accepted() async {
+      final response = await _localStore.acceptedOperation(
+          OutboxOperationType.sale, clientSaleId);
+      return (response?['id'] ?? '').toString().trim().isNotEmpty;
+    }
+
+    if (await accepted()) return true;
+    await pullOnce(
+        key: key, deviceId: deviceId, refreshPosInfoAfterPull: false);
+    return accepted();
+  }
 
   Future<void> initialize() => _localStore.initialize();
 
@@ -985,6 +1005,10 @@ class PosSyncService {
       'device_id': deviceId,
       'app_version': AppBuildInfo.appVersion,
       'client_sale_id': sale.localId,
+      'fiscalization_mode': previous?.payload['fiscalization_mode'] ??
+          fiscalizationModeToJson(
+              sale.fiscalizationMode ?? FiscalizationMode.fiscal),
+      if (sendInBackground && !requireOnline) '_local_background_sale': true,
       'local_number': localNumber,
       if (localPosSessionId.isNotEmpty) 'pos_session_id': localPosSessionId,
       'date': _formatDate(sale.date),
@@ -1812,11 +1836,13 @@ class PosSyncService {
       }
       payloadForSend = await _preparePayloadForSend(record);
       await _localStore.saveClaimedPayload(record.id, payloadForSend);
+      final requestPayload = Map<String, dynamic>.from(payloadForSend)
+        ..remove('_local_background_sale');
       final responseData = await _remote.sendOperation(
         type: record.type,
         key: key,
         payload: {
-          ...payloadForSend,
+          ...requestPayload,
           'device_id': payloadForSend['device_id'] ?? deviceId,
         },
       );
@@ -1931,12 +1957,59 @@ class PosSyncService {
         );
       }
 
+      // A first, explicit validation rejection proves this request was not
+      // registered. Never change a mode after a timeout or idempotency conflict.
+      if (record.type == OutboxOperationType.sale &&
+          response is Map &&
+          response['status_code'] == 422 &&
+          errors.containsKey('fiscalization_mode') &&
+          payloadForSend['fiscalization_mode'] == 'skip' &&
+          record.retryCount == 0 &&
+          record.lastErrorCode != 'NETWORK_RECONCILIATION_REQUIRED' &&
+          record.lastErrorCode != 'IDEMPOTENCY_CONFLICT') {
+        final corrected = {...payloadForSend, 'fiscalization_mode': 'fiscal'};
+        await _localStore.saveClaimedPayload(record.id, corrected);
+        return _sendClaimedRecord(
+            key: key,
+            deviceId: deviceId,
+            record: OutboxOperationRecord(
+              id: record.id,
+              type: record.type,
+              clientId: record.clientId,
+              relatedClientId: record.relatedClientId,
+              payload: corrected,
+              status: record.status,
+              retryCount: record.retryCount,
+              createdAt: record.createdAt,
+              updatedAt: record.updatedAt,
+              lastErrorCode: record.lastErrorCode,
+              lastErrorMessage: record.lastErrorMessage,
+            ));
+      }
+
       if (_remote.isRetryable(error) &&
           (record.type == OutboxOperationType.sale ||
               record.type == OutboxOperationType.refund)) {
         const code = 'NETWORK_RECONCILIATION_REQUIRED';
         const message =
             'Ответ сервера не получен. Операция сохранена. Повтор выполнит сверку с сервером с тем же идентификатором.';
+        if (record.type == OutboxOperationType.sale &&
+            record.payload['_local_background_sale'] == true) {
+          await _localStore.markOperationPending(
+              operationId: record.id,
+              errorCode: code,
+              errorMessage: message,
+              payload: payloadForSend,
+              errorDetails: errorDetails);
+          return QueueOperationResult(
+              operationId: record.id,
+              result: QueueSendResult.queued,
+              type: record.type,
+              clientId: record.clientId,
+              payload: payloadForSend,
+              errorCode: code,
+              errorMessage: message);
+        }
         await _localStore.markOperationManual(
             operationId: record.id,
             errorCode: code,
@@ -2064,11 +2137,14 @@ class PosSyncService {
             (record.payload['client_sale_id'] ?? '').toString(),
           },
         );
-        fiscalService.startBackgroundPolling(
-          key: key,
-          deviceId: deviceId,
-          receipt: fiscalReceipt,
-        );
+        if (record.type == OutboxOperationType.sale &&
+            record.payload['_local_background_sale'] == true) {
+          fiscalService.trackBackgroundReceipt(
+              key: key, deviceId: deviceId, receipt: fiscalReceipt);
+        } else {
+          fiscalService.startBackgroundPolling(
+              key: key, deviceId: deviceId, receipt: fiscalReceipt);
+        }
       }
     }
     if (record.type == OutboxOperationType.productCreate) {

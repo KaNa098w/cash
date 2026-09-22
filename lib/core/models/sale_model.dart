@@ -1,3 +1,4 @@
+import 'fiscalization_mode.dart';
 // lib/core/models/sale_model.dart
 import 'refund_model.dart';
 import 'fiscal_receipt.dart';
@@ -7,7 +8,7 @@ class SaleModel {
       .contains(paymentMethod.trim().toLowerCase());
 
   String? get debtFiscalStatus {
-    if (!isDebtSale) return null;
+    if (!isDebtSale || fiscalizationMode == FiscalizationMode.skip) return null;
     final receipt = fiscalReceipt;
     if (receipt == null) {
       return 'Продажа в долг. Фискальный чек будет сформирован после полного погашения.';
@@ -31,6 +32,7 @@ class SaleModel {
 
   final num totalAmount;
   final String paymentMethod;
+  final FiscalizationMode? fiscalizationMode;
   final String? paymentType;
   final num paidAmount;
   final int debtAmount;
@@ -64,6 +66,7 @@ class SaleModel {
     required this.date,
     required this.totalAmount,
     required this.paymentMethod,
+    this.fiscalizationMode = FiscalizationMode.fiscal,
     this.paymentType,
     this.paidAmount = 0,
     this.debtAmount = 0,
@@ -92,6 +95,7 @@ class SaleModel {
     DateTime? date,
     num? totalAmount,
     String? paymentMethod,
+    FiscalizationMode? fiscalizationMode,
     String? paymentType,
     num? paidAmount,
     int? debtAmount,
@@ -119,6 +123,7 @@ class SaleModel {
       date: date ?? this.date,
       totalAmount: totalAmount ?? this.totalAmount,
       paymentMethod: paymentMethod ?? this.paymentMethod,
+      fiscalizationMode: fiscalizationMode ?? this.fiscalizationMode,
       paymentType: paymentType ?? this.paymentType,
       paidAmount: paidAmount ?? this.paidAmount,
       debtAmount: debtAmount ?? this.debtAmount,
@@ -149,6 +154,8 @@ class SaleModel {
       "date": _formatDate(date),
       "total_amount": exactTotal.toStringAsFixed(2),
       "payment_method": paymentMethod,
+      if (fiscalizationMode != null)
+        "fiscalization_mode": fiscalizationModeToJson(fiscalizationMode!),
       if ((paymentType ?? '').trim().isNotEmpty) "payment_type": paymentType,
       if (paidAmount > 0) "paid_amount": paidAmount,
       if (debtAmount > 0) "debt_amount": debtAmount,
@@ -202,6 +209,7 @@ class SaleModel {
       date: _parseApiDate(json["date"]),
       totalAmount: _toDouble(json["total_amount"]),
       paymentMethod: (json["payment_method"] ?? "cash").toString(),
+      fiscalizationMode: fiscalizationModeFromJson(json["fiscalization_mode"]),
       paymentType: json["payment_type"]?.toString(),
       paidAmount: _toDouble(json["paid_amount"]),
       debtAmount: _toIntMoney(json["debt_amount"]),
@@ -236,6 +244,7 @@ class SaleModel {
       "date": date.toIso8601String(),
       "totalAmount": totalAmount,
       "paymentMethod": paymentMethod,
+      "fiscalizationMode": fiscalizationMode?.name,
       "paymentType": paymentType,
       "paidAmount": paidAmount,
       "debtAmount": debtAmount,
@@ -287,6 +296,8 @@ class SaleModel {
           DateTime.tryParse((json["date"] ?? "").toString()) ?? DateTime.now(),
       totalAmount: _toDouble(json["totalAmount"]),
       paymentMethod: (json["paymentMethod"] ?? "cash").toString(),
+      fiscalizationMode: fiscalizationModeFromJson(
+          json["fiscalizationMode"] ?? json["fiscalization_mode"]),
       paymentType: json["paymentType"]?.toString(),
       paidAmount: _toDouble(json["paidAmount"]),
       debtAmount: _toInt(json["debtAmount"]),

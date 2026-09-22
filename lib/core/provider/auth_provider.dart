@@ -23,6 +23,7 @@ class AuthTokenProvider extends ChangeNotifier {
   static const _kAllowBelowCostSalePrices = 'allowBelowCostSalePrices';
   static const _kAllowRefundsWithoutSale = 'allowRefundsWithoutSale';
   static const _kFiscalizationEnabled = 'fiscalizationEnabled';
+  static const _kFiscalizationMarkedOnly = 'fiscalizationMarkedProductsOnly';
   static const _kFiscalizationPollSeconds = 'fiscalizationPollSeconds';
   static const _kPrintLocalReceiptImmediately = 'printLocalReceiptImmediately';
   static const _kOrganizationId = 'organizationId';
@@ -79,6 +80,8 @@ class AuthTokenProvider extends ChangeNotifier {
   bool get allowRefundsWithoutSale => _allowRefundsWithoutSale;
   bool _fiscalizationEnabled = false;
   bool get fiscalizationEnabled => _fiscalizationEnabled;
+  bool _fiscalizationMarkedProductsOnly = false;
+  bool get fiscalizationMarkedProductsOnly => _fiscalizationMarkedProductsOnly;
   int _fiscalizationPollSeconds = 2;
   int get fiscalizationPollSeconds => _fiscalizationPollSeconds;
   bool _printLocalReceiptImmediately = true;
@@ -156,6 +159,7 @@ class AuthTokenProvider extends ChangeNotifier {
       allowRefundsWithoutSale: _allowRefundsWithoutSale,
       fiscalization: PosFiscalizationConfig(
         enabled: _fiscalizationEnabled,
+        markedProductsOnly: _fiscalizationMarkedProductsOnly,
         pollIntervalSeconds: _fiscalizationPollSeconds,
         printLocalReceiptImmediately: _printLocalReceiptImmediately,
       ),
@@ -221,6 +225,8 @@ class AuthTokenProvider extends ChangeNotifier {
     _allowRefundsWithoutSale =
         prefs.getBool(_kAllowRefundsWithoutSale) ?? false;
     _fiscalizationEnabled = prefs.getBool(_kFiscalizationEnabled) ?? false;
+    _fiscalizationMarkedProductsOnly =
+        prefs.getBool(_kFiscalizationMarkedOnly) ?? false;
     _fiscalizationPollSeconds =
         (prefs.getInt(_kFiscalizationPollSeconds) ?? 2).clamp(1, 30);
     _printLocalReceiptImmediately =
@@ -315,6 +321,7 @@ class AuthTokenProvider extends ChangeNotifier {
     _allowBelowCostSalePrices = resp.allowBelowCostSalePrices;
     _allowRefundsWithoutSale = resp.allowRefundsWithoutSale;
     _fiscalizationEnabled = resp.fiscalization.enabled;
+    _fiscalizationMarkedProductsOnly = resp.fiscalization.markedProductsOnly;
     _fiscalizationPollSeconds = resp.fiscalization.pollIntervalSeconds;
     _printLocalReceiptImmediately =
         resp.fiscalization.printLocalReceiptImmediately;
@@ -350,6 +357,8 @@ class AuthTokenProvider extends ChangeNotifier {
     );
     await prefs.setBool(_kAllowRefundsWithoutSale, _allowRefundsWithoutSale);
     await prefs.setBool(_kFiscalizationEnabled, _fiscalizationEnabled);
+    await prefs.setBool(
+        _kFiscalizationMarkedOnly, _fiscalizationMarkedProductsOnly);
     await prefs.setInt(
       _kFiscalizationPollSeconds,
       _fiscalizationPollSeconds,
@@ -376,6 +385,7 @@ class AuthTokenProvider extends ChangeNotifier {
     _allowBelowCostSalePrices = false;
     _allowRefundsWithoutSale = false;
     _fiscalizationEnabled = false;
+    _fiscalizationMarkedProductsOnly = false;
     _fiscalizationPollSeconds = 2;
     _printLocalReceiptImmediately = true;
     _organizationId = null;
@@ -401,6 +411,7 @@ class AuthTokenProvider extends ChangeNotifier {
     await prefs.remove(_kAllowBelowCostSalePrices);
     await prefs.remove(_kAllowRefundsWithoutSale);
     await prefs.remove(_kFiscalizationEnabled);
+    await prefs.remove(_kFiscalizationMarkedOnly);
     await prefs.remove(_kFiscalizationPollSeconds);
     await prefs.remove(_kPrintLocalReceiptImmediately);
     await prefs.remove(_kOrganizationId);

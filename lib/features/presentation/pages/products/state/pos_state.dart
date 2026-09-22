@@ -3,7 +3,10 @@ part of 'pos_cubit.dart';
 class PosTicket extends Equatable {
   final int id;
   final String? clientSaleId;
+  final FiscalizationMode? fiscalizationMode;
   final Map<String, dynamic>? checkout;
+  final Map<String, dynamic>? invoiceCheckout;
+  bool get hasPendingCheckout => checkout != null || invoiceCheckout != null;
   final List<CartItem> items;
 
   // ✅ выбранный покупатель для этого чека
@@ -12,7 +15,9 @@ class PosTicket extends Equatable {
   const PosTicket({
     required this.id,
     this.clientSaleId,
+    this.fiscalizationMode,
     this.checkout,
+    this.invoiceCheckout,
     this.items = const [],
     this.customer,
   });
@@ -29,6 +34,10 @@ class PosTicket extends Equatable {
     return PosTicket(
       id: (json['id'] as num?)?.toInt() ?? 1,
       clientSaleId: json['clientSaleId']?.toString(),
+      fiscalizationMode: fiscalizationModeFromJson(json['fiscalizationMode']),
+      invoiceCheckout: json['invoiceCheckout'] is Map
+          ? Map<String, dynamic>.from(json['invoiceCheckout'])
+          : null,
       checkout: json['checkout'] is Map
           ? Map<String, dynamic>.from(json['checkout'])
           : null,
@@ -44,12 +53,19 @@ class PosTicket extends Equatable {
     PosCustomer? customer,
     bool clearCustomer = false,
     String? clientSaleId,
+    FiscalizationMode? fiscalizationMode,
     Map<String, dynamic>? checkout,
     bool clearCheckout = false,
+    Map<String, dynamic>? invoiceCheckout,
+    bool clearInvoiceCheckout = false,
   }) {
     return PosTicket(
       id: id,
       clientSaleId: clientSaleId ?? this.clientSaleId,
+      fiscalizationMode: fiscalizationMode ?? this.fiscalizationMode,
+      invoiceCheckout: clearInvoiceCheckout
+          ? null
+          : (invoiceCheckout ?? this.invoiceCheckout),
       checkout: clearCheckout ? null : (checkout ?? this.checkout),
       items: items ?? this.items,
       customer: clearCustomer ? null : (customer ?? this.customer),
@@ -59,13 +75,23 @@ class PosTicket extends Equatable {
   Map<String, dynamic> toJson() => {
         'id': id,
         'clientSaleId': clientSaleId,
+        'fiscalizationMode': fiscalizationMode?.name,
         'checkout': checkout,
+        'invoiceCheckout': invoiceCheckout,
         'items': items.map((e) => e.toJson()).toList(growable: false),
         'customer': customer?.toJson(),
       };
 
   @override
-  List<Object?> get props => [id, items, customer, clientSaleId, checkout];
+  List<Object?> get props => [
+        id,
+        items,
+        customer,
+        clientSaleId,
+        fiscalizationMode,
+        checkout,
+        invoiceCheckout
+      ];
 }
 
 class PosState extends Equatable {

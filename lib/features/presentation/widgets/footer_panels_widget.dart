@@ -12,7 +12,7 @@ class FooterControlsOnly extends StatelessWidget {
     this.onCancel,
     this.onPayCard,
     this.onPay,
-    this.paymentLabel = 'Оплатить',
+    this.paymentLabel = 'ОПЛАТА',
   });
 
   final String smallAmountText;

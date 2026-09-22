@@ -32,6 +32,7 @@ import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sal
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
 import 'package:leemon_app/features/presentation/widgets/payment_panel.dart'
     show FiscalReceiptDialog;
+import 'package:leemon_app/features/presentation/widgets/invoice_preview_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/receipt_print_confirmation_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/refund_reason_selector.dart';
 
@@ -523,7 +524,6 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     _controller.setInvoicePrintLoading(saleKey, true, _notifyPrintStateChanged);
 
     final auth = context.read<AuthTokenProvider>();
-    final printer = PrintService();
     final cashierName = (auth.activeUserName ?? '').trim().isEmpty
         ? (sale.userId.trim().isEmpty ? '-' : sale.userId.trim())
         : auth.activeUserName!.trim();
@@ -533,9 +533,13 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
             ? auth.posName!.trim()
             : 'Магазин');
 
+    _historyIdlePaused = true;
+    _cancelHistoryIdleTimer();
     try {
-      final doc = await buildInvoicePdf(
-        InvoicePdfData(
+      await showInvoicePreview(
+        context,
+        printerName: auth.invoicePrinterName,
+        data: InvoicePdfData(
           money: money,
           invoiceDate: sale.date,
           invoiceNumber:
@@ -556,17 +560,12 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
           },
         ),
       );
-      final bytes = await doc.save();
-      await printer.printPdfBytesSilently(
-        bytes,
-        printerName: auth.invoicePrinterName,
-      );
-      if (!mounted) return;
-      _snack('Накладная отправлена на печать');
     } catch (e) {
       if (!mounted) return;
-      _snack('Ошибка печати накладной: $e');
+      _snack('Ошибка открытия накладной: $e');
     } finally {
+      _historyIdlePaused = false;
+      _resetHistoryIdleTimer();
       _controller.startInvoicePrintCooldownAfterLoading(
         saleKey,
         _printLoadingDuration,

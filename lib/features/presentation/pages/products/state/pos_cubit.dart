@@ -1,3 +1,4 @@
+import 'package:leemon_app/core/models/fiscalization_mode.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
@@ -28,15 +29,29 @@ class PosCubit extends Cubit<PosState> {
   String? lastMarkingCheckAttempt;
   String? _checkedSnapshot;
   MarkingCheckResponse? _markingResponse;
+  bool get requiresMarkingCheck => state.items.any((item) =>
+      item.product.requiresMarking ||
+      item.markCodes.isNotEmpty ||
+      item.markingCheck?.requiresMarking == true);
+
+  // Old unresolved requests must still be reconciled online. New ordinary
+  // sales persist their background mode together with the original payload.
+  bool get requiresOnlinePayment {
+    final checkout = state.activeTicket.checkout;
+    return requiresMarkingCheck ||
+        (checkout != null && checkout['requires_online'] != false);
+  }
+
   String get markingSnapshot => jsonEncode([
         markingScope,
         state.activeTicketId,
         state.items.map((item) => item.toJson()).toList()
       ]);
   bool get markingCheckPassed =>
-      _checkedSnapshot == markingSnapshot &&
-      (_markingResponse?.canPay ?? false) &&
-      state.items.isNotEmpty;
+      state.items.isNotEmpty &&
+      (!requiresMarkingCheck ||
+          (_checkedSnapshot == markingSnapshot &&
+              (_markingResponse?.canPay ?? false)));
 
   void applyMarkingCheck(String snapshot, MarkingCheckResponse response) {
     if (snapshot != markingSnapshot) return;
@@ -206,6 +221,7 @@ class PosCubit extends Cubit<PosState> {
     List<CartItem> Function(List<CartItem>) updater, {
     bool correctingCheckoutMarking = false,
   }) {
+    if (state.activeTicket.invoiceCheckout != null) return state.tickets;
     if (state.activeTicket.checkout != null &&
         !(correctingCheckoutMarking &&
             state.activeTicket.checkout!['needs_marking_check'] == true)) {
@@ -263,6 +279,9 @@ class PosCubit extends Cubit<PosState> {
   }
 
   Future<void> saveCheckout(Map<String, dynamic> checkout) async {
+    if (state.activeTicket.invoiceCheckout != null) {
+      throw StateError('Сначала завершите выставление счёта');
+    }
     _emitAndPersist(state.copyWith(
         tickets: state.tickets
             .map((t) => t.id == state.activeTicketId
@@ -275,6 +294,38 @@ class PosCubit extends Cubit<PosState> {
         _kPersistedStateKey, jsonEncode(state.toJson()))) {
       throw StateError('Не удалось сохранить оплату на устройстве');
     }
+  }
+
+  Future<void> saveInvoiceCheckout(
+      int ticketId, Map<String, dynamic> value) async {
+    final ticket = state.tickets.firstWhere((t) => t.id == ticketId);
+    if (ticket.checkout != null) {
+      throw StateError('Сначала завершите текущую оплату');
+    }
+    if (ticket.invoiceCheckout != null &&
+        jsonEncode(ticket.invoiceCheckout) != jsonEncode(value)) {
+      throw StateError(
+          'Сохранённый запрос счёта нельзя изменять до получения результата');
+    }
+    _emitAndPersist(state.copyWith(
+        tickets: state.tickets
+            .map((t) =>
+                t.id == ticketId ? t.copyWith(invoiceCheckout: value) : t)
+            .toList()));
+    await flushPendingState();
+    final prefs = await SharedPreferences.getInstance();
+    if (!await prefs.setString(
+        _kPersistedStateKey, jsonEncode(state.toJson()))) {
+      throw StateError('Не удалось сохранить счёт на устройстве');
+    }
+  }
+
+  void releaseInvoiceCheckout(int ticketId) {
+    _emitAndPersist(state.copyWith(
+        tickets: state.tickets
+            .map((t) =>
+                t.id == ticketId ? t.copyWith(clearInvoiceCheckout: true) : t)
+            .toList()));
   }
 
   void releaseCheckout() {
@@ -296,7 +347,7 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void clearAfterPayment({bool closeCompletedTicket = false}) {
-    if (!closeCompletedTicket && state.activeTicket.checkout != null) return;
+    if (!closeCompletedTicket && state.activeTicket.hasPendingCheckout) return;
     final tickets = [...state.tickets];
     final idx = tickets.indexWhere((t) => t.id == state.activeTicketId);
     if (idx == -1) return;
@@ -320,7 +371,7 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void setCustomerForActiveTicket(PosCustomer customer) {
-    if (state.activeTicket.checkout != null) return;
+    if (state.activeTicket.hasPendingCheckout) return;
     final tid = state.activeTicketId;
 
     final updated = state.tickets.map((t) {
@@ -332,7 +383,7 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void clearCustomerForActiveTicket() {
-    if (state.activeTicket.checkout != null) return;
+    if (state.activeTicket.hasPendingCheckout) return;
     final tid = state.activeTicketId;
 
     final updated = state.tickets.map((t) {
@@ -585,7 +636,7 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void removeAt(int index) {
-    if (state.activeTicket.checkout != null) return;
+    if (state.activeTicket.hasPendingCheckout) return;
     final itemsBefore = state.items;
     if (index < 0 || index >= itemsBefore.length) return;
 
@@ -792,13 +843,23 @@ class PosCubit extends Cubit<PosState> {
     _emitAndPersist(state.copyWith(tickets: tickets));
   }
 
+  void setFiscalizationMode(FiscalizationMode mode) {
+    if (state.activeTicket.hasPendingCheckout) return;
+    _emitAndPersist(state.copyWith(
+        tickets: state.tickets
+            .map((t) => t.id == state.activeTicketId
+                ? t.copyWith(fiscalizationMode: mode)
+                : t)
+            .toList()));
+  }
+
   void setPaymentKind(PaymentKind kind) {
-    if (state.activeTicket.checkout != null) return;
+    if (state.activeTicket.hasPendingCheckout) return;
     _emitAndPersist(state.copyWith(paymentKind: kind));
   }
 
   void setReceived(double value) {
-    if (state.activeTicket.checkout != null) return;
+    if (state.activeTicket.hasPendingCheckout) return;
     _emitAndPersist(state.copyWith(received: value));
   }
 
@@ -821,7 +882,7 @@ class PosCubit extends Cubit<PosState> {
     }
 
     final idx = tickets.indexWhere((t) => t.id == id);
-    if (idx == -1 || tickets[idx].checkout != null) return;
+    if (idx == -1 || tickets[idx].hasPendingCheckout) return;
 
     tickets.removeAt(idx);
 

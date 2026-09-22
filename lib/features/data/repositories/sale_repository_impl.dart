@@ -1,3 +1,4 @@
+import 'package:leemon_app/core/models/fiscalization_mode.dart';
 import 'dart:developer' as developer;
 
 import 'package:leemon_app/core/models/sale_model.dart';
@@ -33,8 +34,16 @@ class SaleRepositoryImpl implements SaleRepository {
       final localNumber = queueResult.payload['local_number']?.toString() ?? '';
       final response = queueResult.responseData;
       final printedSale = response != null && response['id'] != null
-          ? SaleModel.fromApiJson(response)
-          : sale.copyWith(number: localNumber);
+          ? SaleModel.fromApiJson({
+              ...response,
+              'fiscalization_mode': response['fiscalization_mode'] ??
+                  queueResult.payload['fiscalization_mode'] ??
+                  sale.fiscalizationMode?.name,
+            })
+          : sale.copyWith(
+              number: localNumber,
+              fiscalizationMode: fiscalizationModeFromJson(
+                  queueResult.payload['fiscalization_mode']));
 
       return CreateSaleOutcome(
         result: requireOnline
@@ -43,7 +52,9 @@ class SaleRepositoryImpl implements SaleRepository {
                 : CreateSaleResult.rejected)
             : (queueResult.result == QueueSendResult.manual
                 ? CreateSaleResult.rejected
-                : CreateSaleResult.sent),
+                : queueResult.result == QueueSendResult.queued
+                    ? CreateSaleResult.queued
+                    : CreateSaleResult.sent),
         sale: printedSale,
         errorMessage: queueResult.errorMessage,
         errorCode: queueResult.errorCode,

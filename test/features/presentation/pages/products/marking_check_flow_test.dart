@@ -107,6 +107,49 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('ordinary cart skips the marking endpoint entirely',
+      (tester) async {
+    cubit.addWithQty(
+        const Product(id: 'ORDINARY', name: 'Обычный товар', price: 15), 2);
+    await mount(tester);
+    expect(api.requests, isEmpty);
+    expect(cubit.markingCheckPassed, isTrue);
+    expect(cubit.requiresOnlinePayment, isFalse);
+    cubit.setQty(0, 3);
+    expect(cubit.markingCheckPassed, isTrue);
+    await tester.pump(const Duration(milliseconds: 300));
+  });
+
+  test('marked goods require online even without a newly scanned code', () {
+    cubit.addWithQty(product, 2);
+    expect(cubit.requiresOnlinePayment, isTrue);
+    expect(cubit.markingCheckPassed, isFalse);
+    cubit.applyMarkingCheck(cubit.markingSnapshot, answer());
+    expect(cubit.markingCheckPassed, isTrue);
+    expect(cubit.requiresOnlinePayment, isTrue);
+  });
+
+  test('codes require online even if product flag is absent', () {
+    cubit.addWithQty(const Product(id: 'PRODUCT', name: 'Товар', price: 15), 2,
+        markCodes: [rawCode]);
+    expect(cubit.requiresOnlinePayment, isTrue);
+    expect(cubit.markingCheckPassed, isFalse);
+  });
+
+  test(
+      'restored payment preserves background mode but legacy requests reconcile online',
+      () async {
+    cubit.addWithQty(
+        const Product(id: 'ORDINARY', name: 'Обычный товар', price: 15), 2);
+    await cubit.saveCheckout({'sale': {}, 'requires_online': false});
+    final restored = PosState.fromJson(cubit.state.toJson());
+    expect(restored.activeTicket.checkout!['requires_online'], isFalse);
+    expect(cubit.requiresOnlinePayment, isFalse);
+    cubit.releaseCheckout();
+    await cubit.saveCheckout({'sale': {}});
+    expect(cubit.requiresOnlinePayment, isTrue);
+  });
+
   test('numeric JSON accepts int/double and errors never allow payment', () {
     final result = answer(ready: false, error: 'EXTRA_MARK_CODE');
     expect(result.canPay, isFalse);

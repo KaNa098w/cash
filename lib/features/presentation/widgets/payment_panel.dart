@@ -1,3 +1,6 @@
+import 'fiscalization_toggle.dart';
+import 'package:leemon_app/core/models/fiscalization_mode.dart';
+import 'package:leemon_app/features/presentation/pages/invoices/invoice_issue_dialog.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
 
@@ -25,6 +28,7 @@ import 'package:leemon_app/features/presentation/pages/search/widgets/customer_c
 import 'package:leemon_app/features/presentation/pages/search/widgets/customer_create_page.dart';
 import 'package:leemon_app/features/presentation/widgets/last_sale_amount_notifier.dart';
 import 'package:leemon_app/features/presentation/widgets/onscreen_keyboar_widget.dart';
+import 'package:leemon_app/features/presentation/widgets/invoice_preview_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/receipt_print_confirmation_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/conversion_product_dialog.dart';
 import 'package:leemon_app/features/presentation/utils/comment_text_controller.dart';
@@ -36,7 +40,9 @@ class PaymentPanel extends StatefulWidget {
   const PaymentPanel({super.key});
 
   static const designWidth = 573.0;
-  static const designHeight = 540.0;
+  static const designHeight = 590.0;
+  static double heightFor({required bool showFiscalization}) =>
+      showFiscalization ? designHeight : designHeight - 50;
 
   @override
   State<PaymentPanel> createState() => _PaymentPanelState();
@@ -395,6 +401,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
   String? _selectedBankAccountId;
   bool _loadingBankAccounts = false;
   bool _paying = false;
+  bool _invoicePreviewOpen = false;
   bool _preparingPayment = false;
   bool _paymentSuccess = false;
 
@@ -690,6 +697,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
     required List<Map<String, dynamic>> payments,
   }) async {
     final frozen = cubit.state.activeTicket.checkout;
+    final requireOnline = cubit.requiresOnlinePayment;
     if (frozen != null) {
       sale = SaleModel.fromJson(Map<String, dynamic>.from(frozen['sale']));
       payments = (frozen['payments'] as List)
@@ -712,6 +720,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
           'sale': sale.toJson(),
           'payments': payments,
           'needs_marking_check': needsMarkingCheck,
+          'requires_online': requireOnline,
           'pos_key': key,
           'device_id': deviceId,
         });
@@ -748,7 +757,12 @@ class _PaymentPanelState extends State<PaymentPanel> {
           deviceId: deviceId,
           sale: sale,
           payments: payments,
-          requireOnline: true);
+          requireOnline: requireOnline);
+      if (outcome.sale.fiscalizationMode == FiscalizationMode.fiscal &&
+          sale.fiscalizationMode == FiscalizationMode.skip) {
+        sale = sale.copyWith(fiscalizationMode: FiscalizationMode.fiscal);
+        await persist();
+      }
       if (outcome.result != CreateSaleResult.rejected) return outcome;
       if (outcome.errorCode == 'MARKING_PACKAGE_CHANGED') {
         needsMarkingCheck = true;
@@ -852,10 +866,66 @@ class _PaymentPanelState extends State<PaymentPanel> {
     return true;
   }
 
+  Future<void> _previewInvoice({bool paymentInvoice = false}) async {
+    if (_invoicePreviewOpen || _paying) return;
+    final cubit = context.read<PosCubit>();
+    final state = cubit.state;
+    if (state.items.isEmpty) {
+      _showError(paymentInvoice
+          ? 'Добавьте товары для формирования счёта'
+          : 'Добавьте товары для формирования накладной');
+      return;
+    }
+    final auth = context.read<AuthTokenProvider>();
+    final store = (auth.storeName ?? '').trim();
+    final posName = (auth.posName ?? '').trim();
+    _invoicePreviewOpen = true;
+    try {
+      await showInvoicePreview(
+        context,
+        printerName: auth.invoicePrinterName,
+        data: InvoicePdfData(
+          kind:
+              paymentInvoice ? InvoicePdfKind.payment : InvoicePdfKind.delivery,
+          money: money,
+          invoiceDate: DateTime.now(),
+          invoiceNumber: 'б/н',
+          cashierName: auth.activeUserName ?? '-',
+          storeName: store.isNotEmpty
+              ? store
+              : (posName.isNotEmpty ? posName : 'Магазин'),
+          buyerName: state.activeCustomer?.name ?? '',
+          items: state.items
+              .map((it) => ReceiptPdfItem(
+                    name: it.product.name,
+                    quantity: it.qty,
+                    unitPrice: it.effectiveUnitPrice,
+                    baseUnitPrice: it.product.price,
+                    lineTotal: it.sum,
+                    discountPercent: it.effectiveDiscountPercent,
+                  ))
+              .toList(),
+          total: cubit.total,
+          paymentMethodLabel: _isMixedPayment
+              ? 'Смешанная оплата'
+              : switch (state.paymentKind) {
+                  PaymentKind.cash => 'Наличные',
+                  PaymentKind.card => 'Безналичный',
+                  PaymentKind.credit => 'В долг',
+                },
+        ),
+      );
+    } finally {
+      _invoicePreviewOpen = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final showFiscalization =
+        context.watch<AuthTokenProvider>().fiscalizationEnabled;
     return SizedBox(
-      height: PaymentPanel.designHeight,
+      height: PaymentPanel.heightFor(showFiscalization: showFiscalization),
       width: PaymentPanel.designWidth,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 0),
@@ -879,6 +949,18 @@ class _PaymentPanelState extends State<PaymentPanel> {
           },
           builder: (context, state) {
             final cubit = context.read<PosCubit>();
+            final fiscalAuth = context.watch<AuthTokenProvider>();
+            final frozenSale = state.activeTicket.checkout?['sale'];
+            final fiscalMode = frozenSale is Map
+                ? fiscalizationModeFromJson(frozenSale['fiscalizationMode'] ??
+                        frozenSale['fiscalization_mode']) ??
+                    FiscalizationMode.fiscal
+                : resolveFiscalizationMode(
+                    enabled: fiscalAuth.fiscalizationEnabled,
+                    markedProductsOnly:
+                        fiscalAuth.fiscalizationMarkedProductsOnly,
+                    cartHasMarkedProducts: cubit.requiresMarkingCheck,
+                    selected: state.activeTicket.fiscalizationMode);
             final total = cubit.total;
             final change = cubit.change.clamp(0, double.infinity);
             final hasItems = state.items.isNotEmpty;
@@ -892,6 +974,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     state.paymentKind == PaymentKind.credit ||
                     state.received > 0;
             final canSubmitPayment = !_paying &&
+                state.activeTicket.invoiceCheckout == null &&
                 (state.activeTicket.checkout != null ||
                     cubit.markingCheckPassed) &&
                 hasItems &&
@@ -1011,7 +1094,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
                 // Capture amounts before async gap
                 final isMixed = _isMixedPayment;
-                final fiscalizationEnabled = auth.fiscalizationEnabled;
+                final fiscalizationEnabled =
+                    fiscalMode == FiscalizationMode.fiscal;
                 final totalAmountInt = (posCubit.total * 100).round() / 100;
                 final customPricesOk = _validateCustomSalePrices(
                   posCubit.state.items,
@@ -1100,6 +1184,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   date: DateTime.now(),
                   totalAmount: totalAmountInt,
                   paymentMethod: paymentMethod,
+                  fiscalizationMode: fiscalMode,
                   paymentType: isDebtSale ? paymentMethod : null,
                   paidAmount: isDebtSale ? debtPaidNow : totalAmountInt,
                   debtAmount: isDebtSale ? debtAmount : 0,
@@ -1277,7 +1362,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
                         'Не удалось зарегистрировать продажу. Корзина и оплата сохранены.');
                     return;
                   }
-                  // Registration is final even if printing or polling fails.
+                  // Durable local queuing also completes an ordinary checkout;
+                  // network registration and fiscal polling continue in sync.
                   saleCompleted = true;
                   final fiscalService = sl<FiscalReceiptService>();
                   final fiscalReceipt =
@@ -1287,8 +1373,12 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   if (!mounted) return;
                   final shouldPrintLocalReceipt = !isDebtSale &&
                           fiscalReceipt == null &&
-                          outcome.responseData?.containsKey('fiscal_receipt') ==
-                              true &&
+                          (outcome.responseData
+                                      ?.containsKey('fiscal_receipt') ==
+                                  true ||
+                              (outcome.retryScheduled &&
+                                  (!fiscalizationExpected ||
+                                      auth.printLocalReceiptImmediately))) &&
                           auth.receiptPrintingEnabled
                       ? await showReceiptPrintConfirmation(
                           this.context,
@@ -1389,9 +1479,6 @@ class _PaymentPanelState extends State<PaymentPanel> {
                         autoPrintEnabled: auth.receiptPrintingEnabled,
                       ),
                     );
-                  } else if (isDebtSale) {
-                    _showError(
-                        'Продажа в долг. Фискальный чек будет сформирован после полного погашения.');
                   } else if (fiscalizationExpected && outcome.retryScheduled) {
                     _showError(
                       'Продажа сохранена локально. Фискальный чек станет доступен после синхронизации с backend.',
@@ -1411,7 +1498,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     _paying = false;
                     _paymentSuccess = true;
                   });
-                  await Future.delayed(const Duration(milliseconds: 250));
+                  if (!outcome.retryScheduled) {
+                    await Future.delayed(const Duration(milliseconds: 250));
+                  }
                   if (!mounted) return;
                   _commentCtrl.clear();
                   posCubit.completeCheckout(ticketId);
@@ -1607,7 +1696,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           left: 3.12695,
                           top: 0,
                           width: 566,
-                          height: 531.296,
+                          height: showFiscalization ? 581.296 : 531.296,
                           child: Container(
                             decoration: BoxDecoration(
                               color: const Color(0xFFF2F2F2),
@@ -1835,9 +1924,16 @@ class _PaymentPanelState extends State<PaymentPanel> {
                         _KeypadButtonPositioned(
                           left: 225.773,
                           top: 349.344,
-                          text: 'Счет на\nоплату',
+                          text: 'Счёт на\nоплату',
                           fontSize: 11,
-                          onTap: () {},
+                          onTap: () async {
+                            if (_paying || _preparingPayment) return;
+                            final issued =
+                                await showInvoiceIssueDialog(context);
+                            if (issued && mounted) {
+                              Navigator.pop(this.context);
+                            }
+                          },
                         ),
                         _KeypadButtonPositioned(
                           left: 14.8535,
@@ -1863,7 +1959,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           top: 419.65,
                           text: 'Наклад',
                           fontSize: 11,
-                          onTap: () {},
+                          onTap: _previewInvoice,
                         ),
                         if (!isDebtSale) ...[
                           if (state.paymentKind == PaymentKind.cash &&
@@ -2038,6 +2134,22 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                 : null,
                           ),
                         ),
+                        if (showFiscalization)
+                          Positioned(
+                            left: 14.8535,
+                            top: 533,
+                            width: 541,
+                            height: 42,
+                            child: FiscalizationToggle(
+                              enabled: fiscalAuth.fiscalizationEnabled,
+                              hasMarkedProducts: cubit.requiresMarkingCheck,
+                              mode: fiscalMode,
+                              locked: _paying ||
+                                  _preparingPayment ||
+                                  state.activeTicket.hasPendingCheckout,
+                              onChanged: cubit.setFiscalizationMode,
+                            ),
+                          ),
                         Positioned(
                           left: 14.8535,
                           top: 489.5,

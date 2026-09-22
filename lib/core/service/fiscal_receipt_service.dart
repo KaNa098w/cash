@@ -10,6 +10,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:leemon_app/core/models/fiscal_receipt.dart';
 import 'package:leemon_app/core/print/print_service.dart';
 
+class BackgroundFiscalReceipt {
+  const BackgroundFiscalReceipt(this.key, this.deviceId, this.receipt);
+  final String key;
+  final String deviceId;
+  final FiscalReceipt receipt;
+}
+
 class FiscalReceiptService {
   FiscalReceiptService(this._dio, this._printer);
 
@@ -17,6 +24,39 @@ class FiscalReceiptService {
   final Dio _dio;
   final PrintService _printer;
   final Map<String, Timer> _pollTimers = <String, Timer>{};
+  final _backgroundFinished =
+      StreamController<BackgroundFiscalReceipt>.broadcast();
+  final _backgroundReceipts = <String, ({String key, String deviceId})>{};
+  Stream<BackgroundFiscalReceipt> get onBackgroundFinished =>
+      _backgroundFinished.stream;
+
+  void trackBackgroundReceipt(
+      {required String key,
+      required String deviceId,
+      required FiscalReceipt receipt}) {
+    _backgroundReceipts[receipt.id] = (key: key, deviceId: deviceId);
+    if (receipt.isPending) {
+      startBackgroundPolling(key: key, deviceId: deviceId, receipt: receipt);
+    } else {
+      _notifyBackgroundFinished(receipt);
+    }
+  }
+
+  void _notifyBackgroundFinished(FiscalReceipt receipt) {
+    final scope = _backgroundReceipts.remove(receipt.id);
+    if (scope != null) {
+      _backgroundFinished
+          .add(BackgroundFiscalReceipt(scope.key, scope.deviceId, receipt));
+    }
+  }
+
+  Future<bool> wasPrinted(String receiptId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = jsonDecode(prefs.getString(_storageKey) ?? '{}');
+    return stored is Map &&
+        stored[receiptId] is Map &&
+        stored[receiptId]['fiscal_receipt_printed'] == true;
+  }
 
   FiscalReceipt? fromSaleResponse(Map<String, dynamic>? response) {
     if (response == null) return null;
@@ -70,6 +110,7 @@ class FiscalReceiptService {
             );
           } else {
             _pollTimers.remove(receipt.id)?.cancel();
+            _notifyBackgroundFinished(updated);
           }
         } catch (_) {
           startBackgroundPolling(

@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:leemon_app/core/models/marketplace_order_models.dart';
-import 'package:leemon_app/core/print/print_service.dart';
-import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
+import 'package:leemon_app/core/print/marketplace_invoice_data.dart';
+import 'package:leemon_app/features/presentation/widgets/invoice_preview_dialog.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/presentation/pages/marketplace_orders/marketplace_orders_controller.dart';
 import 'package:provider/provider.dart';
@@ -111,43 +111,19 @@ class _IncomingOrdersDialogState extends State<_IncomingOrdersDialog> {
             : 'Магазин';
 
     try {
-      final doc = await buildInvoicePdf(
-        InvoicePdfData(
-          money: _formatOrderTotal,
-          invoiceDate: order.createdAt ?? DateTime.now(),
-          invoiceNumber: order.displayNumber,
+      await showInvoicePreview(
+        context,
+        printerName: auth.invoicePrinterName,
+        data: marketplaceInvoiceData(
+          order,
           cashierName: cashierName,
           storeName: storeName,
-          buyerName: order.customer.name,
-          items: order.groupedItems
-              .map(
-                (item) => ReceiptPdfItem(
-                  name: item.name.isEmpty ? item.productId : item.name,
-                  quantity: item.requestedQuantity,
-                  baseUnitPrice: item.unitPrice,
-                  unitPrice: item.unitPrice,
-                  lineTotal: item.total > 0
-                      ? item.total
-                      : item.unitPrice * item.requestedQuantity,
-                ),
-              )
-              .toList(),
-          total: order.displayTotal,
-          paymentMethodLabel: 'Онлайн-заказ',
         ),
-      );
-      await PrintService().printPdfBytesSilently(
-        await doc.save(),
-        printerName: auth.invoicePrinterName,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Накладная отправлена на печать')),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка печати накладной: $e')),
+        SnackBar(content: Text('Ошибка открытия накладной: $e')),
       );
     } finally {
       if (mounted) setState(() => _printingInvoiceOrderId = null);
@@ -697,7 +673,7 @@ class _OrderActionsHeader extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.print_outlined),
-          label: const Text('Распечатать накладную'),
+          label: const Text('Накладная'),
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.white,
             side: const BorderSide(color: Color(0xFFCBD5E1)),
@@ -1050,10 +1026,10 @@ class _GroupedItemCard extends StatelessWidget {
               ],
             ),
           ),
-          if (item.total > 0) ...[
+          if (item.lineTotal >= 0) ...[
             const SizedBox(width: 14),
             Text(
-              _formatOrderTotal(item.total),
+              _formatOrderTotal(item.lineTotal),
               style: const TextStyle(
                 color: Color(0xFF0F172A),
                 fontSize: 17,

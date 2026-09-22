@@ -4,6 +4,10 @@ class CustomerDto {
   final String id;
   final String name;
   final String phone;
+  final String bin;
+  final String legalType;
+  final String legalName;
+  final String legalAddress;
   final num balance;
   final num debtBalance;
   final String debtState;
@@ -14,6 +18,10 @@ class CustomerDto {
     required this.id,
     required this.name,
     required this.phone,
+    this.bin = '',
+    this.legalType = '',
+    this.legalName = '',
+    this.legalAddress = '',
     this.balance = 0,
     this.debtBalance = 0,
     this.debtState = 'settled',
@@ -30,6 +38,10 @@ class CustomerDto {
       id: id,
       name: name,
       phone: phone,
+      bin: (json['bin'] ?? '').toString(),
+      legalType: (json['legal_type'] ?? '').toString(),
+      legalName: (json['legal_name'] ?? '').toString(),
+      legalAddress: (json['legal_address'] ?? '').toString(),
       balance: _readNum(
         json,
         const ['debt_balance', 'balance', 'current_debt', 'current_balance'],
@@ -82,6 +94,10 @@ class CustomerDto {
       id: id ?? this.id,
       name: name ?? this.name,
       phone: phone ?? this.phone,
+      bin: bin,
+      legalType: legalType,
+      legalName: legalName,
+      legalAddress: legalAddress,
       balance: balance ?? this.balance,
       debtBalance: debtBalance ?? this.debtBalance,
       debtState: debtState ?? this.debtState,
@@ -94,6 +110,10 @@ class CustomerDto {
         'id': id,
         'name': name,
         'phone': phone,
+        'bin': bin,
+        'legal_type': legalType,
+        'legal_name': legalName,
+        'legal_address': legalAddress,
         'balance': balance,
         'debt_balance': debtBalance,
         'debt_state': debtState,

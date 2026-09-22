@@ -1,3 +1,4 @@
+import 'package:leemon_app/features/data/datasources/invoices_remote_datasource.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
@@ -97,6 +98,11 @@ Future<void> initDependencies() async {
 
       return dio;
     });
+  }
+
+  if (!sl.isRegistered<InvoicesRemoteDataSource>()) {
+    sl.registerLazySingleton<InvoicesRemoteDataSource>(
+        () => InvoicesRemoteDataSource(sl<Dio>()));
   }
 
   // ---------- Data sources ----------

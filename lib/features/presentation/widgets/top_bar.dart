@@ -1,3 +1,5 @@
+import 'package:leemon_app/features/presentation/pages/invoices/invoice_issue_dialog.dart';
+import 'close_registered_checkout.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -73,28 +75,41 @@ class TopBar extends StatelessWidget {
                                         t.id == state.activeTicketId,
                                     compact: compact,
                                     onTap: () => cubit.switchTicket(t.id),
-                                    showClose: canCloseTickets,
-                                    onClose: canCloseTickets
-                                        ? () async {
-                                            if (t.items.isEmpty) {
-                                              cubit.closeTicket(t.id);
-                                              return;
-                                            }
+                                    showClose:
+                                        canCloseTickets || t.hasPendingCheckout,
+                                    onClose:
+                                        canCloseTickets || t.hasPendingCheckout
+                                            ? () async {
+                                                if (t.invoiceCheckout != null) {
+                                                  cubit.switchTicket(t.id);
+                                                  await showInvoiceIssueDialog(
+                                                      context);
+                                                  return;
+                                                }
+                                                if (t.checkout != null) {
+                                                  await closeRegisteredCheckout(
+                                                      context, t);
+                                                  return;
+                                                }
+                                                if (t.items.isEmpty) {
+                                                  cubit.closeTicket(t.id);
+                                                  return;
+                                                }
 
-                                            final shouldDelete =
-                                                await showHoldDeleteConfirmDialog(
-                                              context,
-                                              ticketId: t.id,
-                                              itemsCount: t.items.length,
-                                            );
-                                            if (!context.mounted ||
-                                                shouldDelete != true) {
-                                              return;
-                                            }
+                                                final shouldDelete =
+                                                    await showHoldDeleteConfirmDialog(
+                                                  context,
+                                                  ticketId: t.id,
+                                                  itemsCount: t.items.length,
+                                                );
+                                                if (!context.mounted ||
+                                                    shouldDelete != true) {
+                                                  return;
+                                                }
 
-                                            cubit.closeTicket(t.id);
-                                          }
-                                        : null,
+                                                cubit.closeTicket(t.id);
+                                              }
+                                            : null,
                                   ),
                                   SizedBox(width: tabGap),
                                 ],

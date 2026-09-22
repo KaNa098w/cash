@@ -1,3 +1,4 @@
+import 'package:leemon_app/core/service/fiscal_receipt_service.dart';
 // lib/main.dart
 import 'dart:async';
 import 'dart:convert' show jsonDecode, utf8;
@@ -694,6 +695,9 @@ class _PosAppState extends State<_PosApp> {
 
   late final GoRouter _router;
   final _customerDisplay = CustomerDisplayService();
+  final _fiscalMessenger = GlobalKey<ScaffoldMessengerState>();
+  StreamSubscription<BackgroundFiscalReceipt>? _fiscalSub;
+  final _printingFiscalReceipts = <String>{};
   StreamSubscription<void>? _productsSyncSub;
   StreamSubscription<PosState>? _posStateSub;
   late final Future<void> Function() _shutdownCallback;
@@ -705,6 +709,9 @@ class _PosAppState extends State<_PosApp> {
   void initState() {
     super.initState();
     _router = createRouter(context);
+    _fiscalSub = sl<FiscalReceiptService>()
+        .onBackgroundFinished
+        .listen((event) => unawaited(_handleBackgroundFiscalReceipt(event)));
     _productsSyncSub = sl<PosSyncService>().onProductsChanged.listen((_) {
       if (!mounted) return;
       context.read<ProductsCubit>().loadFirstPage(key: '');
@@ -727,9 +734,45 @@ class _PosAppState extends State<_PosApp> {
       _powerChannel.setMethodCallHandler(null);
     }
     _shutdownCoordinator.removeCallback(_shutdownCallback);
+    _fiscalSub?.cancel();
     _productsSyncSub?.cancel();
     _posStateSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _handleBackgroundFiscalReceipt(
+      BackgroundFiscalReceipt event) async {
+    if (!mounted) return;
+    final auth = context.read<AuthTokenProvider>();
+    if (auth.posKey != event.key || auth.deviceId != event.deviceId) return;
+    final receipt = event.receipt;
+    void notify(String message) => _fiscalMessenger.currentState?.showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(seconds: 8)));
+    if (receipt.hasFailed) {
+      notify(receipt.webkassaGuidance ??
+          receipt.errorMessage ??
+          'Ошибка фискализации. Продажа сохранена; чек доступен в истории.');
+      return;
+    }
+    if (!receipt.canPrint ||
+        !auth.receiptPrintingEnabled ||
+        !_printingFiscalReceipts.add(receipt.id)) {
+      return;
+    }
+    try {
+      final service = sl<FiscalReceiptService>();
+      if (await service.wasPrinted(receipt.id)) return;
+      await service.printTicket(receipt,
+          key: event.key,
+          deviceId: event.deviceId,
+          paperMm: auth.receiptPaperMm,
+          printerName: auth.receiptPrinterName);
+    } catch (_) {
+      notify(
+          'Фискальный чек готов, но печать не удалась. Повторите печать из истории продаж.');
+    } finally {
+      _printingFiscalReceipts.remove(receipt.id);
+    }
   }
 
   Future<void> _handlePowerMethod(MethodCall call) async {
@@ -788,6 +831,7 @@ class _PosAppState extends State<_PosApp> {
     final baseTheme = ThemeData.light();
 
     return MaterialApp.router(
+      scaffoldMessengerKey: _fiscalMessenger,
       debugShowCheckedModeBanner: false,
       title: 'POS',
       routerConfig: _router,

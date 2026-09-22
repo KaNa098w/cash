@@ -41,14 +41,15 @@ class _MarkingCartObserverState extends State<MarkingCartObserver> {
     if (_snapshot == snapshot) return;
     _snapshot = snapshot;
     _debounce?.cancel();
-    if (cubit.state.items.isEmpty ||
-        cubit.state.activeTicket.checkout != null) {
+    if (!cubit.requiresMarkingCheck ||
+        cubit.state.items.isEmpty ||
+        cubit.state.activeTicket.hasPendingCheckout) {
       return;
     }
     _debounce = Timer(const Duration(milliseconds: 250), () async {
       if (!mounted ||
           cubit.isClosed ||
-          cubit.state.activeTicket.checkout != null ||
+          cubit.state.activeTicket.hasPendingCheckout ||
           cubit.markingCheckPassed ||
           cubit.lastMarkingCheckAttempt == cubit.markingSnapshot) {
         return;

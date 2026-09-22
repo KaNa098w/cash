@@ -1,3 +1,4 @@
+import 'package:leemon_app/features/presentation/pages/invoices/invoice_history_dialog.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -76,6 +77,10 @@ Future<void> showPosActionsDialog(BuildContext context) {
     _PosAction('ОЧЕРЕДЬ СЕРВИСОВ', () async {
       Navigator.of(context, rootNavigator: true).pop();
       await _showServicesQueueDialog(context);
+    }),
+    _PosAction('СЧЕТА', () async {
+      Navigator.of(context, rootNavigator: true).pop();
+      await showInvoiceHistory(context);
     }),
     _PosAction('ДОЛГИ', () {
       Navigator.of(context, rootNavigator: true).pop();
@@ -157,7 +162,7 @@ Future<void> showPosActionsDialog(BuildContext context) {
                     Expanded(
                       child: GridView.builder(
                         padding: const EdgeInsets.all(6),
-                        physics: const NeverScrollableScrollPhysics(),
+                        physics: const ClampingScrollPhysics(),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: cols,
                           mainAxisSpacing: 16,

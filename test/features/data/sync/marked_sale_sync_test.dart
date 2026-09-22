@@ -126,6 +126,51 @@ void main() {
   });
   tearDown(() async => sync.dispose());
 
+  test('closing a registered checkout uses local confirmation without POST',
+      () async {
+    await store.saveAcceptedOperation(OutboxOperationType.sale,
+        accepted({...sale().toJson(), 'client_sale_id': sale().localId}));
+    expect(
+        await sync.isSaleRegistered(
+            clientSaleId: sale().localId, key: 'KEY', deviceId: 'DEVICE'),
+        isTrue);
+    expect(remote.events, isEmpty);
+  });
+
+  test('closing a checkout pulls server confirmation without POST', () async {
+    remote.changes = [
+      SyncPullChange(
+          entity: 'sale',
+          action: 'upsert',
+          payload:
+              accepted({...sale().toJson(), 'client_sale_id': sale().localId}))
+    ];
+    expect(
+        await sync.isSaleRegistered(
+            clientSaleId: sale().localId, key: 'KEY', deviceId: 'DEVICE'),
+        isTrue);
+    expect(remote.events, ['PULL']);
+    expect(remote.requests, isEmpty);
+  });
+
+  test('unconfirmed checkout cannot be closed and is never resubmitted',
+      () async {
+    expect(
+        await sync.isSaleRegistered(
+            clientSaleId: sale().localId, key: 'KEY', deviceId: 'DEVICE'),
+        isFalse);
+    expect(remote.requests, isEmpty);
+  });
+
+  test('failed reconciliation preserves uncertainty without POST', () async {
+    remote.pullError = timeout();
+    await expectLater(
+        sync.isSaleRegistered(
+            clientSaleId: sale().localId, key: 'KEY', deviceId: 'DEVICE'),
+        throwsA(isA<DioException>()));
+    expect(remote.requests, isEmpty);
+  });
+
   Future<QueueOperationResult> send(SaleModel value) => sync.createSale(
       key: 'KEY',
       deviceId: 'DEVICE',

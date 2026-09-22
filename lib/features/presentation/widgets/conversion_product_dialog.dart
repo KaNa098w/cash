@@ -650,6 +650,11 @@ Future<bool> ensureCartMarkingReady(BuildContext context,
     {bool correctingCheckout = false}) {
   final cubit = context.read<PosCubit>();
   final pending = _markingChecks[cubit];
+  if (!cubit.requiresMarkingCheck &&
+      cubit.state.items.isNotEmpty &&
+      !cubit.state.activeTicket.hasPendingCheckout) {
+    return Future.value(true);
+  }
   if (pending != null) return pending;
   final future =
       _checkCartMarking(context, cubit, correctingCheckout: correctingCheckout);
@@ -679,6 +684,7 @@ Future<bool> _checkCartMarking(BuildContext context, PosCubit cubit,
                 true)) {
       return false;
     }
+    if (!cubit.requiresMarkingCheck) return true;
     final key = auth.posKey ?? '';
     final storeId = auth.storeId ?? '';
     final deviceId = auth.deviceId ?? '';

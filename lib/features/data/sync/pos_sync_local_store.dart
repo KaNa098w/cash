@@ -1,3 +1,4 @@
+import 'package:leemon_app/core/models/fiscalization_mode.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -56,6 +57,18 @@ class PosSyncLocalStore {
   sqlite.Database? _db;
 
   void _recoverInterruptedOperations(sqlite.Database db) {
+    // An ordinary checkout has already completed locally. Resume its background
+    // reconciliation after a crash, preserving the original sale/payment IDs.
+    final backgroundSales = db.select(
+        "SELECT id, payload_json FROM outbox_operations WHERE status = 'sending' AND type = 'sale'");
+    for (final row in backgroundSales) {
+      final payload = decodeJsonMap(_string(row['payload_json']));
+      if (payload['_local_background_sale'] == true) {
+        db.execute(
+            "UPDATE outbox_operations SET status = 'pending', last_error_code = 'NETWORK_RECONCILIATION_REQUIRED' WHERE id = ?",
+            [row['id']]);
+      }
+    }
     db.execute(
         "UPDATE outbox_operations SET status = 'manual', last_error_code = 'NETWORK_RECONCILIATION_REQUIRED' WHERE status = 'sending' AND type IN ('sale', 'refund')");
     db.execute(
@@ -3516,6 +3529,8 @@ class PosSyncLocalStore {
       date: _parseDt(payload['date']) ?? DateTime.now(),
       totalAmount: _asDouble(payload['total_amount']),
       paymentMethod: (payload['payment_method'] ?? 'cash').toString(),
+      fiscalizationMode:
+          fiscalizationModeFromJson(payload['fiscalization_mode']),
       paymentType: payload['payment_type']?.toString(),
       paidAmount: _asInt(payload['paid_amount']),
       debtAmount: _asInt(payload['debt_amount']),

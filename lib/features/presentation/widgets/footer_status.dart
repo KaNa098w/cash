@@ -1,3 +1,5 @@
+import 'package:leemon_app/features/presentation/pages/invoices/invoice_issue_dialog.dart';
+import 'close_registered_checkout.dart';
 import 'package:flutter/material.dart';
 import 'marking_cart_observer.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -228,12 +230,7 @@ class _FooterDesktop extends StatelessWidget {
                               }
 
                               return FooterControlsOnly(
-                                paymentLabel:
-                                    cubit.state.activeTicket.checkout != null
-                                        ? 'Продолжить'
-                                        : cubit.markingCheckPassed
-                                            ? 'Оплатить'
-                                            : 'Проверить',
+                                paymentLabel: 'ОПЛАТА',
                                 smallAmountText: money(beforeDiscount),
                                 bigAmountText: money(total),
                                 onMinus: () async {
@@ -333,12 +330,16 @@ class _FooterDesktop extends StatelessWidget {
                                   }
                                 },
                                 onCancel: () async {
+                                  if (cubit
+                                          .state.activeTicket.invoiceCheckout !=
+                                      null) {
+                                    await showInvoiceIssueDialog(context);
+                                    return;
+                                  }
                                   if (cubit.state.activeTicket.checkout !=
                                       null) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                            content: Text(
-                                                'Оплата уже отправлена. Сначала выполните сверку через повтор оплаты.')));
+                                    await closeRegisteredCheckout(
+                                        context, cubit.state.activeTicket);
                                     return;
                                   }
                                   final ok = await _confirmClearCart(context);
@@ -389,6 +390,10 @@ class _FooterDesktop extends StatelessWidget {
 
   Future<void> _showPaymentPanelCenter(BuildContext context) async {
     final cubit = context.read<PosCubit>();
+    if (cubit.state.activeTicket.invoiceCheckout != null) {
+      await showInvoiceIssueDialog(context);
+      return;
+    }
     if (cubit.state.activeTicket.checkout == null &&
         !await ensureCartMarkingReady(context)) {
       return;
@@ -408,7 +413,10 @@ class _FooterDesktop extends StatelessWidget {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   const baseWidth = PaymentPanel.designWidth;
-                  const baseHeight = PaymentPanel.designHeight;
+                  final baseHeight = PaymentPanel.heightFor(
+                      showFiscalization: context
+                          .watch<AuthTokenProvider>()
+                          .fiscalizationEnabled);
                   const preferredScale = 1.18;
                   final availableWidth = constraints.maxWidth - 32;
                   final availableHeight = constraints.maxHeight - 32;

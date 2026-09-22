@@ -163,6 +163,7 @@ class MarketplaceOrder {
     required this.groupedItems,
     this.createdAt,
     this.total = 0,
+    this.hasExplicitTotal = false,
     this.fulfillmentType = '',
     this.deliveryAddress = '',
   });
@@ -198,16 +199,27 @@ class MarketplaceOrder {
       createdAt: _dateTime(
         json['created_at'] ?? json['createdAt'] ?? json['ordered_at'],
       ),
-      total: _num(
+      hasExplicitTotal: [
+        json['total'],
+        json['total_amount'],
+        json['totalAmount'],
+        json['grand_total'],
+        totals['total'],
+        totals['total_amount'],
+        totals['grand_total'],
+        json['totalPrice'],
+        json['total_price']
+      ].any((v) => v != null),
+      total: _moneyAmount(
         json['total'] ??
             json['total_amount'] ??
             json['totalAmount'] ??
             json['grand_total'] ??
             totals['total'] ??
             totals['total_amount'] ??
-            totals['grand_total'],
-      ).takeIfPositiveOr(
-        _moneyAmount(json['totalPrice'] ?? json['total_price']),
+            totals['grand_total'] ??
+            json['totalPrice'] ??
+            json['total_price'],
       ),
       fulfillmentType: _string(
         json['fulfillment_type'] ??
@@ -245,6 +257,7 @@ class MarketplaceOrder {
   final List<MarketplaceGroupedItem> groupedItems;
   final DateTime? createdAt;
   final num total;
+  final bool hasExplicitTotal;
   final String fulfillmentType;
   final String deliveryAddress;
 
@@ -277,10 +290,9 @@ class MarketplaceOrder {
   }
 
   num get displayTotal {
-    if (total > 0) return total;
+    if (hasExplicitTotal || total > 0) return total;
     return groupedItems.fold<num>(0, (sum, item) {
-      if (item.total > 0) return sum + item.total;
-      return sum + item.unitPrice * item.requestedQuantity;
+      return sum + item.lineTotal;
     });
   }
 }
@@ -347,6 +359,7 @@ class MarketplaceGroupedItem {
     required this.images,
     this.unitPrice = 0,
     this.total = 0,
+    this.hasExplicitTotal = false,
   });
 
   factory MarketplaceGroupedItem.fromJson(Map<String, dynamic> json) {
@@ -393,19 +406,30 @@ class MarketplaceGroupedItem {
       remainingQuantity: _remainingQuantity(json),
       status: _string(json['status']),
       images: images,
-      unitPrice: _num(
+      unitPrice: _moneyAmount(
         json['unit_price'] ??
             json['unitPrice'] ??
             json['price'] ??
+            offer['price'] ??
             product['price'],
-      ).takeIfPositiveOr(_moneyAmount(json['price'] ?? offer['price'])),
-      total: _num(
+      ),
+      hasExplicitTotal: [
+        json['total'],
+        json['line_total'],
+        json['lineTotal'],
+        json['total_amount'],
+        json['totalAmount'],
+        json['totalPrice'],
+        json['total_price']
+      ].any((v) => v != null),
+      total: _moneyAmount(
         json['total'] ??
             json['line_total'] ??
             json['lineTotal'] ??
-            json['total_amount'],
-      ).takeIfPositiveOr(
-        _moneyAmount(json['totalPrice'] ?? json['total_price']),
+            json['total_amount'] ??
+            json['totalAmount'] ??
+            json['totalPrice'] ??
+            json['total_price'],
       ),
     );
   }
@@ -422,6 +446,10 @@ class MarketplaceGroupedItem {
   final List<MarketplaceProductImage> images;
   final num unitPrice;
   final num total;
+  final bool hasExplicitTotal;
+
+  num get lineTotal =>
+      hasExplicitTotal || total > 0 ? total : unitPrice * requestedQuantity;
 
   String get imageUrl => images.isEmpty ? '' : images.first.preferredUrl;
 }
@@ -553,7 +581,12 @@ String _string(Object? value) => value?.toString().trim() ?? '';
 
 num _num(Object? value) {
   if (value is num) return value;
-  if (value is String) return num.tryParse(value) ?? 0;
+  if (value is String) {
+    return num.tryParse(value
+            .replaceAll(RegExp(r'[\s\u00a0\u202f]'), '')
+            .replaceAll(',', '.')) ??
+        0;
+  }
   return 0;
 }
 
@@ -573,17 +606,15 @@ num _moneyAmount(Object? value) {
 num _remainingQuantity(Map<String, dynamic> json) {
   final explicit = json['remainingQuantity'] ?? json['remaining_quantity'];
   if (explicit != null) return _num(explicit);
-  final requested =
-      _num(json['requestedQuantity'] ?? json['requested_quantity']);
+  final requested = _num(json['requestedQuantity'] ??
+      json['requested_quantity'] ??
+      json['quantity'] ??
+      json['qty']);
   final shipped = _num(json['shippedQuantity'] ?? json['shipped_quantity']);
   final cancelled =
       _num(json['cancelledQuantity'] ?? json['cancelled_quantity']);
   final remaining = requested - shipped - cancelled;
   return remaining < 0 ? 0 : remaining;
-}
-
-extension on num {
-  num takeIfPositiveOr(num fallback) => this > 0 ? this : fallback;
 }
 
 int? _int(Object? value) {
