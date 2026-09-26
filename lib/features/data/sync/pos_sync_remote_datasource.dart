@@ -197,6 +197,46 @@ class PosSyncRemoteDataSource {
     );
   }
 
+  /// Look up an already registered refund before replaying an uncertain POST.
+  /// The server may ignore the filter, so always verify the identifier locally.
+  Future<Map<String, dynamic>?> findRefundByClientId({
+    required String key,
+    required String clientRefundId,
+  }) async {
+    final target = clientRefundId.trim();
+    if (target.isEmpty) return null;
+    var page = 1;
+    while (true) {
+      final response = await _dio.get(
+        '/organizations/pos/$key/refunds',
+        queryParameters: {'page': page, 'filter[client_refund_id]': target},
+        options: _syncOptions,
+      );
+      final body = _asMap(response.data);
+      final data = _nestedMap(body['data']) ?? body;
+      final rawItems = _nestedList(body['data']) ??
+          _nestedList(data['data']) ??
+          _nestedList(data['items']) ??
+          _nestedList(body['items']) ??
+          <dynamic>[];
+      for (final raw in rawItems) {
+        final refund = _asMapOrNull(raw);
+        if (refund != null &&
+            refund['client_refund_id']?.toString().trim() == target &&
+            (refund['id'] ?? '').toString().trim().isNotEmpty) {
+          return refund;
+        }
+      }
+      final meta = _nestedMap(body['meta']) ??
+          _nestedMap(body['pagination']) ??
+          const <String, dynamic>{};
+      final lastPage = _readInt(
+          data['last_page'] ?? body['last_page'] ?? meta['last_page'] ?? page);
+      if (page >= lastPage || rawItems.isEmpty) return null;
+      page++;
+    }
+  }
+
   Future<List<SaleModel>> fetchCustomerSales({
     required String key,
     required String customerId,
@@ -231,7 +271,6 @@ class PosSyncRemoteDataSource {
           await _dio.post(
             '/organizations/pos/$key/sales',
             data: payload,
-            options: _silentOptions,
           ),
         );
       case OutboxOperationType.payment:

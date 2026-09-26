@@ -1787,6 +1787,21 @@ class PosSyncService {
     return DateTime.tryParse(raw.replaceFirst(' ', 'T'));
   }
 
+  Future<Map<String, dynamic>?> _findRegisteredRefund(
+      String key, String deviceId, OutboxOperationRecord record) async {
+    final found = await _remote.findRefundByClientId(
+        key: key, clientRefundId: record.clientId);
+    if (found == null ||
+        found['client_refund_id']?.toString().trim() != record.clientId ||
+        (found['id'] ?? '').toString().trim().isEmpty) {
+      return null;
+    }
+    await _applySuccessfulResponse(record, found, key: key, deviceId: deviceId);
+    await _localStore.markOperationAcked(record.id);
+    await _markDedicatedTableSynced(record);
+    return found;
+  }
+
   Future<QueueOperationResult> _sendClaimedRecord({
     required String key,
     required String deviceId,
@@ -1817,6 +1832,22 @@ class PosSyncService {
               clientId: record.clientId,
               payload: record.payload,
               responseData: accepted);
+        }
+        if (record.type == OutboxOperationType.refund) {
+          try {
+            final found = await _findRegisteredRefund(key, deviceId, record);
+            if (found != null) {
+              return QueueOperationResult(
+                  operationId: record.id,
+                  result: QueueSendResult.sent,
+                  type: record.type,
+                  clientId: record.clientId,
+                  payload: record.payload,
+                  responseData: found);
+            }
+          } catch (_) {
+            // Keep the original operation for manual reconciliation.
+          }
         }
         if (record.lastErrorCode == 'IDEMPOTENCY_CONFLICT') {
           await _localStore.markOperationManual(
@@ -1907,6 +1938,24 @@ class PosSyncService {
       final errorMessage = _remote.extractErrorMessage(error);
       final errorDetails = _remote.extractErrorDetails(error);
       final response = errorDetails?['response'];
+      if (record.type == OutboxOperationType.refund &&
+          response is Map &&
+          (response['status_code'] == 499 || response['status_code'] == 502)) {
+        try {
+          final found = await _findRegisteredRefund(key, deviceId, record);
+          if (found != null) {
+            return QueueOperationResult(
+                operationId: record.id,
+                result: QueueSendResult.sent,
+                type: record.type,
+                clientId: record.clientId,
+                payload: record.payload,
+                responseData: found);
+          }
+        } catch (_) {
+          // Preserve the original server error when verification is unavailable.
+        }
+      }
       final body = response is Map ? response['data'] : null;
       final context = body is Map && body['context'] is Map
           ? Map<String, dynamic>.from(body['context'])

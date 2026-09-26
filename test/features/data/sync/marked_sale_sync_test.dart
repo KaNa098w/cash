@@ -21,6 +21,14 @@ class ScriptedRemote extends PosSyncRemoteDataSource {
   Future<Map<String, dynamic>?> Function(Map<String, dynamic>)? handler;
   List<SyncPullChange> changes = [];
   Object? pullError;
+  Map<String, dynamic>? registeredRefund;
+
+  @override
+  Future<Map<String, dynamic>?> findRefundByClientId({
+    required String key,
+    required String clientRefundId,
+  }) async =>
+      registeredRefund;
 
   @override
   Future<Map<String, dynamic>?> sendOperation(
@@ -369,6 +377,31 @@ void main() {
     expect(remote.requests.last['inventory_action'], 'reverse_sale');
     expect(remote.requests.last['items'][0]['mark_codes'], [oldCode]);
     expect(second.result, QueueSendResult.sent);
+  });
+  test('499 closes refund queue only for matching client refund id', () async {
+    remote.handler = (payload) async {
+      remote.registeredRefund = {
+        ...payload,
+        'id': 'SERVER_REFUND',
+        'client_refund_id': payload['client_refund_id'],
+      };
+      throw apiError('ALREADY_REFUNDED', status: 499);
+    };
+    final result = await sync.createRefund(
+        key: 'KEY',
+        deviceId: 'DEVICE',
+        posSessionId: '',
+        saleId: 'SALE',
+        totalAmount: 120,
+        paymentMethod: 'cash',
+        payments: [],
+        date: DateTime(2026, 9, 17),
+        items: [
+          {'product_id': 'PRODUCT', 'quantity': 1, 'price': 120}
+        ]);
+    expect(result.result, QueueSendResult.sent);
+    expect(await store.loadQueueItems(), isEmpty);
+    expect(remote.requests, hasLength(1));
   });
   test(
       'accepted refund replay returns canonical server data without another POST',

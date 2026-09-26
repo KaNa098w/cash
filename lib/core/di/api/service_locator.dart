@@ -84,14 +84,18 @@ Future<void> initDependencies() async {
 
       dio.interceptors.add(
         PrettyDioLogger(
-          requestHeader: true,
-          requestBody: true,
+          request: false,
+          requestHeader: false,
+          requestBody: false,
           responseHeader: false,
           responseBody: true,
           error: true,
           compact: true,
           maxWidth: 120,
-          filter: (options, _) => options.extra['silentDioLog'] != true,
+          filter: (options, _) =>
+              options.method.toUpperCase() == 'POST' &&
+              RegExp(r'^/organizations/pos/[^/]+/sales/?$')
+                  .hasMatch(options.path),
           logPrint: (obj) => debugPrint(obj.toString()),
         ),
       );
