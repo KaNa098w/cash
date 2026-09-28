@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/features/presentation/pages/products/cart_list/cart_list.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/sales_history_page.dart';
@@ -44,10 +43,9 @@ class _PosPageState extends State<PosPage> {
       backgroundColor: const Color(0xFFF3F4F6),
       body: Theme(
         data: baseTheme.copyWith(
-          textTheme: GoogleFonts.interTextTheme(baseTheme.textTheme),
-          primaryTextTheme: GoogleFonts.interTextTheme(
-            baseTheme.primaryTextTheme,
-          ),
+          textTheme: baseTheme.textTheme.apply(fontFamily: 'NotoSans'),
+          primaryTextTheme:
+              baseTheme.primaryTextTheme.apply(fontFamily: 'NotoSans'),
         ),
         child: Stack(
           children: [

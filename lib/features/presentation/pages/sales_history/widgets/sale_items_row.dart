@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/features/presentation/widgets/keypad_widget.dart';
 
@@ -72,7 +71,8 @@ class SaleItemRow extends StatelessWidget {
               children: [
                 Text(name,
                     softWrap: true,
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
+                      fontFamily: 'NotoSans',
                       fontSize: 16,
                       height: 1.4,
                       fontWeight: FontWeight.w500,
@@ -136,7 +136,8 @@ class SaleItemRow extends StatelessWidget {
                 money2(item.basePrice),
                 textAlign: TextAlign.right,
                 overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 16,
                   height: 1.4,
                   fontWeight: FontWeight.w600,
@@ -179,7 +180,8 @@ class SaleItemRow extends StatelessWidget {
                       child: Text(
                         qtyText,
                         textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
+                          fontFamily: 'NotoSans',
                           fontSize: 16,
                           height: 1.4,
                           fontWeight: FontWeight.w600,
@@ -206,7 +208,8 @@ class SaleItemRow extends StatelessWidget {
                   ? '${item.discountPercent.toStringAsFixed(item.discountPercent % 1 == 0 ? 0 : 1)}%'
                   : '0%',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
+              style: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color:
@@ -221,7 +224,8 @@ class SaleItemRow extends StatelessWidget {
               money2(item.totalPrice),
               textAlign: TextAlign.right,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
+              style: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 16,
                 height: 1.4,
                 fontWeight: FontWeight.w600,

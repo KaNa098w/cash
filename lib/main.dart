@@ -19,7 +19,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:leemon_app/core/di/api/device_id_store.dart';
 import 'package:leemon_app/core/service/customer_display_service.dart';
@@ -836,9 +835,9 @@ class _PosAppState extends State<_PosApp> {
       title: 'POS',
       routerConfig: _router,
       theme: baseTheme.copyWith(
-        textTheme: GoogleFonts.interTextTheme(baseTheme.textTheme),
+        textTheme: baseTheme.textTheme.apply(fontFamily: 'NotoSans'),
         primaryTextTheme:
-            GoogleFonts.interTextTheme(baseTheme.primaryTextTheme),
+            baseTheme.primaryTextTheme.apply(fontFamily: 'NotoSans'),
       ),
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       supportedLocales: const [Locale('ru'), Locale('en')],

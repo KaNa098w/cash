@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sale_items_row.dart';
 
@@ -164,7 +163,8 @@ class _SaleItemPreviewRow extends StatelessWidget {
             child: Text(
               item.displayProductName,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
+              style: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 16,
                 height: 1.4,
                 fontWeight: FontWeight.w500,
@@ -180,7 +180,8 @@ class _SaleItemPreviewRow extends StatelessWidget {
                 money2(item.basePrice),
                 textAlign: TextAlign.right,
                 overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 16,
                   height: 1.4,
                   fontWeight: FontWeight.w600,
@@ -195,7 +196,8 @@ class _SaleItemPreviewRow extends StatelessWidget {
               '${_qty(item.quantity)} $_unit',
               textAlign: TextAlign.center,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
+              style: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 16,
                 height: 1.4,
                 fontWeight: FontWeight.w600,
@@ -211,7 +213,8 @@ class _SaleItemPreviewRow extends StatelessWidget {
                   : '0%',
               textAlign: TextAlign.center,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
+              style: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 16,
                 height: 1.4,
                 fontWeight: FontWeight.w600,
@@ -226,7 +229,8 @@ class _SaleItemPreviewRow extends StatelessWidget {
               money2(item.totalPrice),
               textAlign: TextAlign.right,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
+              style: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 16,
                 height: 1.4,
                 fontWeight: FontWeight.w600,

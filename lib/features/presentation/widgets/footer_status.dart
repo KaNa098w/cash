@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'marking_cart_observer.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:leemon_app/features/presentation/widgets/quit_products_screen.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
@@ -129,7 +128,8 @@ class _FooterDesktop extends StatelessWidget {
                                           child: Text(
                                             DateFormat('HH:mm')
                                                 .format(DateTime.now()),
-                                            style: GoogleFonts.inter(
+                                            style: TextStyle(
+                                              fontFamily: 'NotoSans',
                                               color: Colors.white,
                                               fontSize: 36,
                                               fontWeight: FontWeight.w400,
@@ -159,7 +159,8 @@ class _FooterDesktop extends StatelessWidget {
                                       child: Text(
                                         posLabel,
                                         maxLines: 1,
-                                        style: GoogleFonts.inter(
+                                        style: TextStyle(
+                                          fontFamily: 'NotoSans',
                                           color: Colors.white,
                                           fontSize: 13.4,
                                           fontWeight: FontWeight.w400,
@@ -182,7 +183,8 @@ class _FooterDesktop extends StatelessWidget {
                                             ? 'Наименование Магаз'
                                             : storeName,
                                         maxLines: 1,
-                                        style: GoogleFonts.inter(
+                                        style: TextStyle(
+                                          fontFamily: 'NotoSans',
                                           color: Colors.white,
                                           fontSize: 13.4,
                                           fontWeight: FontWeight.w400,
@@ -514,7 +516,8 @@ class _TariffExpiryNoticeState extends State<_TariffExpiryNotice> {
                       const TextSpan(text: 'Ваш тариф закончится через '),
                       TextSpan(
                         text: daysText,
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
+                          fontFamily: 'NotoSans',
                           color: const Color(0xFFFFFF33),
                           fontSize: 13.33,
                           fontWeight: FontWeight.w600,
@@ -526,7 +529,8 @@ class _TariffExpiryNoticeState extends State<_TariffExpiryNotice> {
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     color: Colors.white,
                     fontSize: 13.33,
                     fontWeight: FontWeight.w600,
@@ -586,7 +590,8 @@ class _FooterDateText extends StatelessWidget {
             _capitalizeDate(
                 DateFormat('d MMMM | EEEE', 'ru_RU').format(DateTime.now())),
             maxLines: 1,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               color: Colors.white,
               fontSize: 13,
               fontWeight: FontWeight.w400,
@@ -656,7 +661,8 @@ class _UniversalAmountDialogState extends State<_UniversalAmountDialog> {
               children: [
                 Text(
                   'Введите сумму',
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     fontSize: 24,
                     fontWeight: FontWeight.w900,
                     color: const Color(0xFF111827),
@@ -674,7 +680,8 @@ class _UniversalAmountDialogState extends State<_UniversalAmountDialog> {
                   ),
                   child: Text(
                     _text.isEmpty ? '0' : _text,
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
+                      fontFamily: 'NotoSans',
                       fontSize: 30,
                       fontWeight: FontWeight.w800,
                       color: const Color(0xFF111827),
@@ -701,7 +708,8 @@ class _UniversalAmountDialogState extends State<_UniversalAmountDialog> {
                         ),
                         child: Text(
                           'Отмена',
-                          style: GoogleFonts.inter(
+                          style: TextStyle(
+                            fontFamily: 'NotoSans',
                             fontWeight: FontWeight.w900,
                           ),
                         ),
@@ -725,7 +733,8 @@ class _UniversalAmountDialogState extends State<_UniversalAmountDialog> {
                           'Добавить',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
+                          style: TextStyle(
+                            fontFamily: 'NotoSans',
                             fontWeight: FontWeight.w900,
                           ),
                         ),

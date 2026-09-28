@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get_it/get_it.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
 import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 import 'package:leemon_app/features/presentation/pages/marketplace_orders/marketplace_orders_controller.dart';
@@ -592,7 +591,8 @@ class _StatusDotState extends State<_StatusDot> {
               Text(
                 cashierName,
                 textAlign: TextAlign.left,
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   color: Colors.white,
                   fontSize: 16,
                   fontWeight: FontWeight.w500,

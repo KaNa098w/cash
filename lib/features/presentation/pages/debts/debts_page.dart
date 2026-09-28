@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
@@ -692,7 +691,8 @@ class _StatePanel extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             title,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 18,
               fontWeight: FontWeight.w900,
               color: const Color(0xFF111827),
@@ -702,7 +702,8 @@ class _StatePanel extends StatelessWidget {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 13,
               fontWeight: FontWeight.w700,
               color: const Color(0xFF6B7280),
@@ -713,7 +714,8 @@ class _StatePanel extends StatelessWidget {
             onPressed: onAction,
             child: Text(
               actionLabel,
-              style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+              style: TextStyle(
+                  fontFamily: 'NotoSans', fontWeight: FontWeight.w900),
             ),
           ),
         ],
@@ -750,7 +752,8 @@ class _SectionHeader extends StatelessWidget {
         Expanded(
           child: Text(
             title,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 18,
               fontWeight: FontWeight.w900,
               color: const Color(0xFF111827),
@@ -767,7 +770,8 @@ class _SectionHeader extends StatelessWidget {
           ),
           child: Text(
             subtitle,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 11,
               fontWeight: FontWeight.w900,
               color: const Color(0xFF1D4ED8),
@@ -793,7 +797,8 @@ class _NoDebtSelectionPanel extends StatelessWidget {
       ),
       child: Text(
         'Выберите контрагента',
-        style: GoogleFonts.inter(
+        style: TextStyle(
+          fontFamily: 'NotoSans',
           fontSize: 18,
           fontWeight: FontWeight.w900,
           color: const Color(0xFF111827),
@@ -850,7 +855,8 @@ class _Header extends StatelessWidget {
                   children: [
                     Text(
                       'Долги',
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
+                        fontFamily: 'NotoSans',
                         fontSize: 26,
                         fontWeight: FontWeight.w900,
                         color: Colors.white,
@@ -862,7 +868,8 @@ class _Header extends StatelessWidget {
                       '${_formatMoney(receivable)} к получению  /  ${_formatMoney(payable)} аванс',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
+                        fontFamily: 'NotoSans',
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: Colors.white.withValues(alpha: 0.72),
@@ -905,7 +912,8 @@ class _Toolbar extends StatelessWidget {
                 Expanded(
                   child: Text(
                     'Покупатели с долгом',
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
+                      fontFamily: 'NotoSans',
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF9CA3AF),
@@ -924,7 +932,8 @@ class _Toolbar extends StatelessWidget {
             icon: const Icon(Icons.refresh_rounded),
             label: Text(
               'Обновить',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+              style: TextStyle(
+                  fontFamily: 'NotoSans', fontWeight: FontWeight.w900),
             ),
           ),
         ),
@@ -1023,7 +1032,8 @@ class _SummaryTile extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
                     color: const Color(0xFF6B7280),
@@ -1034,7 +1044,8 @@ class _SummaryTile extends StatelessWidget {
                   value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     fontSize: 19,
                     fontWeight: FontWeight.w900,
                     color: color,
@@ -1122,7 +1133,8 @@ class _DebtActionPanel extends StatelessWidget {
                   item.name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
                     color: const Color(0xFF111827),
@@ -1135,7 +1147,8 @@ class _DebtActionPanel extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             statusText,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 12,
               fontWeight: FontWeight.w900,
               color: const Color(0xFF6B7280),
@@ -1146,7 +1159,8 @@ class _DebtActionPanel extends StatelessWidget {
             _formatMoney(item.debtBalance),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 28,
               fontWeight: FontWeight.w900,
               color: color,
@@ -1172,7 +1186,8 @@ class _DebtActionPanel extends StatelessWidget {
                         : const Icon(Icons.payments_rounded, size: 20),
                     label: Text(
                       positive ? 'Погасить' : 'Недоступно',
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
+                        fontFamily: 'NotoSans',
                         fontSize: 12,
                         fontWeight: FontWeight.w900,
                       ),
@@ -1198,7 +1213,8 @@ class _DebtActionPanel extends StatelessWidget {
                     icon: const Icon(Icons.add_rounded, size: 20),
                     label: Text(
                       'Добавить',
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
+                        fontFamily: 'NotoSans',
                         fontSize: 12,
                         fontWeight: FontWeight.w900,
                       ),
@@ -1329,7 +1345,8 @@ class _MiniState extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: GoogleFonts.inter(
+              style: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
                 color: const Color(0xFF6B7280),
@@ -1342,7 +1359,8 @@ class _MiniState extends StatelessWidget {
               onPressed: onAction,
               child: Text(
                 actionLabel!,
-                style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                style: TextStyle(
+                    fontFamily: 'NotoSans', fontWeight: FontWeight.w900),
               ),
             ),
           ],
@@ -1391,7 +1409,8 @@ class _DebtSaleRow extends StatelessWidget {
                   number.isEmpty ? 'Чек без номера' : 'Чек $number',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     fontSize: 12,
                     fontWeight: FontWeight.w900,
                     color: const Color(0xFF111827),
@@ -1405,7 +1424,8 @@ class _DebtSaleRow extends StatelessWidget {
                   _formatDate(sale.date),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF6B7280),
@@ -1420,7 +1440,8 @@ class _DebtSaleRow extends StatelessWidget {
             children: [
               Text(
                 _formatMoney(sale.documentUnpaidAmount),
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 13,
                   fontWeight: FontWeight.w900,
                   color: const Color(0xFF16A34A),
@@ -1429,7 +1450,8 @@ class _DebtSaleRow extends StatelessWidget {
               const SizedBox(height: 3),
               Text(
                 _formatMoney(sale.totalAmount),
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 11,
                   fontWeight: FontWeight.w800,
                   color: const Color(0xFF6B7280),
@@ -1479,7 +1501,8 @@ class _DebtSettlementRow extends StatelessWidget {
               children: [
                 Text(
                   'Погашение долга',
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     fontSize: 12,
                     fontWeight: FontWeight.w900,
                     color: const Color(0xFF14532D),
@@ -1488,7 +1511,8 @@ class _DebtSettlementRow extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   _formatDate(settlement.date),
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF6B7280),
@@ -1503,7 +1527,8 @@ class _DebtSettlementRow extends StatelessWidget {
             children: [
               Text(
                 '−${_formatMoney(settlement.amount.abs())}',
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 13,
                   fontWeight: FontWeight.w900,
                   color: const Color(0xFF15803D),
@@ -1513,7 +1538,8 @@ class _DebtSettlementRow extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   'Остаток: ${_formatMoney(settlement.remainingDebt!)}',
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
                     color: const Color(0xFF6B7280),
@@ -1548,7 +1574,8 @@ class _DetailLine extends StatelessWidget {
             text.isEmpty ? '-' : text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 12,
               fontWeight: FontWeight.w800,
               color: const Color(0xFF374151),
@@ -1618,7 +1645,8 @@ class _DebtCard extends StatelessWidget {
                 child: Center(
                   child: Text(
                     positive ? '+' : '-',
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
+                      fontFamily: 'NotoSans',
                       fontSize: 24,
                       fontWeight: FontWeight.w900,
                       color: color,
@@ -1640,7 +1668,8 @@ class _DebtCard extends StatelessWidget {
                             item.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(
+                            style: TextStyle(
+                              fontFamily: 'NotoSans',
                               fontSize: 14,
                               fontWeight: FontWeight.w900,
                               color: const Color(0xFF111827),
@@ -1651,7 +1680,8 @@ class _DebtCard extends StatelessWidget {
                         Text(
                           _formatMoney(item.debtBalance),
                           maxLines: 1,
-                          style: GoogleFonts.inter(
+                          style: TextStyle(
+                            fontFamily: 'NotoSans',
                             fontSize: 16,
                             fontWeight: FontWeight.w900,
                             color: color,
@@ -1670,7 +1700,8 @@ class _DebtCard extends StatelessWidget {
                             item.phone,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(
+                            style: TextStyle(
+                              fontFamily: 'NotoSans',
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
                               color: const Color(0xFF6B7280),
@@ -1707,7 +1738,8 @@ class _SmallPill extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: GoogleFonts.inter(
+        style: TextStyle(
+          fontFamily: 'NotoSans',
           fontSize: 10,
           fontWeight: FontWeight.w900,
           color: const Color(0xFF4B5563),
@@ -1737,7 +1769,8 @@ class _NetBadge extends StatelessWidget {
       ),
       child: Text(
         _formatMoney(amount),
-        style: GoogleFonts.inter(
+        style: TextStyle(
+          fontFamily: 'NotoSans',
           fontSize: 16,
           fontWeight: FontWeight.w900,
           color: color,
@@ -1802,7 +1835,8 @@ Future<num?> _showDebtAmountDialog(
                     children: [
                       Text(
                         title,
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
+                          fontFamily: 'NotoSans',
                           fontSize: 22,
                           fontWeight: FontWeight.w900,
                           color: const Color(0xFF111827),
@@ -1812,7 +1846,8 @@ Future<num?> _showDebtAmountDialog(
                         const SizedBox(height: 6),
                         Text(
                           'Текущий долг: ${_formatMoney(maxAmount)}',
-                          style: GoogleFonts.inter(
+                          style: TextStyle(
+                            fontFamily: 'NotoSans',
                             fontSize: 13,
                             fontWeight: FontWeight.w800,
                             color: const Color(0xFF6B7280),
@@ -1832,12 +1867,14 @@ Future<num?> _showDebtAmountDialog(
                           errorText: controller.text.isNotEmpty && !valid
                               ? 'Минимум 0.01, не более двух знаков после запятой'
                               : null,
-                          hintStyle: GoogleFonts.inter(
+                          hintStyle: TextStyle(
+                            fontFamily: 'NotoSans',
                             fontWeight: FontWeight.w700,
                             color: const Color(0xFF9CA3AF),
                           ),
                           suffixText: 'тг',
-                          suffixStyle: GoogleFonts.inter(
+                          suffixStyle: TextStyle(
+                            fontFamily: 'NotoSans',
                             fontWeight: FontWeight.w900,
                             color: const Color(0xFF6B7280),
                           ),
@@ -1854,7 +1891,8 @@ Future<num?> _showDebtAmountDialog(
                                 BorderSide(color: accentColor, width: 1.6),
                           ),
                         ),
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
+                          fontFamily: 'NotoSans',
                           fontSize: 22,
                           fontWeight: FontWeight.w900,
                           color: const Color(0xFF111827),
@@ -1879,7 +1917,8 @@ Future<num?> _showDebtAmountDialog(
                                 onPressed: () => Navigator.of(context).pop(),
                                 child: Text(
                                   'Закрыть',
-                                  style: GoogleFonts.inter(
+                                  style: TextStyle(
+                                    fontFamily: 'NotoSans',
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
@@ -1902,7 +1941,8 @@ Future<num?> _showDebtAmountDialog(
                                 ),
                                 child: Text(
                                   actionLabel,
-                                  style: GoogleFonts.inter(
+                                  style: TextStyle(
+                                    fontFamily: 'NotoSans',
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
@@ -1980,7 +2020,8 @@ Future<void> _showSettlementSuccessDialog(
                           children: [
                             Text(
                               'Долг погашен',
-                              style: GoogleFonts.inter(
+                              style: TextStyle(
+                                fontFamily: 'NotoSans',
                                 fontSize: 22,
                                 fontWeight: FontWeight.w900,
                                 color: const Color(0xFF111827),
@@ -1992,7 +2033,8 @@ Future<void> _showSettlementSuccessDialog(
                               customerName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(
+                              style: TextStyle(
+                                fontFamily: 'NotoSans',
                                 fontSize: 13,
                                 fontWeight: FontWeight.w800,
                                 color: const Color(0xFF6B7280),
@@ -2036,7 +2078,8 @@ Future<void> _showSettlementSuccessDialog(
                       ),
                       child: Text(
                         'Готово',
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
+                          fontFamily: 'NotoSans',
                           fontSize: 15,
                           fontWeight: FontWeight.w900,
                         ),
@@ -2079,7 +2122,8 @@ class _SettlementResultRow extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: GoogleFonts.inter(
+              style: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
                 color: const Color(0xFF6B7280),
@@ -2088,7 +2132,8 @@ class _SettlementResultRow extends StatelessWidget {
           ),
           Text(
             value,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 19,
               fontWeight: FontWeight.w900,
               color: color,

@@ -254,6 +254,8 @@ class PosCubit extends Cubit<PosState> {
       vat: 0,
       quantity: m.quantity,
       measurementUnit: m.measurementUnit,
+      coverUrl: m.coverUrl,
+      images: m.images,
       conversionValue: m.conversionValue,
       conversionUnit: m.conversionUnit,
       isUniversal: m.isUniversal,

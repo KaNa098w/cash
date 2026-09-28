@@ -5,7 +5,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/pos_provision_response.dart';
 import 'package:leemon_app/core/models/product_response.dart';
@@ -445,16 +444,8 @@ class _CartListState extends State<CartList> {
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     // превью
-                                    Container(
-                                      width: 30,
-                                      height: 30,
-                                      decoration: BoxDecoration(
-                                        color: ThemeColors.grey,
-                                        border: Border.all(
-                                          color: const Color(0xFFE5E7EB),
-                                        ),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
+                                    _CartProductImage(
+                                      imageUrl: it.product.primaryImageUrl,
                                     ),
                                     const SizedBox(width: 15),
 
@@ -595,7 +586,8 @@ class _CartListState extends State<CartList> {
                                               textAlign: TextAlign.center,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
-                                              style: GoogleFonts.inter(
+                                              style: TextStyle(
+                                                fontFamily: 'NotoSans',
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w700,
                                                 height: 1.15,
@@ -628,7 +620,8 @@ class _CartListState extends State<CartList> {
                                       child: Text(
                                         money(it.sum),
                                         textAlign: TextAlign.right,
-                                        style: GoogleFonts.inter(
+                                        style: TextStyle(
+                                          fontFamily: 'NotoSans',
                                           fontSize: 18,
                                           fontWeight: FontWeight.w600,
                                           height: 1.4,
@@ -892,7 +885,8 @@ class _PriceCell extends StatelessWidget {
       return Text(
         money(item.effectiveUnitPrice),
         textAlign: TextAlign.right,
-        style: GoogleFonts.inter(
+        style: TextStyle(
+          fontFamily: 'NotoSans',
           fontSize: 18,
           fontWeight: FontWeight.w600,
           height: 1.4,
@@ -913,7 +907,8 @@ class _PriceCell extends StatelessWidget {
           Text(
             money(item.product.priceAfterDiscount),
             textAlign: TextAlign.right,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 18,
               fontWeight: FontWeight.w600,
               height: 1.4,
@@ -927,7 +922,8 @@ class _PriceCell extends StatelessWidget {
     return Text(
       money(item.product.price),
       textAlign: TextAlign.right,
-      style: GoogleFonts.inter(
+      style: TextStyle(
+        fontFamily: 'NotoSans',
         fontSize: 18,
         fontWeight: FontWeight.w600,
         height: 1.4,
@@ -1106,7 +1102,8 @@ class _DiscountCell extends StatelessWidget {
         overflow: TextOverflow.visible,
         softWrap: false,
         textScaler: TextScaler.noScaling,
-        style: GoogleFonts.inter(
+        style: TextStyle(
+          fontFamily: 'NotoSans',
           fontSize: _chipFontSize(text),
           color: fg,
           fontWeight: FontWeight.w600,
@@ -2216,6 +2213,45 @@ class _DiscountDialogButton extends StatelessWidget {
 }
 
 /// Диалог ввода количества
+class _CartProductImage extends StatelessWidget {
+  const _CartProductImage({required this.imageUrl});
+
+  final String? imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = imageUrl?.trim() ?? '';
+    final placeholder = Container(
+      decoration: BoxDecoration(
+        color: ThemeColors.grey,
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+    );
+
+    if (url.isEmpty) {
+      return SizedBox(width: 30, height: 30, child: placeholder);
+    }
+
+    return SizedBox(
+      width: 30,
+      height: 30,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          url,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.medium,
+          gaplessPlayback: true,
+          loadingBuilder: (context, child, progress) =>
+              progress == null ? child : placeholder,
+          errorBuilder: (_, __, ___) => placeholder,
+        ),
+      ),
+    );
+  }
+}
+
 class _EmptyCartStripe extends StatelessWidget {
   const _EmptyCartStripe();
 

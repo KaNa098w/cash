@@ -9,7 +9,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
@@ -1088,7 +1087,8 @@ class _ProductsPanel extends StatelessWidget {
                         horizontal: 0,
                       ),
                       hintText: 'Введите наименование товара или код товара',
-                      hintStyle: GoogleFonts.inter(
+                      hintStyle: TextStyle(
+                        fontFamily: 'NotoSans',
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                         height: 1.4,

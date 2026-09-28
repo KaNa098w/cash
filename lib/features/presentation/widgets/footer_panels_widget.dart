@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class FooterControlsOnly extends StatelessWidget {
   const FooterControlsOnly({
@@ -93,7 +92,8 @@ class FooterControlsOnly extends StatelessWidget {
                     onTap: onMinus,
                     child: Text(
                       '-',
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
+                        fontFamily: 'NotoSans',
                         fontSize: s(26),
                         fontWeight: FontWeight.w600,
                         color: Colors.black,
@@ -109,7 +109,8 @@ class FooterControlsOnly extends StatelessWidget {
                     onTap: onPlus,
                     child: Text(
                       '+',
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
+                        fontFamily: 'NotoSans',
                         fontSize: s(26),
                         fontWeight: FontWeight.w600,
                         color: Colors.black,
@@ -151,7 +152,8 @@ class FooterControlsOnly extends StatelessWidget {
                           'Быстрая\nпродажа',
                           maxLines: 2,
                           textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(
+                          style: TextStyle(
+                            fontFamily: 'NotoSans',
                             fontSize: s(18),
                             fontWeight: FontWeight.w500,
                             color: onPayCard == null
@@ -184,7 +186,8 @@ class FooterControlsOnly extends StatelessWidget {
                           'Товары',
                           maxLines: 2,
                           textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(
+                          style: TextStyle(
+                            fontFamily: 'NotoSans',
                             fontSize: s(18),
                             fontWeight: FontWeight.w500,
                             color: Colors.black,
@@ -209,7 +212,8 @@ class FooterControlsOnly extends StatelessWidget {
                         maxLines: 1,
                         softWrap: false,
                         textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
+                          fontFamily: 'NotoSans',
                           fontSize: s(18),
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
@@ -310,7 +314,8 @@ class _TotalBox extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(
                 smallText,
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: smallFontSize,
                   fontWeight: FontWeight.w500,
                   color: const Color(0xFF7A7A7A),
@@ -322,7 +327,8 @@ class _TotalBox extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: Text(
               bigText,
-              style: GoogleFonts.inter(
+              style: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: bigFontSize,
                 fontWeight: FontWeight.w700,
                 color: Colors.black,
@@ -376,7 +382,8 @@ class _PayBtn extends StatelessWidget {
         ),
         child: Text(
           label,
-          style: GoogleFonts.inter(
+          style: TextStyle(
+            fontFamily: 'NotoSans',
             fontSize: fontSize,
             fontWeight: FontWeight.w700,
             color: onTap == null ? Colors.white70 : Colors.white,

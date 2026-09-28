@@ -34,6 +34,17 @@ class ProductModel {
   final bool isFavorite;
   final String? sku;
   final String? coverUrl;
+  final List<String> images;
+
+  String? get primaryImageUrl {
+    final cover = coverUrl?.trim() ?? '';
+    if (cover.isNotEmpty) return cover;
+    for (final image in images) {
+      final candidate = image.trim();
+      if (candidate.isNotEmpty) return candidate;
+    }
+    return null;
+  }
 
   final String? categoryId;
   final String? globalProductId;
@@ -77,6 +88,7 @@ class ProductModel {
     this.localBarcode,
     this.sku,
     this.coverUrl,
+    this.images = const <String>[],
     this.categoryId,
     this.globalProductId,
     this.isUniversal = false,
@@ -150,6 +162,21 @@ class ProductModel {
     return (n != null && n > 0) ? n : null;
   }
 
+  static List<String> _asImages(dynamic value) {
+    if (value is! List) return const <String>[];
+    return value
+        .map((item) {
+          if (item is Map) {
+            return _asString(
+              item['url'] ?? item['image_url'] ?? item['imageUrl'],
+            );
+          }
+          return _asString(item);
+        })
+        .whereType<String>()
+        .toList(growable: false);
+  }
+
   static double _asQuantity(
     dynamic v, {
     required String measurementUnit,
@@ -194,6 +221,7 @@ class ProductModel {
           json['is_favorite']?.toString().trim() == '1',
       sku: _asString(json['sku']),
       coverUrl: _asString(json['cover_url']),
+      images: _asImages(json['images']),
       categoryId: _asString(json['category_id']),
       globalProductId: _asString(json['global_product_id']),
       isUniversal: json['is_universal'] == true ||
@@ -227,6 +255,7 @@ class ProductModel {
       'is_favorite': isFavorite ? 1 : 0,
       'sku': sku,
       'cover_url': coverUrl,
+      'images': images,
       'category_id': categoryId,
       'global_product_id': globalProductId,
       'is_universal': isUniversal ? 1 : 0,

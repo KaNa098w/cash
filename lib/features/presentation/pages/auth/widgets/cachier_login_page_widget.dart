@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:leemon_app/core/models/pos_provision_response.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:leemon_app/features/presentation/widgets/show_pos_action_dialog.dart'
     show exitAppFully;
 
@@ -396,7 +395,8 @@ class _ExitAppButton extends StatelessWidget {
                             children: [
                               Text(
                                 'Выйти из приложения?',
-                                style: GoogleFonts.inter(
+                                style: TextStyle(
+                                  fontFamily: 'NotoSans',
                                   fontSize: 20,
                                   fontWeight: FontWeight.w800,
                                   color: const Color(0xFF111827),
@@ -405,7 +405,8 @@ class _ExitAppButton extends StatelessWidget {
                               const SizedBox(height: 6),
                               Text(
                                 'Приложение будет закрыто. Все несинхронизированные операции останутся в очереди и отправятся позже.',
-                                style: GoogleFonts.inter(
+                                style: TextStyle(
+                                  fontFamily: 'NotoSans',
                                   fontSize: 14,
                                   fontWeight: FontWeight.w500,
                                   height: 1.35,
@@ -436,7 +437,8 @@ class _ExitAppButton extends StatelessWidget {
                               ),
                               child: Text(
                                 'Отмена',
-                                style: GoogleFonts.inter(
+                                style: TextStyle(
+                                  fontFamily: 'NotoSans',
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -460,7 +462,8 @@ class _ExitAppButton extends StatelessWidget {
                               ),
                               child: Text(
                                 'Выйти',
-                                style: GoogleFonts.inter(
+                                style: TextStyle(
+                                  fontFamily: 'NotoSans',
                                   fontSize: 15,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -497,7 +500,8 @@ class _ExitAppButton extends StatelessWidget {
             children: [
               Text(
                 'Выход из программы',
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                   height: 1,
@@ -587,9 +591,15 @@ class _BrandPane extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(siteText, style: GoogleFonts.inter()),
+                            Text(siteText,
+                                style: TextStyle(
+                                  fontFamily: 'NotoSans',
+                                )),
                             const SizedBox(height: 2),
-                            Text(contactsText, style: GoogleFonts.inter()),
+                            Text(contactsText,
+                                style: TextStyle(
+                                  fontFamily: 'NotoSans',
+                                )),
                           ],
                         ),
                       ),
@@ -638,7 +648,8 @@ class _StoreNameWordmark extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       softWrap: true,
       textAlign: TextAlign.center,
-      style: GoogleFonts.inter(
+      style: TextStyle(
+        fontFamily: 'NotoSans',
         color: Colors.white,
         fontSize: fontSize,
         fontWeight: FontWeight.w800,
@@ -714,7 +725,8 @@ class _LoginCard extends StatelessWidget {
               child: Text(
                 'ВХОД В КАССУ',
                 maxLines: 1,
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                   height: 1,
@@ -768,7 +780,8 @@ class _LoginCard extends StatelessWidget {
                     size: 28,
                   ),
                 ),
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 16,
                   fontWeight: FontWeight.w400,
                   color: const Color.fromARGB(255, 75, 75, 75),
@@ -794,13 +807,15 @@ class _LoginCard extends StatelessWidget {
                   border: InputBorder.none,
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                  hintStyle: GoogleFonts.inter(
+                  hintStyle: TextStyle(
+                    fontFamily: 'NotoSans',
                     fontSize: 16,
                     fontWeight: FontWeight.w400,
                     color: const Color(0xFF999999),
                   ),
                 ),
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 16,
                   fontWeight: FontWeight.w400,
                   color: const Color(0xFF4F4F4F),
@@ -841,7 +856,8 @@ class _LoginCard extends StatelessWidget {
               onPressed: onCancel,
               child: Text(
                 'ОТМЕНА',
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 18,
                   fontWeight: FontWeight.w500,
                   height: 1,
@@ -869,7 +885,8 @@ class _LoginCard extends StatelessWidget {
               onPressed: canOk ? onOk : null,
               child: Text(
                 'OK',
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 22,
                   fontWeight: FontWeight.w600,
                   height: 1,
@@ -931,7 +948,8 @@ class _PinErrorMessage extends StatelessWidget {
               message,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
+              style: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
                 color: const Color(0xFFD15850),
@@ -960,7 +978,8 @@ class _PinKeypad extends StatelessWidget {
   static const double gapY = 8.621;
 
   TextStyle _keyTextStyle(BuildContext context) {
-    return GoogleFonts.inter(
+    return TextStyle(
+      fontFamily: 'NotoSans',
       fontSize: 18,
       fontWeight: FontWeight.w500,
       color: Colors.black,

@@ -8,7 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:pdf/pdf.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
@@ -1686,7 +1685,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 child: Focus(
                   autofocus: true,
                   child: DefaultTextStyle(
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
+                      fontFamily: 'NotoSans',
                       color: Colors.black,
                       fontWeight: FontWeight.w500,
                     ),
@@ -2198,7 +2198,8 @@ class _TopAmountBox extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 12,
               fontWeight: FontWeight.w700,
               height: 1,
@@ -2210,7 +2211,8 @@ class _TopAmountBox extends StatelessWidget {
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 23,
               fontWeight: FontWeight.w900,
               height: 1,
@@ -2278,7 +2280,8 @@ class _MissingDebtCustomerDialog extends StatelessWidget {
                         children: [
                           Text(
                             'Выберите покупателя',
-                            style: GoogleFonts.inter(
+                            style: TextStyle(
+                              fontFamily: 'NotoSans',
                               fontSize: 20,
                               fontWeight: FontWeight.w800,
                               height: 1.1,
@@ -2288,7 +2291,8 @@ class _MissingDebtCustomerDialog extends StatelessWidget {
                           const SizedBox(height: 8),
                           Text(
                             'Для продажи в долг нужно указать покупателя. После выбора можно продолжить оплату.',
-                            style: GoogleFonts.inter(
+                            style: TextStyle(
+                              fontFamily: 'NotoSans',
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
                               height: 1.35,
@@ -2317,7 +2321,8 @@ class _MissingDebtCustomerDialog extends StatelessWidget {
                           ),
                           child: Text(
                             'Закрыть',
-                            style: GoogleFonts.inter(
+                            style: TextStyle(
+                              fontFamily: 'NotoSans',
                               fontSize: 15,
                               fontWeight: FontWeight.w800,
                             ),
@@ -2334,7 +2339,8 @@ class _MissingDebtCustomerDialog extends StatelessWidget {
                           icon: const Icon(Icons.person_add_alt_1_rounded),
                           label: Text(
                             'Выбрать',
-                            style: GoogleFonts.inter(
+                            style: TextStyle(
+                              fontFamily: 'NotoSans',
                               fontSize: 15,
                               fontWeight: FontWeight.w800,
                             ),
@@ -2394,7 +2400,8 @@ class _DebtSummaryBox extends StatelessWidget {
         border: Border.all(color: const Color(0xFFF59E0B), width: 1.2),
       ),
       child: DefaultTextStyle(
-        style: GoogleFonts.inter(
+        style: TextStyle(
+          fontFamily: 'NotoSans',
           fontSize: 10,
           fontWeight: FontWeight.w600,
           color: const Color(0xFF7C2D12),
@@ -2407,7 +2414,8 @@ class _DebtSummaryBox extends StatelessWidget {
               hasCustomer ? customerName : 'Клиент не выбран',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
+              style: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 11,
                 fontWeight: FontWeight.w800,
                 color: const Color(0xFF9A3412),
@@ -2552,7 +2560,8 @@ class _PaymentTabButton extends StatelessWidget {
         ),
         child: Text(
           text,
-          style: GoogleFonts.inter(
+          style: TextStyle(
+            fontFamily: 'NotoSans',
             fontSize: 14,
             fontWeight: FontWeight.w800,
             height: 1,
@@ -2702,7 +2711,8 @@ class _SalePaymentDetailsDialogState extends State<_SalePaymentDetailsDialog> {
                       widget.requireBankAccount
                           ? 'Детали безналичной оплаты'
                           : 'Комментарий к оплате',
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
+                        fontFamily: 'NotoSans',
                         fontSize: 19,
                         fontWeight: FontWeight.w900,
                         color: const Color(0xFF111827),
@@ -2720,7 +2730,8 @@ class _SalePaymentDetailsDialogState extends State<_SalePaymentDetailsDialog> {
                 const SizedBox(height: 16),
                 Text(
                   'Банковский счет',
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
                     color: const Color(0xFF475569),
@@ -2794,7 +2805,8 @@ class _SalePaymentDetailsDialogState extends State<_SalePaymentDetailsDialog> {
               const SizedBox(height: 16),
               Text(
                 'Комментарий',
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
                   color: const Color(0xFF475569),
@@ -2999,7 +3011,8 @@ class _BankAccountNameText extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       textAlign: TextAlign.center,
-      style: GoogleFonts.inter(
+      style: TextStyle(
+        fontFamily: 'NotoSans',
         fontSize: 12,
         fontWeight: FontWeight.w800,
         color: Colors.black,
@@ -3063,14 +3076,16 @@ class _InlineSaleCommentField extends StatelessWidget {
               border: InputBorder.none,
               isDense: true,
               contentPadding: const EdgeInsets.fromLTRB(12, 12, 42, 6),
-              hintStyle: GoogleFonts.inter(
+              hintStyle: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 12.76,
                 fontWeight: FontWeight.w500,
                 color: const Color(0xFF999999),
                 height: 1,
               ),
             ),
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 12.76,
               fontWeight: FontWeight.w500,
               color: Colors.black,
@@ -3136,14 +3151,16 @@ class _BottomSaleCommentField extends StatelessWidget {
           border: InputBorder.none,
           isDense: true,
           contentPadding: const EdgeInsets.fromLTRB(12, 10, 36, 10),
-          hintStyle: GoogleFonts.inter(
+          hintStyle: TextStyle(
+            fontFamily: 'NotoSans',
             fontSize: 12.76,
             fontWeight: FontWeight.w500,
             color: const Color(0xFF999999),
             height: 1,
           ),
         ),
-        style: GoogleFonts.inter(
+        style: TextStyle(
+          fontFamily: 'NotoSans',
           fontSize: 12.76,
           fontWeight: FontWeight.w500,
           color: Colors.black,
@@ -3198,7 +3215,8 @@ class _CommentKeyboardPreview extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
+                      fontFamily: 'NotoSans',
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                       color: text.isEmpty
@@ -3254,7 +3272,8 @@ class _InlineBankAccountSelect extends StatelessWidget {
                     'Загрузка счетов...',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
+                      fontFamily: 'NotoSans',
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF64748B),
@@ -3267,7 +3286,8 @@ class _InlineBankAccountSelect extends StatelessWidget {
                       icon: const Icon(Icons.keyboard_arrow_down_rounded),
                       hint: Text(
                         accounts.isEmpty ? 'Нет счетов bank' : 'Счет',
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
+                          fontFamily: 'NotoSans',
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF64748B),
@@ -3283,7 +3303,8 @@ class _InlineBankAccountSelect extends StatelessWidget {
                                     : account.name.trim(),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.inter(
+                                style: TextStyle(
+                                  fontFamily: 'NotoSans',
                                   fontSize: 12,
                                   fontWeight: FontWeight.w800,
                                   color: const Color(0xFF111827),
@@ -3336,7 +3357,8 @@ class _SaleCommentBox extends StatelessWidget {
             decoration: InputDecoration(
               hintText: 'Комментарий к продаже',
               counterText: '',
-              hintStyle: GoogleFonts.inter(
+              hintStyle: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF999999),
@@ -3349,7 +3371,8 @@ class _SaleCommentBox extends StatelessWidget {
                 10,
               ),
             ),
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: Colors.black,
@@ -3439,7 +3462,8 @@ class _BlueInput extends StatelessWidget {
               builder: (context, _) {
                 return Text(
                   label,
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     color: focusNode.hasFocus
                         ? const Color(0xFF168F6A)
                         : const Color(0xFF8A8A8A),
@@ -3490,7 +3514,8 @@ class _BlueInput extends StatelessWidget {
               contentPadding: EdgeInsets.fromLTRB(8, 17, 13, 0),
             ),
             textAlign: TextAlign.right,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 18,
               fontWeight: FontWeight.w800,
               color: Colors.black,
@@ -3545,7 +3570,8 @@ class _KeypadButtonPositioned extends StatelessWidget {
             ? Text(
                 text ?? '',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: fontSize,
                   fontWeight: FontWeight.w500,
                   color: fg,
@@ -3593,7 +3619,8 @@ class _WhiteButton extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         textAlign: TextAlign.center,
-        style: GoogleFonts.inter(
+        style: TextStyle(
+          fontFamily: 'NotoSans',
           fontSize: 12,
           fontWeight: FontWeight.w800,
           color: Colors.black,
@@ -3667,7 +3694,8 @@ class _GreyButton extends StatelessWidget {
         text,
         maxLines: 2,
         textAlign: TextAlign.center,
-        style: GoogleFonts.inter(
+        style: TextStyle(
+          fontFamily: 'NotoSans',
           fontSize: 14,
           fontWeight: FontWeight.w800,
           height: 1,
@@ -3757,7 +3785,8 @@ class _BottomButton extends StatelessWidget {
                           softWrap: false,
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(
+                          style: TextStyle(
+                            fontFamily: 'NotoSans',
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0.3,
@@ -3772,7 +3801,8 @@ class _BottomButton extends StatelessWidget {
                       softWrap: false,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
+                        fontFamily: 'NotoSans',
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.3,

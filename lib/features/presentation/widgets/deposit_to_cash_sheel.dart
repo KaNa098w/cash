@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
@@ -553,7 +552,7 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
       width: 527,
       height: 432,
       child: DefaultTextStyle(
-        style: GoogleFonts.inter(color: Colors.black),
+        style: TextStyle(fontFamily: 'NotoSans', color: Colors.black),
         child: Stack(
           children: [
             Positioned(
@@ -589,7 +588,8 @@ class _DepositToCashSheetState extends State<_DepositToCashSheet> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   title,
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     fontSize: 21,
                     fontWeight: FontWeight.w900,
                     color: Colors.white,
@@ -771,14 +771,16 @@ class _ExpenseAmountBox extends StatelessWidget {
         decoration: InputDecoration(
           border: InputBorder.none,
           hintText: displayText,
-          hintStyle: GoogleFonts.inter(
+          hintStyle: TextStyle(
+            fontFamily: 'NotoSans',
             fontSize: 20,
             fontWeight: FontWeight.w900,
             color: Colors.black,
             height: 1,
           ),
         ),
-        style: GoogleFonts.inter(
+        style: TextStyle(
+          fontFamily: 'NotoSans',
           fontSize: 20,
           fontWeight: FontWeight.w900,
           color: Colors.black,
@@ -823,7 +825,8 @@ class _ExpenseSelectBox extends StatelessWidget {
               text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
+              style: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 15,
                 fontWeight: FontWeight.w800,
                 color: const Color(0xFF999999),
@@ -871,7 +874,8 @@ class _ExpenseCommentBox extends StatelessWidget {
             textAlignVertical: TextAlignVertical.top,
             decoration: InputDecoration(
               hintText: 'Комментарий',
-              hintStyle: GoogleFonts.inter(
+              hintStyle: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
                 color: const Color(0xFF999999),
@@ -879,7 +883,8 @@ class _ExpenseCommentBox extends StatelessWidget {
               border: InputBorder.none,
               contentPadding: const EdgeInsets.fromLTRB(13, 14, 48, 14),
             ),
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 16,
               fontWeight: FontWeight.w700,
               color: Colors.black,
@@ -945,7 +950,8 @@ class _ExpenseKeyButton extends StatelessWidget {
         child: icon == null
             ? Text(
                 text ?? '',
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 18,
                   fontWeight: FontWeight.w500,
                   color: fg,
@@ -998,7 +1004,8 @@ class _ExpenseActionButton extends StatelessWidget {
               text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
+              style: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 13,
                 fontWeight: FontWeight.w900,
                 color: Colors.white,

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class StatusChip extends StatelessWidget {
   const StatusChip(
@@ -17,7 +16,8 @@ class StatusChip extends StatelessWidget {
           BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
       child: Text(
         label,
-        style: GoogleFonts.inter(
+        style: TextStyle(
+          fontFamily: 'NotoSans',
           fontSize: 16,
           height: 1.4,
           letterSpacing: 0.34,

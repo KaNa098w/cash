@@ -15,6 +15,7 @@ import 'package:leemon_app/features/domain/entities/cart_item.dart';
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/search/search_keyboard_controller.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
+import 'package:leemon_app/core/service/scale_service.dart';
 
 Future<void> showDuplicateMarkCodeDialog(BuildContext context) async {
   await showDialog<void>(
@@ -467,6 +468,20 @@ Future<bool> addProductToCartWithConversionFlow(
   BuildContext context,
   ProductModel product,
 ) async {
+  if (_isWeightUnit(product.measurementUnit)) {
+    final quantity = await showDialog<double>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ScaleWeightDialog(product: product),
+    );
+    if (quantity == null || quantity <= 0 || !context.mounted) {
+      requestSearchResetAndFocus();
+      return false;
+    }
+    context.read<PosCubit>().addFromProductModel(product, qty: quantity);
+    return true;
+  }
+
   if (product.requiresMarking) {
     return addMarkedProductToCart(context, product);
   }
@@ -499,6 +514,369 @@ Future<bool> addProductToCartWithConversionFlow(
   if (!context.mounted) return false;
   context.read<PosCubit>().setConvertedProductQuantity(product, qtyToAdd);
   return true;
+}
+
+bool _isWeightUnit(String unit) => _isGramUnit(unit) || _isKilogramUnit(unit);
+
+bool _isGramUnit(String unit) {
+  final normalized = ProductModel.normalizeMeasurementUnit(unit);
+  return const {'г', 'гр', 'gram', 'grams', 'грамм', 'граммы'}
+      .contains(normalized);
+}
+
+bool _isKilogramUnit(String unit) {
+  final normalized = ProductModel.normalizeMeasurementUnit(unit);
+  return const {'кг', 'kg', 'kilogram', 'kilograms', 'килограмм', 'килограммы'}
+      .contains(normalized);
+}
+
+class _ScaleWeightDialog extends StatefulWidget {
+  const _ScaleWeightDialog({required this.product});
+
+  final ProductModel product;
+
+  @override
+  State<_ScaleWeightDialog> createState() => _ScaleWeightDialogState();
+}
+
+class _ScaleWeightDialogState extends State<_ScaleWeightDialog> {
+  ScaleConnection? _connection;
+  StreamSubscription<ScaleReading>? _readingSubscription;
+  StreamSubscription<String>? _errorSubscription;
+  final List<double> _recentReadings = <double>[];
+  double _grams = 0;
+  bool _stable = false;
+  String? _portName;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _connect();
+  }
+
+  Future<void> _connect() async {
+    try {
+      final connection = await const ScaleService().connect();
+      if (!mounted) {
+        connection.close();
+        return;
+      }
+      _connection = connection;
+      _readingSubscription = connection.readings.listen(_onReading);
+      _errorSubscription = connection.errors.listen((error) {
+        if (mounted) setState(() => _error = error);
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Не удалось подключиться к весам');
+      }
+    }
+  }
+
+  void _onReading(ScaleReading reading) {
+    _recentReadings.add(reading.grams);
+    if (_recentReadings.length > 5) _recentReadings.removeAt(0);
+    final minValue = _recentReadings.reduce((a, b) => a < b ? a : b);
+    final maxValue = _recentReadings.reduce((a, b) => a > b ? a : b);
+    final tolerance = (reading.grams * 0.005).clamp(2.0, 10.0);
+    final stable = _recentReadings.length == 5 &&
+        reading.grams > 0 &&
+        maxValue - minValue <= tolerance;
+    if (!mounted) return;
+    setState(() {
+      _grams = reading.grams;
+      _stable = stable;
+      _portName = reading.portName;
+      _error = null;
+    });
+  }
+
+  @override
+  void dispose() {
+    _readingSubscription?.cancel();
+    _errorSubscription?.cancel();
+    _connection?.close();
+    super.dispose();
+  }
+
+  String _formatGrams(double value) {
+    if (value == value.roundToDouble()) return value.toStringAsFixed(0);
+    return value.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final usesKilograms = _isKilogramUnit(widget.product.measurementUnit);
+    final quantity = usesKilograms ? _grams / 1000 : _grams;
+    final displayedWeight = usesKilograms
+        ? quantity.toStringAsFixed(3).replaceAll('.', ',')
+        : _formatGrams(_grams);
+    final displayUnit = usesKilograms ? 'кг' : 'г';
+    final total = quantity * widget.product.effectivePrice;
+    final hasReading = _grams > 0;
+    final statusColor = _stable
+        ? const Color(0xFF15966A)
+        : hasReading
+            ? const Color(0xFFF59E0B)
+            : const Color(0xFF64748B);
+
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(20),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 540),
+        child: Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 36,
+                offset: const Offset(0, 18),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(28, 24, 20, 22),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF0F766E), Color(0xFF22B982)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 54,
+                      height: 54,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(17),
+                      ),
+                      child: const Icon(Icons.scale_rounded,
+                          color: Colors.white, size: 30),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Положите товар на весы',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 4),
+                          Text(widget.product.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.86),
+                                  fontSize: 15)),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Отмена',
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon:
+                          const Icon(Icons.close_rounded, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(
+                            color: statusColor.withValues(alpha: 0.28)),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            hasReading ? displayedWeight : '—',
+                            style: TextStyle(
+                              color: const Color(0xFF0F172A),
+                              fontSize: 58,
+                              height: 1,
+                              fontWeight: FontWeight.w900,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(displayUnit,
+                              style: TextStyle(
+                                  color: statusColor,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (!_stable)
+                                SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: statusColor),
+                                )
+                              else
+                                Icon(Icons.check_circle_rounded,
+                                    size: 18, color: statusColor),
+                              const SizedBox(width: 8),
+                              Text(
+                                _stable
+                                    ? 'Вес стабилен'
+                                    : hasReading
+                                        ? 'Ожидаем стабильный вес…'
+                                        : 'Ожидаем товар…',
+                                style: TextStyle(
+                                    color: statusColor,
+                                    fontWeight: FontWeight.w700),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(13),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(_error!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: Color(0xFFB91C1C),
+                                fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _ScaleInfoTile(
+                            label: usesKilograms
+                                ? 'Цена за килограмм'
+                                : 'Цена за грамм',
+                            value: money(widget.product.effectivePrice),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _ScaleInfoTile(
+                            label: 'Сумма',
+                            value: money(total),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_portName != null) ...[
+                      const SizedBox(height: 10),
+                      Text('Весы подключены: $_portName',
+                          style: const TextStyle(
+                              color: Color(0xFF94A3B8), fontSize: 12)),
+                    ],
+                    const SizedBox(height: 22),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(54),
+                              foregroundColor: const Color(0xFF475569),
+                              side: const BorderSide(color: Color(0xFFCBD5E1)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                            ),
+                            child: const Text('Отмена'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: FilledButton.icon(
+                            onPressed: _stable
+                                ? () => Navigator.of(context).pop(quantity)
+                                : null,
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(54),
+                              backgroundColor: const Color(0xFF22B982),
+                              disabledBackgroundColor: const Color(0xFFCBD5E1),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                            ),
+                            icon: const Icon(Icons.check_rounded),
+                            label: const Text('Подтвердить вес'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScaleInfoTile extends StatelessWidget {
+  const _ScaleInfoTile({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label,
+                style: const TextStyle(color: Color(0xFF64748B), fontSize: 12)),
+            const SizedBox(height: 4),
+            Text(value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800)),
+          ],
+        ),
+      );
 }
 
 Future<bool> addMarkedProductToCart(
@@ -849,6 +1227,8 @@ Future<void> editConvertedCartItem(
     sellingPrice: item.product.price,
     wholesalePrice: 0,
     quantity: item.product.quantity,
+    coverUrl: item.product.coverUrl,
+    images: item.product.images,
     conversionValue: item.product.conversionValue,
     conversionUnit: item.product.conversionUnit,
     discountType: item.product.discountType,

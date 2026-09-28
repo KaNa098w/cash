@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/marking/gs1_datamatrix_validator.dart';
@@ -1119,7 +1118,8 @@ class _SearchBarState extends State<SearchBar> {
                           ),
                           hintText:
                               'Введите наименование товара или код товара',
-                          hintStyle: GoogleFonts.inter(
+                          hintStyle: TextStyle(
+                            fontFamily: 'NotoSans',
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
                             height: 1.4,
@@ -1185,7 +1185,8 @@ class _SearchBarState extends State<SearchBar> {
                 '\u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
                   color: Colors.black,
@@ -1308,7 +1309,8 @@ class _SearchBarState extends State<SearchBar> {
             ),
             child: Text(
               'Покупатель',
-              style: GoogleFonts.inter(
+              style: TextStyle(
+                fontFamily: 'NotoSans',
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 height: 1.4,

@@ -5,7 +5,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:pdf/pdf.dart';
 
 import 'package:leemon_app/core/di/api/service_locator.dart';
@@ -1613,7 +1612,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       onPointerDown: (_) => _trackUserActivity(),
       onPointerSignal: (_) => _trackUserActivity(),
       child: DefaultTextStyle.merge(
-        style: GoogleFonts.inter(fontSize: _fs, color: Colors.black),
+        style: TextStyle(
+            fontFamily: 'NotoSans', fontSize: _fs, color: Colors.black),
         child: BlocProvider.value(
           value: _cubit,
           child: BlocBuilder<SalesHistoryCubit, SalesHistoryState>(
@@ -2062,7 +2062,8 @@ class _SessionTimeLine extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       text: TextSpan(
-        style: GoogleFonts.inter(
+        style: TextStyle(
+          fontFamily: 'NotoSans',
           fontSize: 12,
           fontWeight: FontWeight.w800,
           color: const Color(0xFF334155),
@@ -2163,7 +2164,8 @@ class _SessionHistoryHeaderCard extends StatelessWidget {
                         _title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
+                          fontFamily: 'NotoSans',
                           fontSize: 16,
                           fontWeight: FontWeight.w900,
                           color: const Color(0xFF111827),
@@ -2182,7 +2184,8 @@ class _SessionHistoryHeaderCard extends StatelessWidget {
                       ),
                       child: Text(
                         statusText,
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
+                          fontFamily: 'NotoSans',
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
                           color: statusColor,
@@ -2197,7 +2200,8 @@ class _SessionHistoryHeaderCard extends StatelessWidget {
                   'Открытие: ${_time(session?.openedAt)}   Закрытие: ${_time(session?.closedAt)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: const Color(0xFF64748B),
@@ -2241,7 +2245,8 @@ class _SessionMetric extends StatelessWidget {
         children: [
           Text(
             '$label: ',
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 11,
               fontWeight: FontWeight.w800,
               color: const Color(0xFF64748B),
@@ -2252,7 +2257,8 @@ class _SessionMetric extends StatelessWidget {
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 12,
               fontWeight: FontWeight.w900,
               color: const Color(0xFF111827),
@@ -2297,21 +2303,24 @@ class _RefundDialogReceiptHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textStyle = GoogleFonts.inter(
+    final textStyle = TextStyle(
+      fontFamily: 'NotoSans',
       fontSize: 18,
       height: 1.4,
       letterSpacing: 0.18,
       fontWeight: FontWeight.w500,
       color: Colors.black,
     );
-    final strongStyle = GoogleFonts.inter(
+    final strongStyle = TextStyle(
+      fontFamily: 'NotoSans',
       fontSize: 20,
       height: 1.4,
       letterSpacing: 0.27,
       fontWeight: FontWeight.w700,
       color: Colors.black,
     );
-    final amountStyle = GoogleFonts.inter(
+    final amountStyle = TextStyle(
+      fontFamily: 'NotoSans',
       fontSize: 20,
       height: 1.4,
       letterSpacing: 0.27,
@@ -2358,7 +2367,8 @@ class _RefundDialogReceiptHeader extends StatelessWidget {
                   _paymentLabel,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'NotoSans',
                     fontSize: 16,
                     height: 1.4,
                     letterSpacing: 0.34,
@@ -2415,7 +2425,8 @@ class _RefundDialogTotal extends StatelessWidget {
         children: [
           Text(
             'Выбрано товаров: $count',
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 15,
               height: 1.4,
               fontWeight: FontWeight.w500,
@@ -2425,7 +2436,8 @@ class _RefundDialogTotal extends StatelessWidget {
           const Spacer(),
           Text(
             'Итого возврат',
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 16,
               height: 1.4,
               fontWeight: FontWeight.w600,
@@ -2436,7 +2448,8 @@ class _RefundDialogTotal extends StatelessWidget {
           Text(
             money2(total),
             textAlign: TextAlign.right,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'NotoSans',
               fontSize: 22,
               height: 1.4,
               letterSpacing: 0.27,

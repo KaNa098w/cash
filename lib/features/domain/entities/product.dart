@@ -10,6 +10,19 @@ class Product extends Equatable {
   final double vat;
   final double quantity;
   final String measurementUnit;
+  final String? coverUrl;
+  final List<String> images;
+
+  String? get primaryImageUrl {
+    final cover = coverUrl?.trim() ?? '';
+    if (cover.isNotEmpty) return cover;
+    for (final image in images) {
+      final candidate = image.trim();
+      if (candidate.isNotEmpty) return candidate;
+    }
+    return null;
+  }
+
   final double? conversionValue;
   final String? conversionUnit;
   bool get hasConversion =>
@@ -44,6 +57,8 @@ class Product extends Equatable {
     this.vat = 0,
     this.quantity = 0,
     this.measurementUnit = 'шт.',
+    this.coverUrl,
+    this.images = const <String>[],
     this.conversionValue,
     this.conversionUnit,
     this.isUniversal = false,
@@ -65,6 +80,12 @@ class Product extends Equatable {
         vat: (json['vat'] as num?)?.toDouble() ?? 0,
         quantity: (json['quantity'] as num?)?.toDouble() ?? 0,
         measurementUnit: (json['measurementUnit'] ?? 'шт.').toString(),
+        coverUrl: (json['coverUrl'] ?? json['cover_url'])?.toString(),
+        images: (json['images'] as List?)
+                ?.map((value) => value.toString().trim())
+                .where((value) => value.isNotEmpty)
+                .toList(growable: false) ??
+            const <String>[],
         conversionValue: (json['conversionValue'] as num?)?.toDouble(),
         conversionUnit: json['conversionUnit']?.toString(),
         isUniversal: json['isUniversal'] == true,
@@ -85,6 +106,8 @@ class Product extends Equatable {
         'vat': vat,
         'quantity': quantity,
         'measurementUnit': measurementUnit,
+        'coverUrl': coverUrl,
+        'images': images,
         'conversionValue': conversionValue,
         'conversionUnit': conversionUnit,
         'isUniversal': isUniversal,
@@ -105,6 +128,8 @@ class Product extends Equatable {
         vat,
         quantity,
         measurementUnit,
+        coverUrl,
+        images,
         conversionValue,
         conversionUnit,
         isUniversal,
@@ -124,6 +149,8 @@ class Product extends Equatable {
     double? vat,
     double? quantity,
     String? measurementUnit,
+    String? coverUrl,
+    List<String>? images,
     double? conversionValue,
     String? conversionUnit,
     bool clearConversionValue = false,
@@ -144,6 +171,8 @@ class Product extends Equatable {
       vat: vat ?? this.vat,
       quantity: quantity ?? this.quantity,
       measurementUnit: measurementUnit ?? this.measurementUnit,
+      coverUrl: coverUrl ?? this.coverUrl,
+      images: images ?? this.images,
       conversionValue: clearConversionValue
           ? null
           : (conversionValue ?? this.conversionValue),

@@ -1,7 +1,6 @@
 import 'package:leemon_app/core/models/refund_inventory_action.dart';
 export 'package:leemon_app/core/models/refund_inventory_action.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class RefundReasonOption {
   const RefundReasonOption({
@@ -79,12 +78,14 @@ class RefundReasonSelector extends StatelessWidget {
                 onPressed: () => onChanged(null),
                 icon: const Icon(Icons.close_rounded, size: 18),
               ),
-        labelStyle: GoogleFonts.inter(
+        labelStyle: TextStyle(
+          fontFamily: 'NotoSans',
           fontSize: compact ? 12 : 13,
           fontWeight: FontWeight.w700,
           color: const Color(0xFF64748B),
         ),
-        hintStyle: GoogleFonts.inter(
+        hintStyle: TextStyle(
+          fontFamily: 'NotoSans',
           fontSize: compact ? 13 : 14,
           fontWeight: FontWeight.w700,
           color: const Color(0xFF94A3B8),
@@ -103,7 +104,8 @@ class RefundReasonSelector extends StatelessWidget {
         ),
       ),
       icon: const Icon(Icons.keyboard_arrow_down_rounded),
-      style: GoogleFonts.inter(
+      style: TextStyle(
+        fontFamily: 'NotoSans',
         fontSize: compact ? 13 : 14,
         fontWeight: FontWeight.w800,
         color: const Color(0xFF111827),
