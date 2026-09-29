@@ -16,6 +16,7 @@ import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.
 import 'package:leemon_app/features/presentation/pages/search/search_keyboard_controller.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
 import 'package:leemon_app/core/service/scale_service.dart';
+import 'package:leemon_app/features/presentation/widgets/edit_quantity_widget.dart';
 
 Future<void> showDuplicateMarkCodeDialog(BuildContext context) async {
   await showDialog<void>(
@@ -469,11 +470,16 @@ Future<bool> addProductToCartWithConversionFlow(
   ProductModel product,
 ) async {
   if (_isWeightUnit(product.measurementUnit)) {
-    final quantity = await showDialog<double>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _ScaleWeightDialog(product: product),
-    );
+    final scaleSettings = await ScaleSettings.load();
+    if (!context.mounted) return false;
+    final quantity = scaleSettings.enabled
+        ? await showDialog<double>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) =>
+                _ScaleWeightDialog(product: product, settings: scaleSettings),
+          )
+        : await showManualWeightQuantityDialog(context, product);
     if (quantity == null || quantity <= 0 || !context.mounted) {
       requestSearchResetAndFocus();
       return false;
@@ -531,9 +537,10 @@ bool _isKilogramUnit(String unit) {
 }
 
 class _ScaleWeightDialog extends StatefulWidget {
-  const _ScaleWeightDialog({required this.product});
+  const _ScaleWeightDialog({required this.product, required this.settings});
 
   final ProductModel product;
+  final ScaleSettings settings;
 
   @override
   State<_ScaleWeightDialog> createState() => _ScaleWeightDialogState();
@@ -557,7 +564,14 @@ class _ScaleWeightDialogState extends State<_ScaleWeightDialog> {
 
   Future<void> _connect() async {
     try {
-      final connection = await const ScaleService().connect();
+      final availablePorts = await ScaleService.availablePorts();
+      final connection = await ScaleService(
+        baudRate: widget.settings.baudRate,
+        portCandidates: widget.settings.port.isEmpty
+            ? availablePorts
+            : [widget.settings.port],
+        protocol: widget.settings.protocol,
+      ).connect();
       if (!mounted) {
         connection.close();
         return;

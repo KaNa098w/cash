@@ -8,6 +8,8 @@
     <!-- Разрешаем исходящие подключения (клиент) -->
     <key>com.apple.security.network.client</key>
     <true/>
+    <key>com.apple.security.device.serial</key>
+    <true/>
 
     <!-- Это у тебя уже было -->
     <key>com.apple.security.cs.allow-jit</key>

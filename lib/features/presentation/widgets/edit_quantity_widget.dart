@@ -10,6 +10,103 @@ import 'package:leemon_app/features/presentation/widgets/footer_status.dart'
     show TouchDeleteDialog;
 import 'package:leemon_app/features/presentation/widgets/conversion_product_dialog.dart';
 
+/// Uses the same quantity editor as an existing cart item when scales are off.
+Future<double?> showManualWeightQuantityDialog(
+    BuildContext context, ProductModel product) async {
+  final controller = TextEditingController(text: '0');
+  controller.selection = const TextSelection(baseOffset: 0, extentOffset: 1);
+  final unit = product.measurementUnit;
+  try {
+    return await showDialog<double>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: StatefulBuilder(builder: (ctx, setState) {
+            final quantity =
+                double.tryParse(controller.text.replaceAll(',', '.'));
+            void update(String next) => setState(() {
+                  controller.text = next.replaceAll(',', '.');
+                  controller.selection =
+                      TextSelection.collapsed(offset: controller.text.length);
+                });
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Material(
+                color: Theme.of(ctx).colorScheme.surface,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Row(children: [
+                      Expanded(
+                          child: Text('Изменить количество',
+                              style: Theme.of(ctx)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700))),
+                      IconButton(
+                          tooltip: 'Закрыть',
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          icon: const Icon(Icons.close)),
+                    ]),
+                    const SizedBox(height: 8),
+                    _ItemHintCard(
+                        title: product.name, subtitle: 'Введите вес в $unit'),
+                    const SizedBox(height: 12),
+                    _QtyDisplayCard(
+                      controller: controller,
+                      autofocus: true,
+                      onTextChanged: () => setState(() {}),
+                      readOnly: !kIsWeb &&
+                          (defaultTargetPlatform == TargetPlatform.android ||
+                              defaultTargetPlatform == TargetPlatform.iOS),
+                      allowDecimal: true,
+                      errorText: quantity == null || quantity < 0
+                          ? 'Введите корректное число'
+                          : null,
+                      onClear: () => update('0'),
+                      onBackspace: () => update(controller.text.isEmpty
+                          ? ''
+                          : controller.text
+                              .substring(0, controller.text.length - 1)),
+                    ),
+                    const SizedBox(height: 12),
+                    AmountKeypad(
+                      text: controller.text,
+                      allowDecimal: true,
+                      showQuickRows: false,
+                      onChanged: update,
+                    ),
+                    const SizedBox(height: 14),
+                    Row(children: [
+                      Expanded(
+                          child: DialogSecondaryButton(
+                              label: 'Отмена',
+                              onPressed: () => Navigator.of(ctx).pop())),
+                      const SizedBox(width: 12),
+                      Expanded(
+                          child: DialogPrimaryButton(
+                        label: 'Сохранить',
+                        enabled: quantity != null && quantity > 0,
+                        onPressed: () => Navigator.of(ctx).pop(quantity),
+                      )),
+                    ]),
+                  ]),
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+  } finally {
+    controller.dispose();
+  }
+}
+
 Future<void> editSelectedQty(BuildContext context) async {
   final cubit = context.read<PosCubit>();
   final state = cubit.state;
@@ -124,6 +221,7 @@ Future<void> editSelectedQty(BuildContext context) async {
                             // Большое отображение + ручной ввод (на desktop можно печатать)
                             _QtyDisplayCard(
                               controller: controller,
+                              onTextChanged: () => setState(() {}),
                               readOnly:
                                   isMobile, // на мобиле не открываем системную клаву
                               allowDecimal: !isPieces,
@@ -261,19 +359,23 @@ class _ItemHintCard extends StatelessWidget {
 class _QtyDisplayCard extends StatelessWidget {
   const _QtyDisplayCard({
     required this.controller,
+    required this.onTextChanged,
     required this.readOnly,
     required this.allowDecimal,
     required this.errorText,
     required this.onClear,
     required this.onBackspace,
+    this.autofocus = false,
   });
 
   final TextEditingController controller;
+  final VoidCallback onTextChanged;
   final bool readOnly;
   final bool allowDecimal;
   final String? errorText;
   final VoidCallback onClear;
   final VoidCallback onBackspace;
+  final bool autofocus;
 
   @override
   Widget build(BuildContext context) {
@@ -299,6 +401,8 @@ class _QtyDisplayCard extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: controller,
+                  autofocus: autofocus,
+                  onChanged: (_) => onTextChanged(),
                   readOnly: readOnly,
                   keyboardType:
                       TextInputType.numberWithOptions(decimal: allowDecimal),

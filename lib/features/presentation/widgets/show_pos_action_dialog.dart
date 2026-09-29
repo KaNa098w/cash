@@ -30,6 +30,7 @@ import 'package:leemon_app/features/presentation/pages/products/product_bloc/pro
 import 'package:leemon_app/features/presentation/pages/products/product_create_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/deposit_to_cash_sheel.dart';
 import 'package:leemon_app/features/presentation/widgets/receipt_print_confirmation_dialog.dart';
+import 'package:leemon_app/features/presentation/widgets/scale_settings_dialog.dart';
 import 'package:path/path.dart' as path;
 import 'package:leemon_app/core/di/api/app_version.dart';
 import 'package:path_provider/path_provider.dart';
@@ -134,6 +135,10 @@ Future<void> showPosActionsDialog(BuildContext context) {
     _PosAction('ПРИНТЕР', () async {
       Navigator.of(context, rootNavigator: true).pop();
       await _pickPrinterSettings(context);
+    }),
+    _PosAction('ВЕСЫ', () async {
+      Navigator.of(context, rootNavigator: true).pop();
+      await showScaleSettingsDialog(context);
     }),
     _PosAction('РЕЖИМ\nЭКРАНА', () async {
       Navigator.of(context, rootNavigator: true).pop();

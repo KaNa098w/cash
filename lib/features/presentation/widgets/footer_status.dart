@@ -285,33 +285,12 @@ class _FooterDesktop extends StatelessWidget {
                                     return;
                                   }
 
-                                  showDialog<void>(
-                                    context: context,
-                                    barrierDismissible: false,
-                                    builder: (_) => const Center(
-                                        child: CircularProgressIndicator()),
-                                  );
-
                                   try {
-                                    final items = await context
-                                        .read<ProductsCubit>()
-                                        .loadPopularFirstPage(
-                                          key: key,
-                                          forceRefresh: false,
-                                        );
-
-                                    if (!context.mounted) return;
-
-                                    Navigator.of(context, rootNavigator: true)
-                                        .pop();
-
                                     final picked =
                                         await showQuickProductsDialog(
                                       context,
-                                      products: items
-                                          .where(
-                                              (product) => !product.isUniversal)
-                                          .toList(growable: false),
+                                      key: key,
+                                      deviceId: auth.deviceId ?? '',
                                     );
 
                                     if (!context.mounted) return;
@@ -322,12 +301,10 @@ class _FooterDesktop extends StatelessWidget {
                                     );
                                   } catch (e) {
                                     if (!context.mounted) return;
-                                    Navigator.of(context, rootNavigator: true)
-                                        .maybePop();
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                           content: Text(
-                                              'Ошибка popular-products: $e')),
+                                              'Не удалось открыть быстрые товары: $e')),
                                     );
                                   }
                                 },
