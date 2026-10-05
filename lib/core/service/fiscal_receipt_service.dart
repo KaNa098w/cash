@@ -300,9 +300,11 @@ class FiscalReceiptService {
           ),
         ),
       );
+    final pdfBytes = await document.save();
     await _printer.printPdfBytesSilently(
-      await document.save(),
+      pdfBytes,
       printerName: printerName,
+      format: document.document.pdfPageList.pages.first.pageFormat,
     );
     await _savePrintFormatFetchedAt(receipt.id);
     await _markPrinted(receipt.id);

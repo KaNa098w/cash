@@ -68,7 +68,7 @@ class TopBar extends StatelessWidget {
                                 ),
                                 SizedBox(width: tabGap),
                                 for (final t in state.tickets) ...[
-                                  _TicketTab(
+                                  PosTicketTab(
                                     text: '${t.items.length} товар',
                                     active: !state.isHistoryMode &&
                                         t.id == state.activeTicketId,
@@ -177,7 +177,7 @@ class TopBar extends StatelessWidget {
       );
 }
 
-class _TicketTab extends StatelessWidget {
+class PosTicketTab extends StatelessWidget {
   final String text;
   final bool active;
   final bool compact;
@@ -186,7 +186,8 @@ class _TicketTab extends StatelessWidget {
   final bool showClose;
   final VoidCallback? onClose;
 
-  const _TicketTab({
+  const PosTicketTab({
+    super.key,
     required this.text,
     this.active = false,
     this.compact = false,

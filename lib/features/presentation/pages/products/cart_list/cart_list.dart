@@ -444,7 +444,7 @@ class _CartListState extends State<CartList> {
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     // превью
-                                    _CartProductImage(
+                                    CartProductImage(
                                       imageUrl: it.product.primaryImageUrl,
                                     ),
                                     const SizedBox(width: 15),
@@ -2213,8 +2213,8 @@ class _DiscountDialogButton extends StatelessWidget {
 }
 
 /// Диалог ввода количества
-class _CartProductImage extends StatelessWidget {
-  const _CartProductImage({required this.imageUrl});
+class CartProductImage extends StatelessWidget {
+  const CartProductImage({super.key, required this.imageUrl});
 
   final String? imageUrl;
 

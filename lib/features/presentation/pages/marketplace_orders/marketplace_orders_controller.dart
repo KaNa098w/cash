@@ -26,6 +26,7 @@ class MarketplaceOrdersController extends ChangeNotifier
   bool _loading = false;
   bool _actionLoading = false;
   String? _error;
+  int _selectionRevision = 0;
   MarketplacePosInfo? _posInfo;
   MarketplaceOrderScope _scope = MarketplaceOrderScope.newOrders;
   List<MarketplaceOrder> _newOrders = const [];
@@ -178,8 +179,9 @@ class MarketplaceOrdersController extends ChangeNotifier
   }
 
   Future<void> setScope(MarketplaceOrderScope next) async {
-    if (!hasMarketplaceIntegration) return;
+    if (!hasMarketplaceIntegration || _loading || _actionLoading) return;
     if (_scope == next) return;
+    _selectionRevision++;
     _scope = next;
     _selectedOrder = null;
     notifyListeners();
@@ -187,7 +189,7 @@ class MarketplaceOrdersController extends ChangeNotifier
       await refreshHistory();
       return;
     }
-    await _selectFallbackIfNeeded();
+    await refreshAll();
   }
 
   Future<void> refreshVisibleOrders() async {
@@ -214,7 +216,6 @@ class MarketplaceOrdersController extends ChangeNotifier
       _historyOrders = _deduplicateOrders(page.items);
       _historyNextSkip = page.items.length;
       _historyHasMore = page.items.length == _historyPageSize;
-      _selectedOrder = null;
       await _selectFallbackIfNeeded();
     } catch (e) {
       _error = _friendlyError(e);
@@ -272,14 +273,19 @@ class MarketplaceOrdersController extends ChangeNotifier
     if (_posKey.isEmpty || safeOrderId.isEmpty || !hasMarketplaceIntegration) {
       return;
     }
+    final revision = ++_selectionRevision;
+    final selectedScope = _scope;
     _loading = true;
     _error = null;
     notifyListeners();
     try {
-      _selectedOrder = await _remote.getOrder(
+      final order = await _remote.getOrder(
         key: _posKey,
         orderId: safeOrderId,
       );
+      if (revision == _selectionRevision && selectedScope == _scope) {
+        _selectedOrder = order;
+      }
     } catch (e) {
       _error = _friendlyError(e);
     } finally {
@@ -365,15 +371,25 @@ class MarketplaceOrdersController extends ChangeNotifier
   }
 
   Future<void> _selectFallbackIfNeeded() async {
-    if (_selectedOrder != null) return;
+    if (_selectedOrder != null &&
+        visibleOrders.any((order) => order.id == _selectedOrder!.id)) {
+      return;
+    }
+    _selectedOrder = null;
     final first = visibleOrders.isNotEmpty ? visibleOrders.first : null;
-    if (first != null) {
-      try {
-        _selectedOrder =
-            await _remote.getOrder(key: _posKey, orderId: first.id);
-      } catch (_) {
-        _selectedOrder = first;
-      }
+    if (first == null) return;
+    final revision = _selectionRevision;
+    final selectedScope = _scope;
+    MarketplaceOrder selected;
+    try {
+      selected = await _remote.getOrder(key: _posKey, orderId: first.id);
+    } catch (_) {
+      selected = first;
+    }
+    if (revision == _selectionRevision &&
+        selectedScope == _scope &&
+        _selectedOrder == null) {
+      _selectedOrder = selected;
     }
   }
 

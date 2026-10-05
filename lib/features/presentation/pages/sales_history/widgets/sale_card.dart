@@ -390,7 +390,7 @@ class SaleCard extends StatelessWidget {
                               const SizedBox(width: 12),
                               BottomActionButton(
                                   label: 'Накладная',
-                                  width: invoiceBtnWidth,
+                                  width: invoiceBtnWidth,  
                                   fontSize: 16,
                                   bg: actionBlueMuted,
                                   onTap: invoicePrintDisabled

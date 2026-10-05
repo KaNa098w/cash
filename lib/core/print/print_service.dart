@@ -25,32 +25,54 @@ class PrintService {
     String? printerName,
   }) async {
     final printer = await _resolvePrinter(printerName);
-    if (printer == null) return;
+    if (printer == null) {
+      throw StateError(
+          'Принтер не найден. Проверьте подключение и настройки печати.');
+    }
 
     final doc = await buildDoc();
+    // Saving lays out roll pages and replaces their infinite height with the
+    // full content height. Send that finite size to the printer driver.
+    final bytes = await doc.save();
+    final pages = doc.document.pdfPageList.pages;
+    if (pages.isEmpty) throw StateError('Чек не содержит страниц.');
+    final receiptFormat = pages.first.pageFormat;
+    if (!receiptFormat.width.isFinite || !receiptFormat.height.isFinite) {
+      throw StateError('Не удалось определить размер чека.');
+    }
 
-    await Printing.directPrintPdf(
+    final printed = await Printing.directPrintPdf(
       printer: printer,
-      format: format,
-      usePrinterSettings: true,
+      format: receiptFormat,
+      usePrinterSettings: false,
       dynamicLayout: false,
-      onLayout: (PdfPageFormat _) async => doc.save(),
+      onLayout: (PdfPageFormat _) async => bytes,
     );
+    if (!printed) throw StateError('Чек не отправлен на печать.');
   }
 
   // Накладные — большой принтер (A4).
   Future<void> printPdfBytesSilently(
     Uint8List pdfBytes, {
     String? printerName,
+    PdfPageFormat? format,
   }) async {
     final printer = await _resolvePrinter(printerName);
-    if (printer == null) return;
+    if (printer == null) {
+      throw StateError(
+          'Принтер не найден. Проверьте подключение и настройки печати.');
+    }
 
-    await Printing.directPrintPdf(
+    if (format != null && (!format.width.isFinite || !format.height.isFinite)) {
+      throw StateError('Не удалось определить размер документа.');
+    }
+    final printed = await Printing.directPrintPdf(
       printer: printer,
-      usePrinterSettings: true,
+      format: format ?? PdfPageFormat.a4,
+      usePrinterSettings: format == null,
       dynamicLayout: false,
       onLayout: (PdfPageFormat _) async => pdfBytes,
     );
+    if (!printed) throw StateError('Документ не отправлен на печать.');
   }
 }

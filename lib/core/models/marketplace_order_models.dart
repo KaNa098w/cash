@@ -192,7 +192,10 @@ class MarketplaceOrder {
           ? rawGrouped
               .whereType<Map>()
               .map((item) => MarketplaceGroupedItem.fromJson(
-                    Map<String, dynamic>.from(item),
+                    _withGroupedPricing(
+                      Map<String, dynamic>.from(item),
+                      rawItems is List ? rawItems : const [],
+                    ),
                   ))
               .toList()
           : const [],
@@ -453,6 +456,75 @@ class MarketplaceGroupedItem {
 
   String get imageUrl => images.isEmpty ? '' : images.first.preferredUrl;
 }
+
+// The detail endpoint supplies quantities/statuses in groupedItems, while
+// the immutable order prices live in items. Match group members by ID before
+// summing so current offer prices and unrelated products never replace them.
+Map<String, dynamic> _withGroupedPricing(
+  Map<String, dynamic> group,
+  List<dynamic> rawItems,
+) {
+  final memberIds = (group['items'] is List ? group['items'] as List : const [])
+      .whereType<Map>()
+      .map((member) => _string(member['id']))
+      .where((id) => id.isNotEmpty)
+      .toSet();
+  final productId = _string(group['productId'] ?? group['product_id']);
+  final matching = rawItems
+      .whereType<Map>()
+      .map((raw) => Map<String, dynamic>.from(raw))
+      .where((raw) {
+    if (memberIds.isNotEmpty) return memberIds.contains(_string(raw['id']));
+    final offer = _map(raw['offer']);
+    final product = _map(raw['product'] ?? offer['product']);
+    final rawProductId = _string(raw['productId'] ??
+        raw['product_id'] ??
+        offer['productId'] ??
+        offer['product_id'] ??
+        product['id']);
+    return productId.isNotEmpty && productId == rawProductId;
+  }).toList();
+  if (matching.isEmpty ||
+      (memberIds.isNotEmpty && matching.length != memberIds.length)) {
+    return group;
+  }
+  final priced =
+      matching.every((raw) => _hasLineTotal(raw) || _hasUnitPrice(raw));
+  if (!priced) return group;
+  final items = matching.map(MarketplaceGroupedItem.fromJson).toList();
+  final quantity =
+      items.fold<num>(0, (sum, item) => sum + item.requestedQuantity);
+  final subtotal = items.fold<num>(
+      0, (sum, item) => sum + item.unitPrice * item.requestedQuantity);
+  final total = items.fold<num>(0, (sum, item) => sum + item.lineTotal);
+  final result = Map<String, dynamic>.from(group);
+  if (!_hasLineTotal(group)) result['lineTotal'] = total;
+  if (!_hasUnitPrice(group) && quantity > 0) {
+    result['unitPrice'] =
+        matching.every(_hasUnitPrice) ? subtotal / quantity : total / quantity;
+  }
+  if (group['images'] == null && items.first.images.isNotEmpty) {
+    result['images'] =
+        items.first.images.map((image) => image.preferredUrl).toList();
+  }
+  return result;
+}
+
+bool _hasUnitPrice(Map<String, dynamic> raw) => [
+      raw['unit_price'],
+      raw['unitPrice'],
+      raw['price']
+    ].any((value) => value != null);
+
+bool _hasLineTotal(Map<String, dynamic> raw) => [
+      raw['total'],
+      raw['line_total'],
+      raw['lineTotal'],
+      raw['total_amount'],
+      raw['totalAmount'],
+      raw['totalPrice'],
+      raw['total_price'],
+    ].any((value) => value != null);
 
 class MarketplaceProductImage {
   const MarketplaceProductImage({required this.url, required this.sizes});

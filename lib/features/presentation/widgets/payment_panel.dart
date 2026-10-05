@@ -1445,6 +1445,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                           documentTitle: isDebtSale ? 'ПРОДАЖА В ДОЛГ' : null,
                         ),
                       ),
+                      format: pageFormat,
                       printerName: auth.receiptPrinterName,
                     );
                     localReceiptPrinted = true;

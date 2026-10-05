@@ -12,6 +12,17 @@ class FooterControlsOnly extends StatelessWidget {
     this.onPayCard,
     this.onPay,
     this.paymentLabel = 'ОПЛАТА',
+    this.minusLabel = '-',
+    this.plusLabel = '+',
+    this.quickLabel = 'Товары',
+    this.cancelLabel = 'ОТМЕНА',
+    this.payCardLabel = 'Быстрая\nпродажа',
+    this.quickEnabled,
+    this.quickBackgroundColor,
+    this.quickForegroundColor = Colors.black,
+    this.paymentBackgroundColor,
+    this.paymentDisabledBackgroundColor,
+    this.paymentForegroundColor = Colors.white,
   });
 
   final String smallAmountText;
@@ -24,6 +35,17 @@ class FooterControlsOnly extends StatelessWidget {
   final VoidCallback? onPayCard;
   final VoidCallback? onPay;
   final String paymentLabel;
+  final String minusLabel;
+  final String plusLabel;
+  final String quickLabel;
+  final String cancelLabel;
+  final String payCardLabel;
+  final bool? quickEnabled;
+  final Color? quickBackgroundColor;
+  final Color quickForegroundColor;
+  final Color? paymentBackgroundColor;
+  final Color? paymentDisabledBackgroundColor;
+  final Color paymentForegroundColor;
 
   static const _btnGrey = Color(0xFFCDCDCD);
   static const _btnRed = Color(0xFFCB5B52);
@@ -90,13 +112,25 @@ class FooterControlsOnly extends StatelessWidget {
                     radius: radius,
                     background: _btnGrey,
                     onTap: onMinus,
-                    child: Text(
-                      '-',
-                      style: TextStyle(
-                        fontFamily: 'NotoSans',
-                        fontSize: s(26),
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: s(6), vertical: s(4)),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          minusLabel,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'NotoSans',
+                            fontSize: s(minusLabel == '-' ? 26 : 18),
+                            fontWeight: minusLabel == '-'
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            color: Colors.black,
+                            height: 1,
+                            letterSpacing: 0,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -107,13 +141,25 @@ class FooterControlsOnly extends StatelessWidget {
                     radius: radius,
                     background: _btnGrey,
                     onTap: onPlus,
-                    child: Text(
-                      '+',
-                      style: TextStyle(
-                        fontFamily: 'NotoSans',
-                        fontSize: s(26),
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: s(6), vertical: s(4)),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          plusLabel,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'NotoSans',
+                            fontSize: s(plusLabel == '+' ? 26 : 18),
+                            fontWeight: plusLabel == '+'
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            color: Colors.black,
+                            height: 1,
+                            letterSpacing: 0,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -149,7 +195,7 @@ class FooterControlsOnly extends StatelessWidget {
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
-                          'Быстрая\nпродажа',
+                          payCardLabel,
                           maxLines: 2,
                           textAlign: TextAlign.center,
                           style: TextStyle(
@@ -171,9 +217,9 @@ class FooterControlsOnly extends StatelessWidget {
                     width: smallBtnW,
                     height: smallBtnH,
                     radius: radius,
-                    background: onPayCard == null
+                    background: !(quickEnabled ?? (onPayCard != null))
                         ? const Color(0xFFBDBDBD)
-                        : _btnYellow,
+                        : (quickBackgroundColor ?? _btnYellow),
                     onTap: onQuick,
                     child: Padding(
                       padding: EdgeInsets.symmetric(
@@ -183,14 +229,14 @@ class FooterControlsOnly extends StatelessWidget {
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
-                          'Товары',
+                          quickLabel,
                           maxLines: 2,
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontFamily: 'NotoSans',
                             fontSize: s(18),
                             fontWeight: FontWeight.w500,
-                            color: Colors.black,
+                            color: quickForegroundColor,
                             height: 1,
                             letterSpacing: 0,
                           ),
@@ -208,7 +254,7 @@ class FooterControlsOnly extends StatelessWidget {
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        '\u041e\u0422\u041c\u0415\u041d\u0410',
+                        cancelLabel,
                         maxLines: 1,
                         softWrap: false,
                         textAlign: TextAlign.center,
@@ -227,6 +273,9 @@ class FooterControlsOnly extends StatelessWidget {
                   _PayBtn(
                     label: paymentLabel,
                     onTap: onPay,
+                    backgroundColor: paymentBackgroundColor,
+                    disabledBackgroundColor: paymentDisabledBackgroundColor,
+                    foregroundColor: paymentForegroundColor,
                     width: payW,
                     height: payH,
                     radius: radius,
@@ -350,6 +399,9 @@ class _PayBtn extends StatelessWidget {
     required this.height,
     required this.radius,
     required this.fontSize,
+    this.backgroundColor,
+    this.disabledBackgroundColor,
+    this.foregroundColor = Colors.white,
   });
 
   final VoidCallback? onTap;
@@ -357,6 +409,9 @@ class _PayBtn extends StatelessWidget {
   final double height;
   final double radius;
   final double fontSize;
+  final Color? backgroundColor;
+  final Color? disabledBackgroundColor;
+  final Color foregroundColor;
 
   static const _btnGreen = Color(0xFF4BCA9B);
   static const _btnDisabled = Color.fromARGB(255, 132, 186, 163);
@@ -374,8 +429,8 @@ class _PayBtn extends StatelessWidget {
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
           elevation: 0,
-          backgroundColor: _btnGreen,
-          disabledBackgroundColor: _btnDisabled,
+          backgroundColor: backgroundColor ?? _btnGreen,
+          disabledBackgroundColor: disabledBackgroundColor ?? _btnDisabled,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(radius),
           ),
@@ -386,7 +441,9 @@ class _PayBtn extends StatelessWidget {
             fontFamily: 'NotoSans',
             fontSize: fontSize,
             fontWeight: FontWeight.w700,
-            color: onTap == null ? Colors.white70 : Colors.white,
+            color: onTap == null
+                ? foregroundColor.withValues(alpha: 0.7)
+                : foregroundColor,
             height: 1,
             letterSpacing: 0,
           ),
