@@ -69,6 +69,16 @@ class PosSyncLocalStore {
             [row['id']]);
       }
     }
+    for (final row in db.select(
+        "SELECT id, payload_json FROM outbox_operations WHERE status = 'sending' AND type = 'refund'")) {
+      final payload = decodeJsonMap(_string(row['payload_json']));
+      if (_string(payload['sale_id']).isEmpty &&
+          _string(payload['client_sale_id']).isEmpty) {
+        db.execute(
+            "UPDATE outbox_operations SET status = 'pending', last_error_code = 'NETWORK_RECONCILIATION_REQUIRED' WHERE id = ?",
+            [row['id']]);
+      }
+    }
     db.execute(
         "UPDATE outbox_operations SET status = 'manual', last_error_code = 'NETWORK_RECONCILIATION_REQUIRED' WHERE status = 'sending' AND type IN ('sale', 'refund')");
     db.execute(
@@ -227,6 +237,23 @@ class PosSyncLocalStore {
         local_id TEXT PRIMARY KEY,
         server_id TEXT NOT NULL,
         created_at TEXT NOT NULL
+      );
+    ''');
+
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS refund_sync_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        operation_id TEXT NOT NULL,
+        client_refund_id TEXT NOT NULL,
+        operation_kind TEXT NOT NULL,
+        method TEXT NOT NULL,
+        url TEXT NOT NULL,
+        attempt_number INTEGER NOT NULL,
+        sent_at TEXT NOT NULL,
+        request_json TEXT NOT NULL,
+        http_status INTEGER NULL,
+        response_json TEXT NULL,
+        completed_at TEXT NULL
       );
     ''');
 
@@ -905,6 +932,43 @@ class PosSyncLocalStore {
     });
   }
 
+  Future<int> beginRefundAttempt(
+      {required String operationId,
+      required String clientRefundId,
+      required String operationKind,
+      required String requestJson}) async {
+    final db = await _database;
+    final count = db.select(
+        'SELECT COUNT(*) AS n FROM refund_sync_attempts WHERE operation_id = ?',
+        [operationId]).first['n'] as int;
+    db.execute(
+        'INSERT INTO refund_sync_attempts (operation_id, client_refund_id, operation_kind, method, url, attempt_number, sent_at, request_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          operationId,
+          clientRefundId,
+          operationKind,
+          'POST',
+          '/organizations/pos/{posKey}/refunds',
+          count + 1,
+          _nowIso(),
+          requestJson
+        ]);
+    return db.lastInsertRowId;
+  }
+
+  Future<void> completeRefundAttempt(int id,
+      {int? status, Object? response}) async {
+    final db = await _database;
+    db.execute(
+        'UPDATE refund_sync_attempts SET http_status = ?, response_json = ?, completed_at = ? WHERE id = ?',
+        [
+          status,
+          response == null ? null : jsonEncode(response),
+          _nowIso(),
+          id
+        ]);
+  }
+
   Future<void> saveClaimedPayload(
       String operationId, Map<String, dynamic> payload) async {
     final db = await _database;
@@ -1418,6 +1482,12 @@ class PosSyncLocalStore {
       final type = OutboxOperationTypeX.fromValue(_string(row['type'])) ??
           OutboxOperationType.sale;
       final clientId = _string(row['client_id']);
+      if (type == OutboxOperationType.refund &&
+          decodeJsonMap(_string(row['payload_json']))['_refund_request_json']
+              is String) {
+        throw StateError(
+            'Отправленный возврат нельзя изменять. Повтор использует сохранённый запрос.');
+      }
       if ((type == OutboxOperationType.sale ||
               type == OutboxOperationType.refund ||
               type == OutboxOperationType.settlement) &&

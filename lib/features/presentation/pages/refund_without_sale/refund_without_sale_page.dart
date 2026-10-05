@@ -1,6 +1,4 @@
-import 'package:leemon_app/core/service/fiscal_receipt_service.dart';
-import 'package:leemon_app/features/presentation/widgets/payment_panel.dart'
-    show FiscalReceiptDialog;
+import 'package:uuid/uuid.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -53,6 +51,8 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
   String? _reasonCode;
   RefundInventoryAction _inventoryAction = RefundInventoryAction.returnToStock;
   String? _error;
+  String? _clientRefundId;
+  DateTime? _refundDate;
   bool _accessDialogOpen = false;
   bool _qtyDialogOpen = false;
   bool _searchKeyboardOpen = false;
@@ -162,19 +162,33 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
 
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is! List) return const [];
+      final draft = decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+      final draftItems = draft?['items'] ?? decoded;
+      if (draftItems is! List) return const [];
+      _clientRefundId = draft?['client_refund_id'] as String?;
+      _refundDate = DateTime.tryParse('${draft?['date']}');
+      _reasonCode = draft?['reason_code'] as String?;
+      _paymentMethod = draft?['payment_method'] as String? ?? 'cash';
+      _selectedBankAccountId = draft?['bank_account_id'] as String?;
+      if (draft?['inventory_action'] != null) {
+        _inventoryAction = RefundInventoryAction.values.firstWhere(
+            (value) => value.code == draft!['inventory_action'],
+            orElse: () => RefundInventoryAction.returnToStock);
+      }
       final productsById = {
         for (final product in products)
           if ((product.id ?? '').trim().isNotEmpty)
             (product.id ?? '').trim(): product,
       };
       final lines = <_RefundLine>[];
-      for (final item in decoded.whereType<Map>()) {
+      for (final item in draftItems.whereType<Map>()) {
         final productId = (item['product_id'] ?? '').toString().trim();
         final quantity = (item['quantity'] as num?)?.toInt() ?? 0;
         final product = productsById[productId];
         if (product == null || quantity <= 0) continue;
-        lines.add(_RefundLine(product: product)..quantity = quantity);
+        lines.add(
+            _RefundLine(product: product, snapshotPrice: item['price'] as num?)
+              ..quantity = quantity);
       }
       return lines;
     } catch (_) {
@@ -193,15 +207,28 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
           (line) => {
             'product_id': line.productId,
             'quantity': line.quantity,
+            'price': line.price,
           },
         )
         .toList(growable: false);
-    await prefs.setString(_draftKey, jsonEncode(payload));
+    await prefs.setString(
+        _draftKey,
+        jsonEncode({
+          'items': payload,
+          'client_refund_id': _clientRefundId,
+          'date': _refundDate?.toIso8601String(),
+          'reason_code': _reasonCode,
+          'inventory_action': _inventoryAction.code,
+          'payment_method': _paymentMethod,
+          'bank_account_id': _selectedBankAccountId,
+        }));
   }
 
   Future<void> _clearDraft() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_draftKey);
+    _clientRefundId = null;
+    _refundDate = null;
   }
 
   void _onSearchChanged() {
@@ -506,7 +533,10 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
     }
 
     final total = _totalAmount;
-    final paymentId = 'refund_no_sale_${DateTime.now().microsecondsSinceEpoch}';
+    _clientRefundId ??= 'refund_${const Uuid().v4()}';
+    _refundDate ??= DateTime.now();
+    final paymentId = '$_clientRefundId-payment';
+    await _saveDraft();
     final items = _lines
         .map(
           (line) => {
@@ -545,7 +575,8 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
         totalAmount: total,
         paymentMethod: _paymentMethod,
         payments: payments,
-        date: DateTime.now(),
+        date: _refundDate!,
+        clientRefundId: _clientRefundId,
         items: items,
         returnAccessKey: returnAccessKey,
         userId: isDirector ? activeUserId : null,
@@ -563,8 +594,7 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
         });
         return;
       }
-      final fiscalReceipt =
-          sl<FiscalReceiptService>().fromSaleResponse(result.responseData);
+      // A refund without a source sale does not wait for a fiscal receipt.
       final finalizedPayload = result.responseData ?? result.payload;
       final refundedItemsCount =
           (finalizedPayload['items'] as List?)?.length ?? _lines.length;
@@ -572,22 +602,11 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
           num.tryParse(finalizedPayload['total_amount'].toString()) ?? total;
       await _clearDraft();
       _logRefund('refund completed and draft cleared');
-      if (mounted && fiscalReceipt != null) {
-        await showDialog<void>(
-            context: context,
-            barrierDismissible: false,
-            builder: (_) => FiscalReceiptDialog(
-                initial: fiscalReceipt,
-                posKey: key,
-                deviceId: deviceId,
-                paperMm: auth.receiptPaperMm,
-                printerName: auth.receiptPrinterName,
-                autoPrintEnabled: auth.receiptPrintingEnabled));
-      }
       if (!mounted) return;
       await _showRefundSuccessDialog(
         itemsCount: refundedItemsCount,
         totalAmount: finalizedTotal,
+        queued: result.result == QueueSendResult.queued,
       );
       if (!mounted) return;
       setState(() => _reasonCode = null);
@@ -605,6 +624,7 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
   Future<void> _showRefundSuccessDialog({
     required int itemsCount,
     required num totalAmount,
+    bool queued = false,
   }) async {
     await showGeneralDialog<void>(
       context: context,
@@ -649,10 +669,12 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    const Text(
-                      'Возврат успешно оформлен',
+                    Text(
+                      queued
+                          ? 'Возврат сохранён для отправки'
+                          : 'Возврат успешно оформлен',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w900,
                         color: Color(0xFF111827),
@@ -855,13 +877,14 @@ class _RefundWithoutSalePageState extends State<RefundWithoutSalePage> {
 }
 
 class _RefundLine {
-  _RefundLine({required this.product});
+  _RefundLine({required this.product, this.snapshotPrice});
+  final num? snapshotPrice;
 
   final ProductModel product;
   int quantity = 1;
 
   String get productId => (product.id ?? '').trim();
-  num get price => product.sellingPrice.round();
+  num get price => snapshotPrice ?? (product.sellingPrice * 100).round() / 100;
   num get total => price * quantity;
 }
 

@@ -67,11 +67,8 @@ class PosProvisionResponse {
           ? store['allow_below_cost_sale_prices']
           : data['allow_below_cost_sale_prices'],
     );
-    final allowRefundsWithoutSale = _asBool(
-      store is Map<String, dynamic>
-          ? store['allow_refunds_without_sale']
-          : data['allow_refunds_without_sale'],
-    );
+    final allowRefundsWithoutSale = store is Map<String, dynamic> &&
+        store['allow_refunds_without_sale'] == true;
     final organizationId = (data['organization_id'] ?? '').toString();
 
     if (name.isEmpty ||

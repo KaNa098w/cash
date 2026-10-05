@@ -1,3 +1,4 @@
+import 'refund_request_contract.dart';
 import 'package:leemon_app/core/models/fiscalization_mode.dart';
 import 'dart:convert';
 import '../datasources/customers_remote_datasource.dart';
@@ -1371,13 +1372,79 @@ class PosSyncService {
       }
     }
     final localPosSessionId = posSessionId.trim();
-    final previous =
-        await _localStore.findUnresolvedRefund(saleId, clientSaleId);
-    final clientId = previous?.clientId ?? clientRefundId ?? _uuid.v4();
+    final previous = (clientRefundId ?? '').trim().isNotEmpty
+        ? await _localStore.findOperation(
+            OutboxOperationType.refund, clientRefundId!)
+        : (saleId.trim().isNotEmpty || (clientSaleId ?? '').trim().isNotEmpty)
+            ? await _localStore.findUnresolvedRefund(saleId, clientSaleId)
+            : null;
+    if (previous?.lastErrorCode == 'IDEMPOTENCY_CONFLICT') {
+      return QueueOperationResult(
+          operationId: previous!.id,
+          result: QueueSendResult.manual,
+          type: previous.type,
+          clientId: previous.clientId,
+          payload: previous.payload,
+          errorCode: 'IDEMPOTENCY_CONFLICT',
+          errorMessage: previous.lastErrorMessage ?? _refundConflictMessage);
+    }
+    if (previous != null) {
+      if (!_refundHasSale(previous.payload) &&
+          previous.payload[refundRequestJsonKey] is! String &&
+          (previous.retryCount > 0 ||
+              previous.lastErrorCode == 'NETWORK_RECONCILIATION_REQUIRED' ||
+              previous.lastErrorCode == 'REFUND_RECONCILIATION_REQUIRED')) {
+        const message =
+            'Старый возврат требует сверки: точный отправленный запрос не сохранён.';
+        await _localStore.markOperationManual(
+            operationId: previous.id,
+            errorCode: 'REFUND_RECONCILIATION_REQUIRED',
+            errorMessage: message,
+            payload: previous.payload);
+        return QueueOperationResult(
+            operationId: previous.id,
+            result: QueueSendResult.manual,
+            type: previous.type,
+            clientId: previous.clientId,
+            payload: previous.payload,
+            errorCode: 'REFUND_RECONCILIATION_REQUIRED',
+            errorMessage: message);
+      }
+      if (previous.status == OutboxOperationStatus.sending) {
+        return QueueOperationResult(
+            operationId: previous.id,
+            result: QueueSendResult.queued,
+            type: previous.type,
+            clientId: previous.clientId,
+            payload: previous.payload,
+            errorCode: 'OPERATION_IN_PROGRESS',
+            errorMessage: 'Возврат уже отправляется');
+      }
+      final frozen = Map<String, dynamic>.from(previous.payload);
+      if ((returnAccessKey ?? '').trim().isNotEmpty) {
+        frozen['return_access_key'] = returnAccessKey!.trim();
+      }
+      return _queueAndTrySend(
+          key: key,
+          deviceId: deviceId,
+          type: OutboxOperationType.refund,
+          clientId: previous.clientId,
+          payload: frozen);
+    }
+    final clientId = clientRefundId ?? _uuid.v4();
     final cleanSaleId = saleId.trim();
     final cleanClientSaleId = (clientSaleId ?? '').trim();
     final hasLinkedSale =
         cleanSaleId.isNotEmpty || cleanClientSaleId.isNotEmpty;
+    if (!hasLinkedSale) {
+      validateRefundWithoutSale(
+          totalAmount: totalAmount,
+          paymentMethod: paymentMethod,
+          items: items,
+          payments: payments,
+          reasonCode: reasonCode,
+          inventoryAction: inventoryAction);
+    }
     final nonZeroPayments = _withoutZeroAmountPayments(payments);
     final payload = <String, dynamic>{
       'device_id': deviceId,
@@ -1390,8 +1457,6 @@ class PosSyncService {
         'client_sale_id': cleanClientSaleId,
       if ((posId ?? '').trim().isNotEmpty) 'pos_id': posId!.trim(),
       if ((storeId ?? '').trim().isNotEmpty) 'store_id': storeId!.trim(),
-      if (!hasLinkedSale && (accountId ?? '').trim().isNotEmpty)
-        'account_id': accountId!.trim(),
       'total_amount': totalAmount.toStringAsFixed(2),
       'inventory_action':
           inventoryAction ?? RefundInventoryAction.forReason(reasonCode).code,
@@ -1422,24 +1487,15 @@ class PosSyncService {
       if ((userId ?? '').trim().isNotEmpty) 'user_id': userId!.trim(),
     };
 
-    if (previous != null &&
-        (previous.lastErrorCode == 'NETWORK_RECONCILIATION_REQUIRED' ||
-            previous.lastErrorCode == 'IDEMPOTENCY_CONFLICT' ||
-            previous.status == OutboxOperationStatus.pending ||
-            previous.status == OutboxOperationStatus.sending)) {
-      if (previous.status == OutboxOperationStatus.sending) {
-        return QueueOperationResult(
-            operationId: previous.id,
-            result: QueueSendResult.queued,
-            type: previous.type,
-            clientId: previous.clientId,
-            payload: previous.payload,
-            errorCode: 'OPERATION_IN_PROGRESS',
-            errorMessage: 'Возврат уже отправляется');
-      }
+    if (!hasLinkedSale) {
+      final clean = refundHttpBody(payload);
+      final accessKey = payload['return_access_key'];
+      final persistedJson = payload[refundRequestJsonKey];
       payload
         ..clear()
-        ..addAll(previous.payload);
+        ..addAll(clean);
+      if (accessKey != null) payload['return_access_key'] = accessKey;
+      if (persistedJson != null) payload[refundRequestJsonKey] = persistedJson;
     }
     // The durable outbox retains the confirmed request. Refund totals only
     // change when the backend accepts the operation.
@@ -1808,9 +1864,50 @@ class PosSyncService {
     required OutboxOperationRecord record,
   }) async {
     var payloadForSend = record.payload;
+    int? refundAttemptId;
+    Map<String, dynamic>? refundResponse;
     try {
+      if (record.type == OutboxOperationType.refund &&
+          record.lastErrorCode == 'IDEMPOTENCY_CONFLICT') {
+        final message = record.lastErrorMessage ?? _refundConflictMessage;
+        await _localStore.markOperationManual(
+            operationId: record.id,
+            errorCode: 'IDEMPOTENCY_CONFLICT',
+            errorMessage: message,
+            payload: record.payload);
+        return QueueOperationResult(
+            operationId: record.id,
+            result: QueueSendResult.manual,
+            type: record.type,
+            clientId: record.clientId,
+            payload: record.payload,
+            errorCode: 'IDEMPOTENCY_CONFLICT',
+            errorMessage: message);
+      }
+      if (record.type == OutboxOperationType.refund &&
+          !_refundHasSale(record.payload) &&
+          record.payload[refundRequestJsonKey] is! String &&
+          (record.retryCount > 0 ||
+              record.lastErrorCode == 'NETWORK_RECONCILIATION_REQUIRED')) {
+        const message =
+            'Старый возврат требует сверки: точный отправленный запрос не сохранён.';
+        await _localStore.markOperationManual(
+            operationId: record.id,
+            errorCode: 'REFUND_RECONCILIATION_REQUIRED',
+            errorMessage: message,
+            payload: record.payload);
+        return QueueOperationResult(
+            operationId: record.id,
+            result: QueueSendResult.manual,
+            type: record.type,
+            clientId: record.clientId,
+            payload: record.payload,
+            errorCode: 'REFUND_RECONCILIATION_REQUIRED',
+            errorMessage: message);
+      }
       final financial = record.type == OutboxOperationType.sale ||
-          record.type == OutboxOperationType.refund;
+          (record.type == OutboxOperationType.refund &&
+              _refundHasSale(record.payload));
       if (financial &&
           (record.retryCount > 0 ||
               record.lastErrorCode == 'NETWORK_RECONCILIATION_REQUIRED' ||
@@ -1869,6 +1966,15 @@ class PosSyncService {
       await _localStore.saveClaimedPayload(record.id, payloadForSend);
       final requestPayload = Map<String, dynamic>.from(payloadForSend)
         ..remove('_local_background_sale');
+      if (record.type == OutboxOperationType.refund) {
+        refundAttemptId = await _localStore.beginRefundAttempt(
+            operationId: record.id,
+            clientRefundId: record.clientId,
+            operationKind: _refundHasSale(record.payload)
+                ? 'refund_with_sale'
+                : 'refund_without_sale',
+            requestJson: refundRequestJson(payloadForSend));
+      }
       final responseData = await _remote.sendOperation(
         type: record.type,
         key: key,
@@ -1877,6 +1983,21 @@ class PosSyncService {
           'device_id': payloadForSend['device_id'] ?? deviceId,
         },
       );
+      if (refundAttemptId != null) {
+        refundResponse = _remote.takeRefundHttpResponse(record.clientId) ??
+            {
+              'status_code': 200,
+              'data': {'data': responseData}
+            };
+        await _localStore.completeRefundAttempt(refundAttemptId,
+            status: refundResponse['status_code'] as int?,
+            response: refundResponse['data']);
+      }
+      if (record.type == OutboxOperationType.refund &&
+          responseData?['client_refund_id']?.toString() != record.clientId) {
+        throw const FormatException(
+            'Сервер вернул другой client_refund_id. Возврат требует сверки.');
+      }
       if ((record.type == OutboxOperationType.sale ||
               record.type == OutboxOperationType.refund) &&
           (responseData == null ||
@@ -1901,6 +2022,17 @@ class PosSyncService {
         responseData: responseData,
       );
     } catch (error) {
+      if (refundAttemptId != null) {
+        final captured =
+            refundResponse ?? _remote.takeRefundHttpResponse(record.clientId);
+        final details = _remote.extractErrorDetails(error);
+        final response = captured ?? details?['response'];
+        await _localStore.completeRefundAttempt(refundAttemptId,
+            status: response is Map ? response['status_code'] as int? : null,
+            response: response is Map
+                ? response['data']
+                : {'message': error.toString()});
+      }
       if (error is _WaitingForServerSessionId ||
           error is _WaitingForServerProductId) {
         final message = switch (error) {
@@ -1924,7 +2056,9 @@ class PosSyncService {
 
       final accepted =
           await _localStore.acceptedOperation(record.type, record.clientId);
-      if (accepted != null) {
+      if (accepted != null &&
+          !(record.type == OutboxOperationType.refund &&
+              _remote.extractErrorCode(error) == 'IDEMPOTENCY_CONFLICT')) {
         await _localStore.markOperationAcked(record.id);
         return QueueOperationResult(
             operationId: record.id,
@@ -1939,6 +2073,7 @@ class PosSyncService {
       final errorDetails = _remote.extractErrorDetails(error);
       final response = errorDetails?['response'];
       if (record.type == OutboxOperationType.refund &&
+          _refundHasSale(record.payload) &&
           response is Map &&
           (response['status_code'] == 499 || response['status_code'] == 502)) {
         try {
@@ -1969,7 +2104,35 @@ class PosSyncService {
         });
       }
 
+      if (record.type == OutboxOperationType.refund &&
+          errorCode == 'REFERENCE_NOT_FOUND') {
+        // Refresh references in the background; never modify the saved refund.
+        unawaited(pullOnce(
+                key: key, deviceId: deviceId, refreshPosInfoAfterPull: false)
+            .catchError((_) {}));
+      }
       if (errorCode == 'IDEMPOTENCY_CONFLICT') {
+        if (record.type == OutboxOperationType.refund) {
+          final message = errorMessage.trim().isEmpty
+              ? _refundConflictMessage
+              : errorMessage;
+          await _localStore.markOperationManual(
+              operationId: record.id,
+              errorCode: errorCode,
+              errorMessage: message,
+              payload: payloadForSend,
+              errorDetails: errorDetails);
+          return QueueOperationResult(
+              operationId: record.id,
+              result: QueueSendResult.manual,
+              type: record.type,
+              clientId: record.clientId,
+              payload: payloadForSend,
+              errorCode: errorCode,
+              errorContext: context,
+              fieldErrors: errors,
+              errorMessage: message);
+        }
         try {
           await pullOnce(
               key: key, deviceId: deviceId, refreshPosInfoAfterPull: false);
@@ -2040,10 +2203,14 @@ class PosSyncService {
           (record.type == OutboxOperationType.sale ||
               record.type == OutboxOperationType.refund)) {
         const code = 'NETWORK_RECONCILIATION_REQUIRED';
-        const message =
-            'Ответ сервера не получен. Операция сохранена. Повтор выполнит сверку с сервером с тем же идентификатором.';
-        if (record.type == OutboxOperationType.sale &&
-            record.payload['_local_background_sale'] == true) {
+        final message = record.type == OutboxOperationType.refund &&
+                !_refundHasSale(record.payload)
+            ? 'Ответ сервера не получен. Возврат сохранён и будет отправлен повторно без изменения данных.'
+            : 'Ответ сервера не получен. Операция сохранена. Повтор выполнит сверку с сервером с тем же идентификатором.';
+        if ((record.type == OutboxOperationType.sale &&
+                record.payload['_local_background_sale'] == true) ||
+            (record.type == OutboxOperationType.refund &&
+                !_refundHasSale(record.payload))) {
           await _localStore.markOperationPending(
               operationId: record.id,
               errorCode: code,
@@ -2172,7 +2339,8 @@ class PosSyncService {
       });
     }
     if (record.type == OutboxOperationType.sale ||
-        record.type == OutboxOperationType.refund ||
+        (record.type == OutboxOperationType.refund &&
+            _refundHasSale(record.payload)) ||
         record.type == OutboxOperationType.payment) {
       final fiscalService = _fiscalReceiptService;
       final fiscalReceipt = fiscalService?.fromSaleResponse(responseData);
@@ -2227,9 +2395,16 @@ class PosSyncService {
       OutboxOperationRecord record) async {
     final payload =
         Map<String, dynamic>.from(jsonDecode(jsonEncode(record.payload)));
+    if (record.type == OutboxOperationType.refund &&
+        payload[refundRequestJsonKey] is String) {
+      return payload;
+    }
     await _attachServerSessionIdIfReady(record.type, payload);
     await _attachServerProductIdsIfReady(record.type, payload);
     payload['app_version'] = AppBuildInfo.appVersion;
+    if (record.type == OutboxOperationType.refund) {
+      payload[refundRequestJsonKey] = jsonEncode(refundHttpBody(payload));
+    }
     return payload;
   }
 
@@ -2360,3 +2535,9 @@ class _WaitingForServerProductId implements Exception {
 
   final String message;
 }
+
+const _refundConflictMessage =
+    'Этот возврат уже отправлялся с другими данными. Повторная отправка остановлена. Выполните сверку возврата.';
+bool _refundHasSale(Map<String, dynamic> payload) =>
+    (payload['sale_id'] ?? '').toString().trim().isNotEmpty ||
+    (payload['client_sale_id'] ?? '').toString().trim().isNotEmpty;

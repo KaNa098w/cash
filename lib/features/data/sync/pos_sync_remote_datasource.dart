@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'refund_request_contract.dart';
 import 'package:dio/dio.dart';
 
 import 'package:leemon_app/core/di/utils/dio_error_utils.dart';
@@ -13,6 +15,9 @@ class PosSyncRemoteDataSource {
 
   final Dio _dio;
   final PosDiagnosticsService? _diagnostics;
+  final _refundHttpResponses = <String, Map<String, dynamic>>{};
+  Map<String, dynamic>? takeRefundHttpResponse(String clientRefundId) =>
+      _refundHttpResponses.remove(clientRefundId);
 
   // Sync requests can transfer large batches — use a longer timeout.
   static const _syncReceiveTimeout = Duration(seconds: 90);
@@ -287,15 +292,41 @@ class PosSyncRemoteDataSource {
         final headers = returnAccessKey.isNotEmpty
             ? <String, dynamic>{'X-Return-Access-Key': returnAccessKey}
             : null;
-        final body = Map<String, dynamic>.from(payload)
-          ..remove('return_access_key');
-        return _extractResponseData(
-          await _dio.post(
-            '/organizations/pos/$key/refunds',
-            options: Options(headers: headers, extra: _silentDioLogExtra),
-            data: body,
-          ),
-        );
+        final requestJson = refundRequestJson(payload);
+        final path = '/organizations/pos/$key/refunds';
+        try {
+          final response = await _dio.post(path,
+              data: requestJson,
+              options: Options(headers: {
+                ...?headers,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+              }, extra: _silentDioLogExtra));
+          _refundHttpResponses[payload['client_refund_id'].toString()] = {
+            'status_code': response.statusCode,
+            'data': response.data
+          };
+          _diagnostics?.recordManualHttp(
+              method: 'POST',
+              url: path,
+              requestData: jsonDecode(requestJson),
+              responseData: response.data,
+              statusCode: response.statusCode);
+          return _extractResponseData(response);
+        } on DioException catch (error) {
+          _refundHttpResponses[payload['client_refund_id'].toString()] = {
+            'status_code': error.response?.statusCode,
+            'data': error.response?.data
+          };
+          _diagnostics?.recordManualHttp(
+              method: 'POST',
+              url: path,
+              requestData: jsonDecode(requestJson),
+              responseData: error.response?.data,
+              statusCode: error.response?.statusCode,
+              error: error.message);
+          rethrow;
+        }
       case OutboxOperationType.sessionOpen:
         return _extractResponseData(
           await _dio.post(

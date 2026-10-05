@@ -87,10 +87,11 @@ Future<void> showPosActionsDialog(BuildContext context) {
       Navigator.of(context, rootNavigator: true).pop();
       context.go('/debts');
     }),
-    _PosAction('ВОЗВРАТ\nТОВАРА', () async {
-      Navigator.of(context, rootNavigator: true).pop();
-      context.go('/refund-without-sale');
-    }),
+    if (context.read<AuthTokenProvider>().allowRefundsWithoutSale)
+      _PosAction('ВОЗВРАТ\nТОВАРА', () async {
+        Navigator.of(context, rootNavigator: true).pop();
+        context.go('/refund-without-sale');
+      }),
     _PosAction('СВЕРНУТЬ', () async {
       Navigator.of(context, rootNavigator: true).pop();
 
