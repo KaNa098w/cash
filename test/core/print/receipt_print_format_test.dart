@@ -3,6 +3,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:leemon_app/core/models/fiscal_receipt.dart';
+import 'package:leemon_app/core/service/fiscal_receipt_service.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
@@ -119,6 +123,48 @@ void main() {
         await File('$output/receipt-$paperMm.pdf')
             .writeAsBytes(printing.bytes!);
       }
+    });
+  }
+  for (final paperMm in [57, 80]) {
+    test('long fiscal $paperMm mm PrintFormat uses bounded pages', () async {
+      SharedPreferences.setMockInitialValues({});
+      final dio = Dio();
+      dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+        expect(options.path, endsWith('/fiscal-receipts/TEST/print-format'));
+        expect(options.queryParameters['paper_kind'], paperMm == 80 ? 0 : 3);
+        handler.resolve(Response(requestOptions: options, data: {
+          'data': {
+            'lines': [
+              for (var i = 0; i < 200; i++)
+                {'Type': 0, 'Value': 'Товар $i с длинным наименованием'},
+              {'Type': 2, 'Value': 'https://example.com/receipt/TEST'},
+              {'Type': 0, 'Value': 'КОНЕЦ ФИСКАЛЬНОГО ЧЕКА'},
+            ],
+          },
+        }));
+      }));
+      final service = FiscalReceiptService(dio, PrintService());
+      const receipt =
+          FiscalReceipt(id: 'TEST', status: 'succeeded', printable: true);
+      await service.save(receipt);
+      await service.printTicket(receipt,
+          key: 'KEY', deviceId: 'DEVICE', paperMm: paperMm);
+      expect(printing.sentFormat!.height.isFinite, isTrue);
+      expect(
+          printing.sentFormat!.height, closeTo(200 * PdfPageFormat.mm, 0.001));
+      // Page dictionaries are uncompressed even when content streams are not.
+      final pdf = latin1.decode(printing.bytes!);
+      expect(RegExp(r'/Type\s*/Page\b').allMatches(pdf).length, greaterThan(1));
+      expect(printing.sentFormat!.width,
+          closeTo(paperMm * PdfPageFormat.mm, 0.001));
+      expect(printing.sentPrinterSettings, isFalse);
+      expect(await service.wasPrinted(receipt.id), isTrue);
+      final output = Platform.environment['RECEIPT_QA_OUTPUT'];
+      if (output != null) {
+        await Directory(output).create(recursive: true);
+        await File('$output/fiscal-$paperMm.pdf').writeAsBytes(printing.bytes!);
+      }
+      dio.close();
     });
   }
   test('fiscal PDF uses explicit thermal size while A4 keeps printer settings',

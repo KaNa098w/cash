@@ -283,7 +283,7 @@ class FiscalReceiptService {
       }
     }
 
-    final document = pw.Document()
+    var document = pw.Document()
       ..addPage(
         pw.Page(
           pageFormat:
@@ -300,7 +300,23 @@ class FiscalReceiptService {
           ),
         ),
       );
-    final pdfBytes = await document.save();
+    var pdfBytes = await document.save();
+    // Some thermal drivers clip a tall custom page even when the complete PDF
+    // height is supplied. Keep long tickets within a bounded paper length and
+    // let MultiPage move whole PrintFormat lines (including QR) to the next page.
+    const maxPageHeight = 200 * PdfPageFormat.mm;
+    if (document.document.pdfPageList.pages.first.pageFormat.height >
+        maxPageHeight) {
+      document = pw.Document()
+        ..addPage(pw.MultiPage(
+          pageFormat: PdfPageFormat(
+              paperMm == 80 ? 80 * PdfPageFormat.mm : 57 * PdfPageFormat.mm,
+              maxPageHeight),
+          margin: const pw.EdgeInsets.fromLTRB(6, 8, 14, 8),
+          build: (_) => widgets,
+        ));
+      pdfBytes = await document.save();
+    }
     await _printer.printPdfBytesSilently(
       pdfBytes,
       printerName: printerName,

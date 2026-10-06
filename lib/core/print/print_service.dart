@@ -21,7 +21,7 @@ class PrintService {
   // Чеки и Z-отчёт — маленький термопринтер.
   Future<void> print80mmSilently(
     Future<pw.Document> Function() buildDoc, {
-    PdfPageFormat format = PdfPageFormat.roll80,
+    PdfPageFormat format = PdfPageFormat.roll57,
     String? printerName,
   }) async {
     final printer = await _resolvePrinter(printerName);

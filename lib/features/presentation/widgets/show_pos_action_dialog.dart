@@ -1,3 +1,4 @@
+import 'package:leemon_app/features/presentation/widgets/customer_display_settings_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/invoices/invoice_history_dialog.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -133,17 +134,10 @@ Future<void> showPosActionsDialog(BuildContext context) {
       if (!context.mounted) return;
       context.go('/close-shift');
     }),
-    _PosAction('ПРИНТЕР', () async {
+    _PosAction('УСТРОЙСТВА', () async {
       Navigator.of(context, rootNavigator: true).pop();
-      await _pickPrinterSettings(context);
-    }),
-    _PosAction('ВЕСЫ', () async {
-      Navigator.of(context, rootNavigator: true).pop();
-      await showScaleSettingsDialog(context);
-    }),
-    _PosAction('РЕЖИМ\nЭКРАНА', () async {
-      Navigator.of(context, rootNavigator: true).pop();
-      await _showScreenModeDialog(context);
+      if (!context.mounted) return;
+      await _showDevicesDialog(context);
     }),
   ];
 
@@ -213,6 +207,94 @@ Future<void> showPosActionsDialog(BuildContext context) {
     },
   );
 }
+
+Future<void> _showDevicesDialog(BuildContext context) => showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        Widget deviceTile(IconData icon, String title, String subtitle,
+                Future<void> Function() open) =>
+            ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              leading: Icon(icon, color: const Color(0xFF15966A), size: 28),
+              title: Text(title,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: Text(subtitle),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () async {
+                await open();
+              },
+            );
+
+        return Dialog(
+          backgroundColor: Colors.white,
+          insetPadding: const EdgeInsets.all(20),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560, maxHeight: 620),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  color: const Color(0xFF17243B),
+                  padding: const EdgeInsets.fromLTRB(20, 14, 12, 14),
+                  child: Row(children: [
+                    const Icon(Icons.devices_rounded, color: Colors.white),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text('Устройства',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800)),
+                    ),
+                    IconButton(
+                      tooltip: 'Закрыть',
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      icon:
+                          const Icon(Icons.close_rounded, color: Colors.white),
+                    ),
+                  ]),
+                ),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    children: [
+                      deviceTile(
+                          Icons.print_rounded,
+                          'Принтер',
+                          'Печать чеков и накладных, размер бумаги',
+                          () => _pickPrinterSettings(context)),
+                      const Divider(height: 1, indent: 20, endIndent: 20),
+                      deviceTile(
+                          Icons.scale_rounded,
+                          'Весы',
+                          'Подключение, порты и диагностика',
+                          () => showScaleSettingsDialog(context)),
+                      const Divider(height: 1, indent: 20, endIndent: 20),
+                      deviceTile(
+                          Icons.calculate_outlined,
+                          'Дисплей покупателя',
+                          'Вывод суммы, порты и диагностика',
+                          () => showCustomerDisplaySettingsDialog(context)),
+                      const Divider(height: 1, indent: 20, endIndent: 20),
+                      deviceTile(
+                          Icons.monitor_rounded,
+                          'Режим экрана',
+                          'Настройки режима моноблока и ноутбука',
+                          () => _showScreenModeDialog(context)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
 
 Future<void> _showScreenModeDialog(BuildContext context) async {
   if (kIsWeb || !(Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
@@ -2065,14 +2147,12 @@ Future<void> _pickPrinterSettings(BuildContext context) async {
                       ),
                       sectionTitle('Размер бумаги чека'),
                       paperCard(
-                          value: 80,
-                          title: '80 мм',
-                          subtitle: 'Стандартный широкий чек'),
+                          value: 57, title: '57 мм', subtitle: 'По умолчанию'),
                       const SizedBox(height: 8),
                       paperCard(
-                          value: 57,
-                          title: '57 мм',
-                          subtitle: 'Узкий термочек'),
+                          value: 80,
+                          title: '80 мм',
+                          subtitle: 'Широкий термочек'),
                       sectionTitle('Принтер для чеков (термопринтер)'),
                       printerDropdown(
                         label: 'Чеки / Z-отчёт',
@@ -2275,15 +2355,15 @@ Future<void> _pickReceiptPaperSize(BuildContext context) async {
                   ),
                   const SizedBox(height: 14),
                   paperCard(
-                    value: 80,
-                    title: '80 мм',
-                    subtitle: 'Стандартный широкий чек',
+                    value: 57,
+                    title: '57 мм',
+                    subtitle: 'По умолчанию',
                   ),
                   const SizedBox(height: 10),
                   paperCard(
-                    value: 57,
-                    title: '57 мм',
-                    subtitle: 'Узкий термочек',
+                    value: 80,
+                    title: '80 мм',
+                    subtitle: 'Широкий термочек',
                   ),
                   const SizedBox(height: 14),
                   Row(

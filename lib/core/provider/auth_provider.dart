@@ -244,8 +244,9 @@ class AuthTokenProvider extends ChangeNotifier {
       _shiftUserId = _activeUserId;
       await prefs.setString(_kShiftUserId, _shiftUserId!);
     }
-    final savedReceiptPaperMm = prefs.getInt(_kReceiptPaperMm);
-    _receiptPaperMm = savedReceiptPaperMm == 80 ? 80 : 57;
+    // Always start with narrow receipt paper, including existing installations.
+    _receiptPaperMm = 57;
+    await prefs.setInt(_kReceiptPaperMm, _receiptPaperMm);
     _receiptPrinterName = prefs.getString(_kReceiptPrinterName);
     _invoicePrinterName = prefs.getString(_kInvoicePrinterName);
     _receiptPrintingEnabled = prefs.getBool(_kReceiptPrintingEnabled) ?? true;
@@ -432,7 +433,7 @@ class AuthTokenProvider extends ChangeNotifier {
   }
 
   Future<void> setReceiptPaperMm(int mm) async {
-    final next = mm == 57 ? 57 : 80;
+    final next = mm == 80 ? 80 : 57;
     _receiptPaperMm = next;
     notifyListeners();
 

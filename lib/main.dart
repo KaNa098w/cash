@@ -146,6 +146,9 @@ Future<void> _bootstrapApp() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider<AuthTokenProvider>.value(value: authProvider),
+        ChangeNotifierProvider<CustomerDisplayService>(
+          create: (_) => CustomerDisplayService()..initialize(),
+        ),
         BlocProvider<PosCubit>(
           create: (_) => PosCubit(sl<PosRepository>()),
         ),
@@ -693,7 +696,6 @@ class _PosAppState extends State<_PosApp> {
   static const MethodChannel _powerChannel = MethodChannel('leemon/power');
 
   late final GoRouter _router;
-  final _customerDisplay = CustomerDisplayService();
   final _fiscalMessenger = GlobalKey<ScaffoldMessengerState>();
   StreamSubscription<BackgroundFiscalReceipt>? _fiscalSub;
   final _printingFiscalReceipts = <String>{};
@@ -822,7 +824,7 @@ class _PosAppState extends State<_PosApp> {
     final total = state.items.fold<num>(0, (sum, item) => sum + item.sum);
     if (_lastCustomerDisplayTotal == total) return;
     _lastCustomerDisplayTotal = total;
-    _customerDisplay.showTotal(total);
+    context.read<CustomerDisplayService>().updateTotal(total.toDouble());
   }
 
   @override
