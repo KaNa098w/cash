@@ -244,9 +244,7 @@ class AuthTokenProvider extends ChangeNotifier {
       _shiftUserId = _activeUserId;
       await prefs.setString(_kShiftUserId, _shiftUserId!);
     }
-    // Always start with narrow receipt paper, including existing installations.
-    _receiptPaperMm = 57;
-    await prefs.setInt(_kReceiptPaperMm, _receiptPaperMm);
+    _receiptPaperMm = prefs.getInt(_kReceiptPaperMm) == 80 ? 80 : 57;
     _receiptPrinterName = prefs.getString(_kReceiptPrinterName);
     _invoicePrinterName = prefs.getString(_kInvoicePrinterName);
     _receiptPrintingEnabled = prefs.getBool(_kReceiptPrintingEnabled) ?? true;

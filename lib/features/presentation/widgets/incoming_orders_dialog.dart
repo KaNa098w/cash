@@ -1,7 +1,9 @@
+import 'package:leemon_app/core/models/sale_model.dart' as sale;
+import 'package:leemon_app/features/presentation/pages/sales_history/widgets/sale_items_box.dart';
 import 'dart:async';
 
 import 'footer_panels_widget.dart';
-import 'top_bar.dart' show PosTicketTab;
+import 'top_bar.dart' show PosTicketTab, PosMenuTab;
 import '../pages/products/cart_list/cart_list.dart' show CartProductImage;
 import '../../data/utils/money.dart' show money;
 
@@ -45,6 +47,10 @@ class _IncomingOrdersDialog extends StatefulWidget {
 class _IncomingOrdersDialogState extends State<_IncomingOrdersDialog> {
   late final MarketplaceOrdersController _controller;
   String? _printingInvoiceOrderId;
+  bool _showHistory = false;
+  bool _openingMarketplace = true;
+  bool _initialSelectionPending = true;
+  int _viewRevision = 0;
 
   @override
   void initState() {
@@ -56,9 +62,31 @@ class _IncomingOrdersDialogState extends State<_IncomingOrdersDialog> {
         await _controller.configure(
           posKey: auth.posKey ?? '',
           deviceId: auth.deviceId ?? '',
+          force: true,
         );
+        if (!mounted) return;
+        if (_initialSelectionPending) {
+          final newest = _controller.latestNewOrder;
+          if (newest != null) {
+            await _openOrder(newest);
+          } else {
+            setState(() => _showHistory = true);
+          }
+        }
+        if (mounted) setState(() => _openingMarketplace = false);
       }());
     });
+  }
+
+  Future<void> _openOrder(MarketplaceOrder order) async {
+    _initialSelectionPending = false;
+    final revision = ++_viewRevision;
+    await _controller.selectOrder(order.id, fallback: order);
+    if (mounted &&
+        revision == _viewRevision &&
+        _controller.selectedOrder?.id == order.id) {
+      setState(() => _showHistory = false);
+    }
   }
 
   @override
@@ -84,23 +112,38 @@ class _IncomingOrdersDialogState extends State<_IncomingOrdersDialog> {
                     _Header(
                       controller: _controller,
                       onClose: () => Navigator.of(context).pop(),
+                      showHistory: _showHistory,
+                      onHistory: () => setState(() {
+                        _initialSelectionPending = false;
+                        _viewRevision++;
+                        _showHistory = true;
+                      }),
+                      onOrder: _openOrder,
                     ),
-                    _StatusFilters(controller: _controller),
                     if (_controller.error != null)
                       _ErrorStrip(
                         text: _controller.error!,
                         onRefresh: _controller.refreshVisibleOrders,
                       ),
                     Expanded(
-                      child: _OrderDetails(controller: _controller),
+                      child: _openingMarketplace
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                  color: Color(0xFF15966A)))
+                          : IndexedStack(
+                              index: _showHistory ? 0 : 1,
+                              children: [
+                                  _MarketplaceHistory(controller: _controller),
+                                  _OrderDetails(controller: _controller),
+                                ]),
                     ),
-                    _MarketplaceFooter(
-                      controller: _controller,
-                      printingInvoiceOrderId: _printingInvoiceOrderId,
-                      onPrintInvoice: _printInvoice,
-                      onOrders: _controller.refreshVisibleOrders,
-                      onClose: () => Navigator.of(context).pop(),
-                    ),
+                    if (!_showHistory && !_openingMarketplace)
+                      _MarketplaceFooter(
+                        controller: _controller,
+                        printingInvoiceOrderId: _printingInvoiceOrderId,
+                        onPrintInvoice: _printInvoice,
+                        onClose: () => Navigator.of(context).pop(),
+                      ),
                   ],
                 );
               },
@@ -147,7 +190,15 @@ class _IncomingOrdersDialogState extends State<_IncomingOrdersDialog> {
 }
 
 class _Header extends StatefulWidget {
-  const _Header({required this.controller, required this.onClose});
+  const _Header(
+      {required this.controller,
+      required this.onClose,
+      required this.showHistory,
+      required this.onHistory,
+      required this.onOrder});
+  final bool showHistory;
+  final VoidCallback onHistory;
+  final ValueChanged<MarketplaceOrder> onOrder;
   final MarketplaceOrdersController controller;
   final VoidCallback onClose;
   @override
@@ -187,8 +238,7 @@ class _HeaderState extends State<_Header> {
           padding: EdgeInsets.only(top: compact ? 8 : 14),
           child: NotificationListener<ScrollNotification>(
             onNotification: (notification) {
-              if (notification.metrics.extentAfter < 240 &&
-                  controller.scope == MarketplaceOrderScope.history) {
+              if (notification.metrics.extentAfter < 240) {
                 unawaited(controller.loadMoreHistory());
               }
               return false;
@@ -197,116 +247,645 @@ class _HeaderState extends State<_Header> {
               controller: _scrollController,
               scrollDirection: Axis.horizontal,
               child: Row(children: [
-                for (final order in controller.visibleOrders) ...[
+                PosMenuTab(
+                    text: 'История',
+                    icon: 'assets/svg/history.svg',
+                    active: widget.showHistory,
+                    compact: compact,
+                    onTap: widget.onHistory),
+                SizedBox(width: compact ? 12 : 8),
+                for (final order in controller.topBarOrders) ...[
                   Tooltip(
                     message:
                         'Заказ № ${order.displayNumber} · ${_statusLabel(order.status)} · ${order.customer.name}',
                     child: PosTicketTab(
                       text: '№ ${order.displayNumber}',
+                      statusDotColor: _orderDotColor(order.status),
                       compact: compact,
-                      active: controller.selectedOrder?.id == order.id,
-                      onTap:
-                          busy ? null : () => controller.selectOrder(order.id),
+                      active: !widget.showHistory &&
+                          controller.selectedOrder?.id == order.id,
+                      onTap: busy ? null : () => widget.onOrder(order),
                     ),
                   ),
                   SizedBox(width: compact ? 12 : 8),
                 ],
-                if (controller.visibleOrders.isEmpty)
+                if (controller.topBarOrders.isEmpty)
                   Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Text(
                           controller.loading
                               ? 'Загрузка заказов…'
-                              : 'В этом разделе заказов нет',
+                              : 'Нет активных заказов',
                           style: const TextStyle(color: Colors.white70))),
                 if (controller.historyLoadingMore)
                   const SizedBox(
                       width: 28,
                       height: 28,
                       child: CircularProgressIndicator(strokeWidth: 2)),
-                TextButton(
-                  onPressed: busy ? null : controller.refreshVisibleOrders,
-                  child: Text('ЗАКАЗЫ',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: compact ? 15 : 16,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: 0.2)),
-                ),
               ]),
             ),
           ),
         )),
         const SizedBox(width: 12),
         IconButton(
-            onPressed: busy ? null : controller.refreshVisibleOrders,
-            icon: controller.loading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.refresh, color: Colors.white),
-            tooltip: 'Обновить'),
-        IconButton(
-            onPressed: controller.actionLoading ? null : onClose,
-            icon: const Icon(Icons.close, color: Colors.white70),
-            tooltip: 'Закрыть'),
+          tooltip: 'Обновить заказы',
+          onPressed: busy ? null : controller.refreshVisibleOrders,
+          style: IconButton.styleFrom(
+              minimumSize: const Size(48, 48),
+              foregroundColor: Colors.white,
+              disabledForegroundColor: Colors.white38),
+          icon: controller.loading
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.refresh_rounded, size: 26),
+        ),
+        const SizedBox(width: 8),
+        FilledButton.icon(
+          onPressed: controller.actionLoading ? null : onClose,
+          icon: const Icon(Icons.logout_rounded, size: 21),
+          label: const Text('Выйти',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          style: FilledButton.styleFrom(
+              minimumSize: const Size(124, 46),
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              backgroundColor: const Color(0xFFCB5B52),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12))),
+        ),
       ]),
     );
   }
 }
 
-class _StatusFilters extends StatelessWidget {
-  const _StatusFilters({required this.controller});
+class _MarketplaceHistory extends StatefulWidget {
+  const _MarketplaceHistory({required this.controller});
   final MarketplaceOrdersController controller;
   @override
+  State<_MarketplaceHistory> createState() => _MarketplaceHistoryState();
+}
+
+class _MarketplaceHistoryState extends State<_MarketplaceHistory> {
+  final search = TextEditingController();
+  final scroll = ScrollController();
+  Timer? debounce;
+  bool searching = false;
+  String query = '';
+  String? expandedOrderId;
+  MarketplaceOrder? expandedOrder;
+
+  @override
+  void initState() {
+    super.initState();
+    scroll.addListener(() {
+      if (scroll.hasClients &&
+          scroll.position.extentAfter < 300 &&
+          query.isEmpty) {
+        unawaited(widget.controller.loadMoreHistory());
+      }
+    });
+  }
+
+  void changeQuery(String value) {
+    setState(
+        () => query = value.trim().toLowerCase().replaceAll('№', '').trim());
+    debounce?.cancel();
+    if (query.isNotEmpty) {
+      debounce = Timer(const Duration(milliseconds: 350), searchHistory);
+    }
+  }
+
+  Future<void> searchHistory() async {
+    if (searching || !mounted || query.isEmpty) return;
+    setState(() => searching = true);
+    try {
+      while (mounted &&
+          query.isNotEmpty &&
+          widget.controller.historyHasMore &&
+          !widget.controller.loading) {
+        await widget.controller.loadMoreHistory();
+        if (widget.controller.error != null) break;
+      }
+    } finally {
+      if (mounted) setState(() => searching = false);
+    }
+  }
+
+  Future<void> toggleOrder(MarketplaceOrder order) async {
+    if (expandedOrderId == order.id) {
+      setState(() {
+        expandedOrderId = null;
+        expandedOrder = null;
+      });
+      return;
+    }
+    setState(() {
+      expandedOrderId = order.id;
+      expandedOrder = null;
+    });
+    await widget.controller.selectOrder(order.id);
+    if (mounted && expandedOrderId == order.id) {
+      setState(() => expandedOrder =
+          widget.controller.selectedOrder?.id == order.id
+              ? widget.controller.selectedOrder
+              : order);
+    }
+  }
+
+  @override
+  void dispose() {
+    debounce?.cancel();
+    search.dispose();
+    scroll.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final orders = controller.shippedOrders
+        .where((order) =>
+            query.isEmpty || order.displayNumber.toLowerCase().contains(query))
+        .toList();
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            TextField(
+              controller: search,
+              onChanged: changeQuery,
+              onSubmitted: (_) => searchHistory(),
+              decoration: InputDecoration(
+                  hintText: 'Поиск по номеру заказа',
+                  prefixIcon: const Icon(Icons.search_rounded,
+                      color: Color(0xFF456B5A)),
+                  suffixIcon: query.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Очистить поиск',
+                          onPressed: () {
+                            search.clear();
+                            changeQuery('');
+                          },
+                          icon: const Icon(Icons.close_rounded)),
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFD7DED9))),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFD7DED9))),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                          color: Color(0xFF456B5A), width: 1.5))),
+            ),
+            const SizedBox(height: 10),
+            Text(
+                searching
+                    ? 'Ищем в истории заказов…'
+                    : query.isNotEmpty
+                        ? 'Найдено заказов: ${orders.length}'
+                        : 'Заказов: ${orders.length}',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+          ])),
+      if (searching || controller.historyLoadingMore)
+        const LinearProgressIndicator(minHeight: 2, color: Color(0xFF15966A)),
+      Expanded(
+          child: controller.loading && orders.isEmpty
+              ? const Center(
+                  child: CircularProgressIndicator(color: Color(0xFF15966A)))
+              : orders.isEmpty
+                  ? Center(
+                      child: Text(
+                          query.isEmpty
+                              ? 'Заказов пока нет'
+                              : searching
+                                  ? 'Поиск в истории…'
+                                  : 'Заказ с таким номером не найден',
+                          style: const TextStyle(
+                              fontSize: 16, color: Color(0xFF64748B))))
+                  : LayoutBuilder(builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 850;
+                      Widget cell(String text, int flex,
+                              {Color? color, bool bold = false}) =>
+                          Expanded(
+                              flex: flex,
+                              child: Text(text,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: bold
+                                          ? FontWeight.w700
+                                          : FontWeight.w500,
+                                      color:
+                                          color ?? const Color(0xFF334155))));
+                      return Column(children: [
+                        if (!compact)
+                          Padding(
+                              padding: const EdgeInsets.fromLTRB(42, 4, 42, 12),
+                              child: Row(children: [
+                                cell('Номер', 18),
+                                cell('Дата', 23),
+                                cell('Статус', 23),
+                                cell('Покупатель', 23),
+                                cell('Сумма', 18),
+                                const SizedBox(width: 26)
+                              ])),
+                        Expanded(
+                            child: Scrollbar(
+                                controller: scroll,
+                                thumbVisibility: true,
+                                child: ListView.separated(
+                                  controller: scroll,
+                                  padding:
+                                      const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                                  itemCount: orders.length +
+                                      (controller.historyHasMore &&
+                                              query.isEmpty
+                                          ? 1
+                                          : 0),
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 14),
+                                  itemBuilder: (context, index) {
+                                    if (index == orders.length) {
+                                      return Center(
+                                          child: TextButton(
+                                              onPressed: controller
+                                                      .historyLoadingMore
+                                                  ? null
+                                                  : controller.loadMoreHistory,
+                                              child:
+                                                  const Text('Показать ещё')));
+                                    }
+                                    final order = orders[index];
+                                    final color = _statusColor(order.status);
+                                    final status = Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 6),
+                                        decoration: BoxDecoration(
+                                            color:
+                                                color.withValues(alpha: 0.09),
+                                            borderRadius:
+                                                BorderRadius.circular(8)),
+                                        child: Text(_statusLabel(order.status),
+                                            style: TextStyle(
+                                                fontSize: 13,
+                                                color: color,
+                                                fontWeight: FontWeight.w600)));
+                                    return Material(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(22),
+                                        clipBehavior: Clip.antiAlias,
+                                        child: Column(children: [
+                                          InkWell(
+                                            onTap: controller.loading ||
+                                                    controller.actionLoading
+                                                ? null
+                                                : () => toggleOrder(order),
+                                            child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 22,
+                                                        vertical: 18),
+                                                child: compact
+                                                    ? Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
+                                                        children: [
+                                                            Row(children: [
+                                                              Expanded(
+                                                                  child: _OrderNumber(
+                                                                      order:
+                                                                          order,
+                                                                      fontSize:
+                                                                          18)),
+                                                              Icon(
+                                                                  expandedOrderId ==
+                                                                          order
+                                                                              .id
+                                                                      ? Icons
+                                                                          .expand_less_rounded
+                                                                      : Icons
+                                                                          .expand_more_rounded,
+                                                                  color: const Color(
+                                                                      0xFF64748B))
+                                                            ]),
+                                                            const SizedBox(
+                                                                height: 10),
+                                                            Wrap(
+                                                                spacing: 12,
+                                                                runSpacing: 8,
+                                                                crossAxisAlignment:
+                                                                    WrapCrossAlignment
+                                                                        .center,
+                                                                children: [
+                                                                  status,
+                                                                  Text(
+                                                                      _formatOrderTotal(
+                                                                          order
+                                                                              .displayTotal),
+                                                                      style: const TextStyle(
+                                                                          fontSize:
+                                                                              17,
+                                                                          fontWeight:
+                                                                              FontWeight.w700))
+                                                                ]),
+                                                            const SizedBox(
+                                                                height: 10),
+                                                            Text(
+                                                                [
+                                                                  if (order
+                                                                          .createdAt !=
+                                                                      null)
+                                                                    _formatOrderDate(
+                                                                        order
+                                                                            .createdAt!),
+                                                                  if (order
+                                                                      .customer
+                                                                      .name
+                                                                      .isNotEmpty)
+                                                                    order
+                                                                        .customer
+                                                                        .name
+                                                                ].join(' · '),
+                                                                style: const TextStyle(
+                                                                    fontSize:
+                                                                        13,
+                                                                    color: Color(
+                                                                        0xFF64748B))),
+                                                          ])
+                                                    : Row(children: [
+                                                        Expanded(
+                                                            flex: 18,
+                                                            child: _OrderNumber(
+                                                                order: order)),
+                                                        cell(
+                                                            order.createdAt ==
+                                                                    null
+                                                                ? '—'
+                                                                : _formatOrderDate(
+                                                                    order
+                                                                        .createdAt!),
+                                                            23),
+                                                        Expanded(
+                                                            flex: 23,
+                                                            child: Align(
+                                                                alignment: Alignment
+                                                                    .centerLeft,
+                                                                child: status)),
+                                                        cell(
+                                                            order.customer.name
+                                                                    .isEmpty
+                                                                ? 'Покупатель не указан'
+                                                                : order.customer
+                                                                    .name,
+                                                            23),
+                                                        cell(
+                                                            _formatOrderTotal(order
+                                                                .displayTotal),
+                                                            18,
+                                                            bold: true),
+                                                        Icon(
+                                                            expandedOrderId ==
+                                                                    order.id
+                                                                ? Icons
+                                                                    .expand_less_rounded
+                                                                : Icons
+                                                                    .expand_more_rounded,
+                                                            size: 26,
+                                                            color: const Color(
+                                                                0xFF64748B)),
+                                                      ])),
+                                          ),
+                                          if (expandedOrderId == order.id)
+                                            expandedOrder == null
+                                                ? const Padding(
+                                                    padding: EdgeInsets.all(24),
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                            color: Color(
+                                                                0xFF15966A)))
+                                                : _OrderHistoryDetails(
+                                                    order: expandedOrder!),
+                                        ]));
+                                  },
+                                ))),
+                      ]);
+                    })),
+    ]);
+  }
+}
+
+class _OrderNumber extends StatelessWidget {
+  const _OrderNumber({required this.order, this.fontSize = 15});
+  final MarketplaceOrder order;
+  final double fontSize;
+  @override
+  Widget build(BuildContext context) =>
+      Row(mainAxisSize: MainAxisSize.min, children: [
+        Flexible(
+            child: Text('№ ${order.displayNumber}',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF334155)))),
+        if (_orderDotColor(order.status) != null) ...[
+          const SizedBox(width: 7),
+          Icon(Icons.circle, size: 7, color: _orderDotColor(order.status)),
+        ],
+      ]);
+}
+
+class _OrderHistoryDetails extends StatelessWidget {
+  const _OrderHistoryDetails({required this.order});
+  final MarketplaceOrder order;
+
+  sale.SaleItemModel previewItem(MarketplaceGroupedItem item) {
+    final subtotal = item.unitPrice * item.requestedQuantity;
+    final discount =
+        (subtotal - item.lineTotal).clamp(0, double.infinity).toDouble();
+    return sale.SaleItemModel(
+      id: item.productId,
+      saleId: order.id,
+      productId: item.productId,
+      quantity: item.requestedQuantity.toDouble(),
+      price: item.unitPrice.toDouble(),
+      basePrice: item.unitPrice.toDouble(),
+      totalPrice: item.lineTotal.toDouble(),
+      totalDiscount: discount,
+      discountPercent: subtotal > 0
+          ? (discount / subtotal * 100).clamp(0, 100).toDouble()
+          : 0,
+      product: sale.ProductModel.fromJson({
+        'id': item.productId,
+        'name': item.name.isEmpty ? item.productId : item.name,
+        'barcode': item.sku
+      }),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+        child:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                  color: const Color(0xFFF2F2F2),
+                  borderRadius: BorderRadius.circular(16)),
+              child: LayoutBuilder(builder: (context, constraints) {
+                final columnWidth = constraints.maxWidth < 600
+                    ? constraints.maxWidth
+                    : (constraints.maxWidth - 20) / 2;
+                Widget info(String label, String value, IconData icon) =>
+                    SizedBox(
+                        width: columnWidth,
+                        child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(icon,
+                                  size: 18, color: const Color(0xFF6B7280)),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                  child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                    Text(label,
+                                        style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF6B7280))),
+                                    const SizedBox(height: 3),
+                                    SelectableText(value,
+                                        style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            height: 1.4)),
+                                  ])),
+                            ]));
+                return Wrap(spacing: 20, runSpacing: 14, children: [
+                  info(
+                      'Телефон',
+                      order.customer.phone.isEmpty
+                          ? 'Не указан'
+                          : order.customer.phone,
+                      Icons.phone_outlined),
+                  info('Получение', order.fulfillmentLabel,
+                      Icons.local_shipping_outlined),
+                  if (order.deliveryAddress.isNotEmpty)
+                    info('Адрес', order.deliveryAddress,
+                        Icons.location_on_outlined),
+                ]);
+              })),
+          const SizedBox(height: 14),
+          LayoutBuilder(builder: (context, constraints) {
+            final width =
+                constraints.maxWidth < 680 ? 680.0 : constraints.maxWidth;
+            return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                    width: width,
+                    child: SaleItemsBox(
+                      items: order.groupedItems.map(previewItem).toList(),
+                      picks: const {},
+                      selectable: false,
+                      onToggleItem: (_, __) {},
+                      onQtyChanged: (_, __) {},
+                      refundedQtyOf: (_) => 0,
+                      availableQtyOf: (_) => 0,
+                    )));
+          }),
+          const SizedBox(height: 14),
+          Text('Итого: ${_formatOrderTotal(order.displayTotal)}',
+              textAlign: TextAlign.right,
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+        ]),
+      );
+}
+
+class _OrderStatusCard extends StatelessWidget {
+  const _OrderStatusCard({required this.order});
+  final MarketplaceOrder order;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _statusColor(order.status);
+    final icon = switch (order.status) {
+      'awaiting_confirmation' => Icons.schedule_rounded,
+      'processing' => Icons.inventory_2_outlined,
+      'partially_shipped' => Icons.local_shipping_outlined,
+      'shipped' => Icons.local_shipping_rounded,
+      'delivered' || 'completed' => Icons.check_circle_outline_rounded,
+      'cancelled' || 'partially_cancelled' => Icons.cancel_outlined,
+      _ => Icons.info_outline_rounded,
+    };
+    final description = switch (order.status) {
+      'awaiting_confirmation' => 'Примите заказ, чтобы начать сборку.',
+      'processing' => 'Заказ принят. Подготовьте товары к отгрузке.',
+      'partially_shipped' =>
+        'Часть товаров отгружена. Осталось подготовить остальные позиции.',
+      'shipped' => 'Товары отгружены. Повторная отгрузка не требуется.',
+      'delivered' => 'Заказ доставлен покупателю.',
+      'completed' => 'Работа с заказом завершена.',
+      'cancelled' => 'Заказ отменён. Приём и отгрузка недоступны.',
+      'partially_cancelled' =>
+        'Часть заказа отменена. Проверьте состав и количество товаров.',
+      _ => 'Обновите заказ, чтобы проверить его текущее состояние.',
+    };
     return Container(
       width: double.infinity,
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(children: [
-            for (final scope in MarketplaceOrderScope.values)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ChoiceChip(
-                  labelPadding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                  selected: controller.scope == scope,
-                  showCheckmark: false,
-                  selectedColor: const Color(0xFFEAF7F1),
-                  label: Text(switch (scope) {
-                    MarketplaceOrderScope.newOrders =>
-                      'Новые · ${controller.newOrders.length}',
-                    MarketplaceOrderScope.active =>
-                      'В работе · ${controller.activeOrders.length}',
-                    MarketplaceOrderScope.history => 'История',
-                  }),
-                  labelStyle: TextStyle(
-                      color: controller.scope == scope
-                          ? const Color(0xFF179D72)
-                          : const Color(0xFF536074),
-                      fontWeight: FontWeight.w600),
-                  onSelected: controller.loading || controller.actionLoading
-                      ? null
-                      : (_) => controller.setScope(scope),
-                ),
-              ),
-            if (controller.selectedOrder != null) ...[
-              const SizedBox(width: 12),
-              Icon(Icons.circle,
-                  size: 8,
-                  color: _statusColor(controller.selectedOrder!.status)),
-              const SizedBox(width: 6),
-              Text(_statusLabel(controller.selectedOrder!.status),
-                  style: TextStyle(
-                      color: _statusColor(controller.selectedOrder!.status),
-                      fontWeight: FontWeight.w600)),
-            ],
-          ])),
+      margin: const EdgeInsets.only(top: 8, bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.2))),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.09),
+                borderRadius: BorderRadius.circular(10)),
+            child: Icon(icon, color: color, size: 20)),
+        const SizedBox(width: 10),
+        Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Wrap(
+              spacing: 10,
+              runSpacing: 2,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(_statusLabel(order.status),
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: color)),
+                Text('Статус заказа № ${order.displayNumber}',
+                    style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF64748B))),
+              ]),
+          const SizedBox(height: 3),
+          Text(description,
+              style: const TextStyle(
+                  fontSize: 12, height: 1.3, color: Color(0xFF64748B))),
+        ])),
+      ]),
     );
   }
 }
@@ -330,14 +909,8 @@ class _OrderDetailsState extends State<_OrderDetails> {
       return Center(
           child: controller.loading
               ? const CircularProgressIndicator()
-              : Text(
-                  switch (controller.scope) {
-                    MarketplaceOrderScope.newOrders => 'Новых заказов пока нет',
-                    MarketplaceOrderScope.active => 'Заказов в работе пока нет',
-                    MarketplaceOrderScope.history => 'История заказов пуста',
-                  },
-                  style:
-                      const TextStyle(color: Color(0xFF64748B), fontSize: 18)));
+              : const Text('Заказов пока нет',
+                  style: TextStyle(color: Color(0xFF64748B), fontSize: 18)));
     }
     if (selectedOrderId != order.id) {
       selectedIndex = null;
@@ -349,6 +922,7 @@ class _OrderDetailsState extends State<_OrderDetails> {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Column(children: [
+          _OrderStatusCard(order: order),
           _ProductsHeader(scale: scale),
           Expanded(
               child: items.isEmpty
@@ -414,12 +988,10 @@ class _MarketplaceFooter extends StatelessWidget {
       {required this.controller,
       required this.printingInvoiceOrderId,
       required this.onPrintInvoice,
-      required this.onOrders,
       required this.onClose});
   final MarketplaceOrdersController controller;
   final String? printingInvoiceOrderId;
   final ValueChanged<MarketplaceOrder> onPrintInvoice;
-  final VoidCallback onOrders;
   final VoidCallback onClose;
 
   @override
@@ -427,21 +999,23 @@ class _MarketplaceFooter extends StatelessWidget {
     final order = controller.selectedOrder;
     final busy = controller.loading || controller.actionLoading;
     final canShip = order != null &&
-        controller.scope != MarketplaceOrderScope.history &&
         (order.status == 'processing' || order.status == 'partially_shipped') &&
         order.groupedItems.any((item) => item.remainingQuantity > 0);
     final canAccept = order != null &&
         !order.isAccepted &&
-        controller.scope == MarketplaceOrderScope.newOrders;
+        order.status == 'awaiting_confirmation';
     return LayoutBuilder(builder: (context, constraints) {
       final compact = constraints.maxWidth < 900;
       final controls = FooterControlsOnly(
         smallAmountText: 'Итого',
         bigAmountText: _formatOrderTotal(order?.displayTotal ?? 0),
-        paymentLabel: controller.actionLoading ? 'ПОДОЖДИТЕ' : 'ОТГРУЗИТЬ',
-        minusLabel: 'Обновить',
-        plusLabel: 'Принять',
-        payCardLabel: 'Заказы',
+        showAdjustmentButtons: false,
+        showPayCardButton: false,
+        paymentLabel: controller.actionLoading
+            ? 'ПОДОЖДИТЕ'
+            : canAccept
+                ? 'ПРИНЯТЬ'
+                : 'ОТГРУЗИТЬ',
         quickLabel: printingInvoiceOrderId != null ? 'Открытие…' : 'Накладная',
         quickBackgroundColor: const Color(0xFFF9B32C),
         quickForegroundColor: Colors.black,
@@ -451,16 +1025,15 @@ class _MarketplaceFooter extends StatelessWidget {
         paymentForegroundColor: Colors.white,
         cancelLabel: 'НАЗАД',
         quickEnabled: !busy && order != null && printingInvoiceOrderId == null,
-        onMinus: busy ? null : controller.refreshVisibleOrders,
-        onPlus: busy || !canAccept ? null : controller.acceptSelected,
-        onPayCard: busy ? null : onOrders,
         onQuick: busy || order == null || printingInvoiceOrderId != null
             ? null
             : () => onPrintInvoice(order),
         onCancel: controller.actionLoading ? null : onClose,
-        onPay: busy || !canShip
+        onPay: busy || (!canAccept && !canShip)
             ? null
-            : () => _confirmAndShip(context, controller),
+            : canAccept
+                ? controller.acceptSelected
+                : () => _confirmAndShip(context, controller),
       );
       final customer = order == null
           ? 'Выберите заказ'
@@ -786,4 +1359,10 @@ Color _statusColor(String status) => switch (status) {
       'shipped' || 'delivered' || 'completed' => const Color(0xFF179D72),
       'cancelled' => const Color(0xFFBE123C),
       _ => const Color(0xFF536074),
+    };
+
+Color? _orderDotColor(String status) => switch (status) {
+      'awaiting_confirmation' => const Color(0xFF22B982),
+      'processing' || 'partially_shipped' => const Color(0xFFF59E0B),
+      _ => null,
     };

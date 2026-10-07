@@ -59,7 +59,7 @@ class TopBar extends StatelessWidget {
                             physics: const ClampingScrollPhysics(),
                             child: Row(
                               children: [
-                                _Chip(
+                                PosMenuTab(
                                   text: 'История',
                                   icon: 'assets/svg/history.svg',
                                   active: state.isHistoryMode,
@@ -178,6 +178,7 @@ class TopBar extends StatelessWidget {
 }
 
 class PosTicketTab extends StatelessWidget {
+  final Color? statusDotColor;
   final String text;
   final bool active;
   final bool compact;
@@ -188,6 +189,7 @@ class PosTicketTab extends StatelessWidget {
 
   const PosTicketTab({
     super.key,
+    this.statusDotColor,
     required this.text,
     this.active = false,
     this.compact = false,
@@ -242,31 +244,49 @@ class PosTicketTab extends StatelessWidget {
                   ),
                 ],
               )
-            : Center(
-                child: Text(
-                  text,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: textColor,
-                    fontSize: compact ? 16 : 16,
-                    fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
+            : statusDotColor != null
+                ? Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Flexible(
+                          child: Text(text,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: textColor,
+                                  fontSize: 16,
+                                  fontWeight: compact
+                                      ? FontWeight.w700
+                                      : FontWeight.w500))),
+                      const SizedBox(width: 7),
+                      Icon(Icons.circle, size: 7, color: statusDotColor),
+                    ],
+                  )
+                : Center(
+                    child: Text(
+                      text,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: compact ? 16 : 16,
+                        fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
       ),
     );
   }
 }
 
-class _Chip extends StatelessWidget {
+class PosMenuTab extends StatelessWidget {
   final String text;
   final String icon; // <-- svg asset path
   final bool active;
   final bool compact;
   final VoidCallback onTap;
 
-  const _Chip({
+  const PosMenuTab({
+    super.key,
     required this.text,
     required this.icon,
     required this.active,
@@ -592,7 +612,7 @@ class _StatusDotState extends State<_StatusDot> {
               Text(
                 cashierName,
                 textAlign: TextAlign.left,
-                style: TextStyle(
+                style: const TextStyle(
                   fontFamily: 'NotoSans',
                   color: Colors.white,
                   fontSize: 16,

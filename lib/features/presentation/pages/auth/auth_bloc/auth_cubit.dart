@@ -24,18 +24,23 @@ class AuthCubit extends Cubit<AuthState> {
     required AuthRepository authRepository,
     required SessionRepository sessionRepository,
     required AuthTokenProvider tokenProvider,
+    Future<bool> Function()? internetCheck,
   })  : _authRepository = authRepository,
         _sessionRepository = sessionRepository,
         _tokenProvider = tokenProvider,
+        _internetCheck = internetCheck,
         super(_resolveInitialState(tokenProvider));
 
   final AuthRepository _authRepository;
   final SessionRepository _sessionRepository;
   final AuthTokenProvider _tokenProvider;
 
+  final Future<bool> Function()? _internetCheck;
+
   static bool _sessionOpenInProgress = false;
 
   Future<bool> _hasInternet() async {
+    if (_internetCheck != null) return _internetCheck();
     if (kIsWeb) return true;
     try {
       final result = await InternetAddress.lookup('example.com')
@@ -356,6 +361,8 @@ class AuthCubit extends Cubit<AuthState> {
   Future<void> closeSessionWithCash({
     required num closingCashAmount,
     String? comment,
+    bool skipReportPrinting = false,
+    Future<bool> Function(Object error)? onPrintFailure,
   }) async {
     try {
       final hasInternet = await _hasInternet();
@@ -407,44 +414,30 @@ class AuthCubit extends Cubit<AuthState> {
         );
       }
 
-      emit(
-        AuthClosingSession(
-          closingCashAmount: closingCashAmount,
-          title: 'Закрываем смену',
-          message: 'Отправляем данные и фиксируем итог по кассе.',
-        ),
-      );
-
-      final closeResult = await _sessionRepository.closeSession(
-        key: key,
-        deviceId: deviceId,
-        sessionId: sessionId,
-        userId: userId,
-        closingCashAmount: closingCashAmount,
-        comment: comment,
-      );
-
-      if (closeResult == QueueSendResult.sent) {
-        emit(
-          AuthClosingSession(
-            closingCashAmount: closingCashAmount,
-            title: 'Готовим Z-отчёт',
-            message: 'Собираем продажи смены и считаем итоговые суммы.',
-          ),
-        );
-        ShiftReportData? report;
+      if (!skipReportPrinting) {
         try {
-          report = await sync.loadShiftReportFromBackend(
-            key: key,
-            sessionId: sessionId,
-            deviceId: deviceId,
-            includeProducts: false,
+          emit(
+            AuthClosingSession(
+              closingCashAmount: closingCashAmount,
+              title: 'Готовим Z-отчёт',
+              message: 'Собираем продажи смены и считаем итоговые суммы.',
+            ),
           );
-        } catch (_) {
-          report = await sync.loadShiftReport(sessionId);
-        }
-        final printableReport = report;
-        if (printableReport != null) {
+          ShiftReportData? report;
+          try {
+            report = await sync.loadShiftReportFromBackend(
+              key: key,
+              sessionId: sessionId,
+              deviceId: deviceId,
+              includeProducts: false,
+            );
+          } catch (_) {
+            report = await sync.loadShiftReport(sessionId);
+          }
+          final printableReport = report;
+          if (printableReport == null) {
+            throw StateError('Не удалось получить данные для печати отчёта.');
+          }
           emit(
             AuthClosingSession(
               closingCashAmount: closingCashAmount,
@@ -466,7 +459,7 @@ class AuthCubit extends Cubit<AuthState> {
                 cashierName: cashierName,
                 sessionId: printableReport.sessionId,
                 openedAt: printableReport.openedAt,
-                closedAt: printableReport.closedAt,
+                closedAt: printableReport.closedAt ?? DateTime.now(),
                 openingCashAmount: printableReport.openingCashAmount,
                 closingCashAmount: closingCashAmount,
                 salesCount: printableReport.salesCount,
@@ -479,6 +472,8 @@ class AuthCubit extends Cubit<AuthState> {
                 incomeTotal: printableReport.incomeTotal,
                 expenseTotal: printableReport.expenseTotal,
                 expectedCashAmount: printableReport.expectedCashAmount,
+                reportSubtitle: 'Данные для закрытия смены',
+                footerText: 'Подтверждение закрытия',
                 items: printableReport.items
                     .map(
                       (item) => ReceiptPdfItem(
@@ -494,8 +489,32 @@ class AuthCubit extends Cubit<AuthState> {
             format: pageFormat,
             printerName: _tokenProvider.receiptPrinterName,
           );
+        } catch (error) {
+          final continueClosing = await onPrintFailure?.call(error) ?? false;
+          if (!continueClosing) {
+            emit(const AuthFailure(
+                'Закрытие отменено: отчёт не напечатан. Смена остаётся открытой.'));
+            return;
+          }
         }
       }
+
+      emit(
+        AuthClosingSession(
+          closingCashAmount: closingCashAmount,
+          title: 'Закрываем смену',
+          message: 'Отправляем данные и фиксируем итог по кассе.',
+        ),
+      );
+
+      await _sessionRepository.closeSession(
+        key: key,
+        deviceId: deviceId,
+        sessionId: sessionId,
+        userId: userId,
+        closingCashAmount: closingCashAmount,
+        comment: comment,
+      );
 
       emit(
         AuthClosingSession(

@@ -9,6 +9,56 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:leemon_app/core/models/fiscal_receipt.dart';
 import 'package:leemon_app/core/print/print_service.dart';
+import 'package:leemon_app/core/print/receipt_printer_settings.dart';
+
+Future<pw.Document> buildFiscalPrintDocument({
+  required int paperMm,
+  required List<pw.Widget> widgets,
+  ReceiptPrinterSettings? options,
+}) async {
+  final settings = options ?? await ReceiptPrinterSettings.load();
+  final margin = pw.EdgeInsets.fromLTRB(
+    settings.leftMarginMm * PdfPageFormat.mm,
+    settings.topMarginMm * PdfPageFormat.mm,
+    settings.rightMarginMm * PdfPageFormat.mm,
+    settings.bottomMarginMm * PdfPageFormat.mm,
+  );
+  var document = pw.Document()
+    ..addPage(
+      pw.Page(
+        pageFormat: paperMm == 80 ? PdfPageFormat.roll80 : PdfPageFormat.roll57,
+        // Thermal printers often have a wider non-printable area on the
+        // right. Keep the content away from that edge so final characters
+        // are not clipped.
+        margin: margin,
+        build: (_) => pw.Center(
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: widgets,
+          ),
+        ),
+      ),
+    );
+  await document.save();
+  // Some thermal drivers clip a tall custom page even when the complete PDF
+  // height is supplied. Keep long tickets within a bounded paper length and
+  // let MultiPage move whole PrintFormat lines (including QR) to the next page.
+  final maxPageHeight = settings.fiscalLengthMm * PdfPageFormat.mm;
+  if (settings.fixedLength ||
+      document.document.pdfPageList.pages.first.pageFormat.height >
+          maxPageHeight) {
+    document = pw.Document()
+      ..addPage(pw.MultiPage(
+        pageFormat: PdfPageFormat(
+            paperMm == 80 ? 80 * PdfPageFormat.mm : 57 * PdfPageFormat.mm,
+            maxPageHeight),
+        margin: margin,
+        maxPages: 1000,
+        build: (_) => widgets,
+      ));
+  }
+  return document;
+}
 
 class BackgroundFiscalReceipt {
   const BackgroundFiscalReceipt(this.key, this.deviceId, this.receipt);
@@ -283,40 +333,11 @@ class FiscalReceiptService {
       }
     }
 
-    var document = pw.Document()
-      ..addPage(
-        pw.Page(
-          pageFormat:
-              paperMm == 80 ? PdfPageFormat.roll80 : PdfPageFormat.roll57,
-          // Thermal printers often have a wider non-printable area on the
-          // right. Keep the content away from that edge so final characters
-          // are not clipped.
-          margin: const pw.EdgeInsets.fromLTRB(6, 8, 14, 8),
-          build: (_) => pw.Center(
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.center,
-              children: widgets,
-            ),
-          ),
-        ),
-      );
-    var pdfBytes = await document.save();
-    // Some thermal drivers clip a tall custom page even when the complete PDF
-    // height is supplied. Keep long tickets within a bounded paper length and
-    // let MultiPage move whole PrintFormat lines (including QR) to the next page.
-    const maxPageHeight = 200 * PdfPageFormat.mm;
-    if (document.document.pdfPageList.pages.first.pageFormat.height >
-        maxPageHeight) {
-      document = pw.Document()
-        ..addPage(pw.MultiPage(
-          pageFormat: PdfPageFormat(
-              paperMm == 80 ? 80 * PdfPageFormat.mm : 57 * PdfPageFormat.mm,
-              maxPageHeight),
-          margin: const pw.EdgeInsets.fromLTRB(6, 8, 14, 8),
-          build: (_) => widgets,
-        ));
-      pdfBytes = await document.save();
-    }
+    final document =
+        await buildFiscalPrintDocument(paperMm: paperMm, widgets: widgets);
+    final pdfBytes = await document.save();
+    PrintService.record(
+        'Фискальный чек: ${document.document.pdfPageList.pages.length} страниц.');
     await _printer.printPdfBytesSilently(
       pdfBytes,
       printerName: printerName,

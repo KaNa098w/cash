@@ -5,6 +5,8 @@ class FooterControlsOnly extends StatelessWidget {
     super.key,
     required this.smallAmountText,
     required this.bigAmountText,
+    this.showAdjustmentButtons = true,
+    this.showPayCardButton = true,
     this.onMinus,
     this.onPlus,
     this.onQuick,
@@ -25,6 +27,8 @@ class FooterControlsOnly extends StatelessWidget {
     this.paymentForegroundColor = Colors.white,
   });
 
+  final bool showAdjustmentButtons;
+  final bool showPayCardButton;
   final String smallAmountText;
   final String bigAmountText;
 
@@ -85,9 +89,10 @@ class FooterControlsOnly extends StatelessWidget {
         final rowGap = s(_gap);
         final smallBtnW = s(_kSmallBtnW);
         final smallBtnH = s(_kSmallBtnH);
-        final totalW = s(_totalW);
+        final totalW = s(showAdjustmentButtons ? _totalW : _designRowW);
         final totalH = s(_totalH);
-        final payW = s(_PayBtn._w);
+        final payW =
+            s(_PayBtn._w + (showPayCardButton ? 0 : _kSmallBtnW + _gap));
         final payH = smallBtnH;
         final radius = s(_r);
         final contentHeight = totalH + rowGap + smallBtnH;
@@ -106,64 +111,66 @@ class FooterControlsOnly extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  _SmallBtn(
-                    width: smallBtnW,
-                    height: totalH,
-                    radius: radius,
-                    background: _btnGrey,
-                    onTap: onMinus,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                          horizontal: s(6), vertical: s(4)),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          minusLabel,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: 'NotoSans',
-                            fontSize: s(minusLabel == '-' ? 26 : 18),
-                            fontWeight: minusLabel == '-'
-                                ? FontWeight.w600
-                                : FontWeight.w500,
-                            color: Colors.black,
-                            height: 1,
-                            letterSpacing: 0,
+                  if (showAdjustmentButtons) ...[
+                    _SmallBtn(
+                      width: smallBtnW,
+                      height: totalH,
+                      radius: radius,
+                      background: _btnGrey,
+                      onTap: onMinus,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: s(6), vertical: s(4)),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            minusLabel,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'NotoSans',
+                              fontSize: s(minusLabel == '-' ? 26 : 18),
+                              fontWeight: minusLabel == '-'
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                              color: Colors.black,
+                              height: 1,
+                              letterSpacing: 0,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  SizedBox(width: rowGap),
-                  _SmallBtn(
-                    width: smallBtnW,
-                    height: totalH,
-                    radius: radius,
-                    background: _btnGrey,
-                    onTap: onPlus,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                          horizontal: s(6), vertical: s(4)),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          plusLabel,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: 'NotoSans',
-                            fontSize: s(plusLabel == '+' ? 26 : 18),
-                            fontWeight: plusLabel == '+'
-                                ? FontWeight.w600
-                                : FontWeight.w500,
-                            color: Colors.black,
-                            height: 1,
-                            letterSpacing: 0,
+                    SizedBox(width: rowGap),
+                    _SmallBtn(
+                      width: smallBtnW,
+                      height: totalH,
+                      radius: radius,
+                      background: _btnGrey,
+                      onTap: onPlus,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: s(6), vertical: s(4)),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            plusLabel,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'NotoSans',
+                              fontSize: s(plusLabel == '+' ? 26 : 18),
+                              fontWeight: plusLabel == '+'
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                              color: Colors.black,
+                              height: 1,
+                              letterSpacing: 0,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  SizedBox(width: rowGap),
+                    SizedBox(width: rowGap),
+                  ],
                   SizedBox(
                     width: totalW,
                     height: totalH,
@@ -181,38 +188,40 @@ class FooterControlsOnly extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  _SmallBtn(
-                    width: smallBtnW,
-                    height: smallBtnH,
-                    radius: radius,
-                    background: _btnGrey,
-                    onTap: onPayCard,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: s(6),
-                        vertical: s(4),
-                      ),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          payCardLabel,
-                          maxLines: 2,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: 'NotoSans',
-                            fontSize: s(18),
-                            fontWeight: FontWeight.w500,
-                            color: onPayCard == null
-                                ? const Color(0xFF5F6368)
-                                : Colors.black,
-                            height: 1.06,
-                            letterSpacing: 0,
+                  if (showPayCardButton) ...[
+                    _SmallBtn(
+                      width: smallBtnW,
+                      height: smallBtnH,
+                      radius: radius,
+                      background: _btnGrey,
+                      onTap: onPayCard,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: s(6),
+                          vertical: s(4),
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            payCardLabel,
+                            maxLines: 2,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'NotoSans',
+                              fontSize: s(18),
+                              fontWeight: FontWeight.w500,
+                              color: onPayCard == null
+                                  ? const Color(0xFF5F6368)
+                                  : Colors.black,
+                              height: 1.06,
+                              letterSpacing: 0,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  SizedBox(width: rowGap),
+                    SizedBox(width: rowGap),
+                  ],
                   _SmallBtn(
                     width: smallBtnW,
                     height: smallBtnH,

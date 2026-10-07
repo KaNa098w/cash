@@ -1,3 +1,4 @@
+import 'printer_settings_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/customer_display_settings_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/invoices/invoice_history_dialog.dart';
 import 'dart:async';
@@ -15,7 +16,6 @@ import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/print/print_service.dart';
 import 'package:leemon_app/core/service/device_window_mode_service.dart';
 import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
-import 'package:printing/printing.dart';
 import 'package:leemon_app/core/print/receipt_pdf_builder.dart';
 import 'package:leemon_app/core/models/sale_model.dart';
 import 'package:leemon_app/core/provider/auth_provider.dart';
@@ -1920,321 +1920,12 @@ PdfPageFormat _receiptPageFormat(BuildContext context) {
 
 Future<void> _pickPrinterSettings(BuildContext context) async {
   final provider = context.read<AuthTokenProvider>();
-
-  final printers = await Printing.listPrinters();
-  final printerNames = printers.map((p) => p.name).toList();
-
-  if (!context.mounted) return;
-
   await showDialog<void>(
     context: context,
-    builder: (ctx) {
-      int selectedMm = provider.receiptPaperMm;
-      String? selectedReceipt = provider.receiptPrinterName;
-      String? selectedInvoice = provider.invoicePrinterName;
-      bool receiptPrintingEnabled = provider.receiptPrintingEnabled;
-
-      // Если сохранённый принтер больше не доступен — сбросить
-      if (selectedReceipt != null && !printerNames.contains(selectedReceipt)) {
-        selectedReceipt = null;
-      }
-      if (selectedInvoice != null && !printerNames.contains(selectedInvoice)) {
-        selectedInvoice = null;
-      }
-
-      return StatefulBuilder(
-        builder: (context, setState) {
-          Widget sectionTitle(String text) => Padding(
-                padding: const EdgeInsets.only(bottom: 6, top: 14),
-                child: Text(
-                  text,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF374151),
-                  ),
-                ),
-              );
-
-          Widget printerDropdown({
-            required String label,
-            required String? value,
-            required void Function(String?) onChanged,
-          }) {
-            return Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFD1D5DB)),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: DropdownButton<String>(
-                value: value,
-                isExpanded: true,
-                underline: const SizedBox.shrink(),
-                hint:
-                    const Text('По умолчанию', style: TextStyle(fontSize: 13)),
-                items: [
-                  const DropdownMenuItem<String>(
-                    value: null,
-                    child: Text('По умолчанию', style: TextStyle(fontSize: 13)),
-                  ),
-                  ...printerNames.map(
-                    (name) => DropdownMenuItem<String>(
-                      value: name,
-                      child: Text(
-                        name,
-                        style: const TextStyle(fontSize: 13),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                ],
-                onChanged: onChanged,
-              ),
-            );
-          }
-
-          Widget paperCard(
-              {required int value,
-              required String title,
-              required String subtitle}) {
-            final isSelected = selectedMm == value;
-            return InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => setState(() => selectedMm = value),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? const Color(0xFFEAF2FF)
-                      : const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: isSelected
-                        ? const Color(0xFF3B82F6)
-                        : const Color(0xFFE2E8F0),
-                    width: isSelected ? 1.6 : 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      isSelected
-                          ? Icons.radio_button_checked_rounded
-                          : Icons.radio_button_off_rounded,
-                      color: isSelected
-                          ? const Color(0xFF2563EB)
-                          : const Color(0xFF64748B),
-                    ),
-                    const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(title,
-                            style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF0F172A))),
-                        Text(subtitle,
-                            style: const TextStyle(
-                                fontSize: 11, color: Color(0xFF64748B))),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          return Dialog(
-            backgroundColor: Colors.white,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.print_rounded, color: Color(0xFF2563EB)),
-                          SizedBox(width: 8),
-                          Text(
-                            'Настройки принтеров',
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: Color(0xFF0F172A)),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-                        decoration: BoxDecoration(
-                          color: receiptPrintingEnabled
-                              ? const Color(0xFFEAF2FF)
-                              : const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: receiptPrintingEnabled
-                                ? const Color(0xFF93C5FD)
-                                : const Color(0xFFE2E8F0),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                color: receiptPrintingEnabled
-                                    ? const Color(0xFFDBEAFE)
-                                    : const Color(0xFFE2E8F0),
-                                borderRadius: BorderRadius.circular(11),
-                              ),
-                              child: Icon(
-                                Icons.receipt_long_rounded,
-                                size: 21,
-                                color: receiptPrintingEnabled
-                                    ? const Color(0xFF2563EB)
-                                    : const Color(0xFF64748B),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            const Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Распечатка чеков',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w800,
-                                      color: Color(0xFF0F172A),
-                                    ),
-                                  ),
-                                  SizedBox(height: 2),
-                                  Text(
-                                    'Спрашивать о печати после операции',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Color(0xFF64748B),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Switch.adaptive(
-                              value: receiptPrintingEnabled,
-                              activeThumbColor: Colors.white,
-                              activeTrackColor: const Color(0xFF2563EB),
-                              onChanged: (value) => setState(
-                                () => receiptPrintingEnabled = value,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      sectionTitle('Размер бумаги чека'),
-                      paperCard(
-                          value: 57, title: '57 мм', subtitle: 'По умолчанию'),
-                      const SizedBox(height: 8),
-                      paperCard(
-                          value: 80,
-                          title: '80 мм',
-                          subtitle: 'Широкий термочек'),
-                      sectionTitle('Принтер для чеков (термопринтер)'),
-                      printerDropdown(
-                        label: 'Чеки / Z-отчёт',
-                        value: selectedReceipt,
-                        onChanged: (v) => setState(() => selectedReceipt = v),
-                      ),
-                      sectionTitle('Принтер для накладных (A4)'),
-                      printerDropdown(
-                        label: 'Накладные',
-                        value: selectedInvoice,
-                        onChanged: (v) => setState(() => selectedInvoice = v),
-                      ),
-                      if (printerNames.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8),
-                          child: Text(
-                            'Принтеры не найдены. Проверьте подключение.',
-                            style: TextStyle(
-                                fontSize: 12, color: Color(0xFFDC2626)),
-                          ),
-                        ),
-                      const SizedBox(height: 18),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: SizedBox(
-                              height: 44,
-                              child: OutlinedButton(
-                                onPressed: () => Navigator.of(ctx).pop(),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFF0F172A),
-                                  side: const BorderSide(
-                                      color: Color(0xFFCBD5E1)),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12)),
-                                ),
-                                child: const Text('Отмена',
-                                    style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700)),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: SizedBox(
-                              height: 44,
-                              child: FilledButton(
-                                onPressed: () async {
-                                  Navigator.of(ctx).pop();
-                                  await provider.setReceiptPaperMm(selectedMm);
-                                  await provider
-                                      .setReceiptPrinterName(selectedReceipt);
-                                  await provider
-                                      .setInvoicePrinterName(selectedInvoice);
-                                  await provider.setReceiptPrintingEnabled(
-                                    receiptPrintingEnabled,
-                                  );
-                                },
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFF2563EB),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12)),
-                                ),
-                                child: const Text('Сохранить',
-                                    style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w800)),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      );
-    },
+    builder: (_) => PrinterSettingsDialog(
+      provider: provider,
+      openSystemSettings: () => openWindowsPrintersSettings(context),
+    ),
   );
 }
 
@@ -2431,7 +2122,22 @@ Future<void> _pickReceiptPaperSize(BuildContext context) async {
 }
 
 Future<void> openWindowsPrintersSettings(BuildContext context) async {
-  if (kIsWeb || !Platform.isWindows) return;
+  if (kIsWeb) return;
+  if (Platform.isMacOS) {
+    await Process.run(
+        'open', ['x-apple.systempreferences:com.apple.preference.printfax']);
+    return;
+  }
+  if (!Platform.isWindows) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Откройте системный раздел «Принтеры» для настройки драйвера.')),
+      );
+    }
+    return;
+  }
 
   Future<bool> runCommand(List<String> args) async {
     try {

@@ -1,11 +1,11 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'receipt_printer_settings.dart';
 
 import 'package:flutter/services.dart' show rootBundle;
 
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
 class _PdfFontSet {
   const _PdfFontSet({
@@ -43,9 +43,7 @@ Future<_PdfFontSet> _loadPdfFonts() async {
     }
   }
 
-  final regular = await PdfGoogleFonts.robotoRegular();
-  final bold = await PdfGoogleFonts.robotoBold();
-  return _PdfFontSet(regular: regular, bold: bold);
+  return _loadInvoiceFonts();
 }
 
 class ReceiptPdfItem {
@@ -260,11 +258,51 @@ String _fmtDateRu(DateTime dt) {
   return '${d.day} ${months[d.month - 1]} ${d.year} г.';
 }
 
-Future<pw.Document> buildReceiptPdf(ReceiptPdfData data) async {
+// Keep short receipts at their natural length and split long ones into paper
+// sizes thermal printer drivers can handle, as with fiscal PrintFormat tickets.
+Future<pw.Document> _buildThermalDocument({
+  required PdfPageFormat pageFormat,
+  required List<pw.Widget> Function() buildWidgets,
+  ReceiptPrinterSettings? options,
+}) async {
+  final settings = options ?? await ReceiptPrinterSettings.load();
+  final effectiveMargin = pw.EdgeInsets.fromLTRB(
+    settings.leftMarginMm * PdfPageFormat.mm,
+    settings.topMarginMm * PdfPageFormat.mm,
+    settings.rightMarginMm * PdfPageFormat.mm,
+    settings.bottomMarginMm * PdfPageFormat.mm,
+  );
+  var doc = pw.Document()
+    ..addPage(pw.Page(
+      pageFormat: pageFormat,
+      margin: effectiveMargin,
+      build: (_) => pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: buildWidgets(),
+      ),
+    ));
+  await doc.save();
+  final maxPageHeight = settings.localLengthMm * PdfPageFormat.mm;
+  if (settings.fixedLength ||
+      doc.document.pdfPageList.pages.first.pageFormat.height > maxPageHeight) {
+    doc = pw.Document()
+      ..addPage(pw.MultiPage(
+        pageFormat: PdfPageFormat(pageFormat.width, maxPageHeight),
+        margin: effectiveMargin,
+        maxPages: 1000,
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        build: (_) => buildWidgets(),
+      ));
+  }
+  return doc;
+}
+
+Future<pw.Document> buildReceiptPdf(ReceiptPdfData data,
+    {ReceiptPrinterSettings? options}) async {
+  final settings = options ?? await ReceiptPrinterSettings.load();
   final fonts = await _loadPdfFonts();
   final base = fonts.regular;
   final bold = fonts.bold;
-  final doc = pw.Document();
 
   const storeFs = 9.4;
   const metaFs = 7.6;
@@ -321,117 +359,102 @@ Future<pw.Document> buildReceiptPdf(ReceiptPdfData data) async {
         ),
       );
 
-  doc.addPage(
-    pw.Page(
-      pageFormat: data.pageFormat,
-      orientation: pw.PageOrientation.portrait,
-      margin: pw.EdgeInsets.only(
-        right: data.rightPaddingMm,
-        top: 12,
-        bottom: 12,
+  return _buildThermalDocument(
+    pageFormat: data.pageFormat,
+    options: settings,
+    buildWidgets: () => [
+      if ((data.documentTitle ?? '').trim().isNotEmpty) ...[
+        pw.Text(
+          data.documentTitle!.trim(),
+          style: pw.TextStyle(font: bold, fontSize: titleFs),
+          textAlign: pw.TextAlign.center,
+        ),
+        pw.SizedBox(height: 4),
+      ],
+      pw.Text(
+        data.storeName,
+        style: pw.TextStyle(font: base, fontSize: storeFs),
+        textAlign: pw.TextAlign.center,
       ),
-      build: (_) {
-        return pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      pw.SizedBox(height: 2),
+      pw.Text(
+        'Дата: ${formatReceiptDate(data.receiptDate)}',
+        style: pw.TextStyle(font: base, fontSize: metaFs),
+      ),
+      if (data.receiptNumber.trim().isNotEmpty) ...[
+        pw.SizedBox(height: 2),
+        pw.Text(
+          'Чек №: ${data.receiptNumber.trim()}',
+          style: pw.TextStyle(font: base, fontSize: metaFs),
+        ),
+      ],
+      pw.SizedBox(height: 2),
+      pw.Text(
+        'Кассир: ${data.cashierName}',
+        style: pw.TextStyle(font: base, fontSize: metaFs),
+      ),
+      if ((data.customerName ?? '').trim().isNotEmpty) ...[
+        pw.SizedBox(height: 2),
+        pw.Text(
+          'Клиент: ${data.customerName!.trim()}',
+          style: pw.TextStyle(font: base, fontSize: metaFs),
+        ),
+      ],
+      divider(),
+      for (final it in data.items) ...[
+        pw.Text(it.name, style: pw.TextStyle(font: base, fontSize: itemFs)),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            if ((data.documentTitle ?? '').trim().isNotEmpty) ...[
-              pw.Text(
-                data.documentTitle!.trim(),
-                style: pw.TextStyle(font: bold, fontSize: titleFs),
-                textAlign: pw.TextAlign.center,
+            pw.Expanded(
+              child: pw.Text(
+                '${data.money(it.baseUnitPrice ?? it.unitPrice)} x ${it.quantity}'
+                '  скидка ${(it.discountPercent ?? 0) > 0 ? '${it.discountPercent!.toStringAsFixed(it.discountPercent! % 1 == 0 ? 0 : 1)}%' : '0%'}',
+                style: pw.TextStyle(font: base, fontSize: itemFs),
               ),
-              pw.SizedBox(height: 4),
-            ],
+            ),
+            pw.SizedBox(width: 10),
             pw.Text(
-              data.storeName,
-              style: pw.TextStyle(font: base, fontSize: storeFs),
-              textAlign: pw.TextAlign.center,
+              '=${data.money(it.lineTotal)}',
+              style: pw.TextStyle(font: base, fontSize: itemFs),
             ),
-            pw.SizedBox(height: 2),
-            pw.Text(
-              'Дата: ${formatReceiptDate(data.receiptDate)}',
-              style: pw.TextStyle(font: base, fontSize: metaFs),
-            ),
-            if (data.receiptNumber.trim().isNotEmpty) ...[
-              pw.SizedBox(height: 2),
-              pw.Text(
-                'Чек №: ${data.receiptNumber.trim()}',
-                style: pw.TextStyle(font: base, fontSize: metaFs),
-              ),
-            ],
-            pw.SizedBox(height: 2),
-            pw.Text(
-              'Кассир: ${data.cashierName}',
-              style: pw.TextStyle(font: base, fontSize: metaFs),
-            ),
-            if ((data.customerName ?? '').trim().isNotEmpty) ...[
-              pw.SizedBox(height: 2),
-              pw.Text(
-                'Клиент: ${data.customerName!.trim()}',
-                style: pw.TextStyle(font: base, fontSize: metaFs),
-              ),
-            ],
-            divider(),
-            for (final it in data.items) ...[
-              pw.Text(it.name,
-                  style: pw.TextStyle(font: base, fontSize: itemFs)),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Expanded(
-                    child: pw.Text(
-                      '${data.money(it.baseUnitPrice ?? it.unitPrice)} x ${it.quantity}'
-                      '  скидка ${(it.discountPercent ?? 0) > 0 ? '${it.discountPercent!.toStringAsFixed(it.discountPercent! % 1 == 0 ? 0 : 1)}%' : '0%'}',
-                      style: pw.TextStyle(font: base, fontSize: itemFs),
-                    ),
-                  ),
-                  pw.SizedBox(width: 10),
-                  pw.Text(
-                    '=${data.money(it.lineTotal)}',
-                    style: pw.TextStyle(font: base, fontSize: itemFs),
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 2),
-            ],
-            divider(),
-            rowKV(
-              'ИТОГ',
-              data.money(data.total),
-              strong: true,
-              boldText: true,
-            ),
-            if (data.isCashPayment) ...[
-              pw.SizedBox(height: 3),
-              rowKV('Получено', data.money(data.received ?? 0)),
-              rowKV('Сдача', data.money(data.change ?? 0), strong: true),
-            ],
-            if (data.debtAmount != null) ...[
-              pw.SizedBox(height: 3),
-              rowKV('Оплачено сейчас', data.money(data.paidNow ?? 0)),
-              rowKV('В долг', data.money(data.debtAmount ?? 0), strong: true),
-            ],
-            if (data.previousDebt != null || data.newDebt != null) ...[
-              pw.SizedBox(height: 3),
-              rowKV('Предыдущий долг', data.money(data.previousDebt ?? 0)),
-              rowKV('Новый долг', data.money(data.newDebt ?? 0), strong: true),
-            ],
-            pw.SizedBox(height: 4),
-            rowKV('Метод', data.paymentMethodLabel),
-            pw.SizedBox(height: 6),
-            pw.Text(
-              data.footerText,
-              style: pw.TextStyle(font: base, fontSize: footerFs),
-              textAlign: pw.TextAlign.center,
-            ),
-            pw.SizedBox(height: 35 * PdfPageFormat.mm),
           ],
-        );
-      },
-    ),
+        ),
+        pw.SizedBox(height: 2),
+      ],
+      divider(),
+      rowKV(
+        'ИТОГ',
+        data.money(data.total),
+        strong: true,
+        boldText: true,
+      ),
+      if (data.isCashPayment) ...[
+        pw.SizedBox(height: 3),
+        rowKV('Получено', data.money(data.received ?? 0)),
+        rowKV('Сдача', data.money(data.change ?? 0), strong: true),
+      ],
+      if (data.debtAmount != null) ...[
+        pw.SizedBox(height: 3),
+        rowKV('Оплачено сейчас', data.money(data.paidNow ?? 0)),
+        rowKV('В долг', data.money(data.debtAmount ?? 0), strong: true),
+      ],
+      if (data.previousDebt != null || data.newDebt != null) ...[
+        pw.SizedBox(height: 3),
+        rowKV('Предыдущий долг', data.money(data.previousDebt ?? 0)),
+        rowKV('Новый долг', data.money(data.newDebt ?? 0), strong: true),
+      ],
+      pw.SizedBox(height: 4),
+      rowKV('Метод', data.paymentMethodLabel),
+      pw.SizedBox(height: 6),
+      pw.Text(
+        data.footerText,
+        style: pw.TextStyle(font: base, fontSize: footerFs),
+        textAlign: pw.TextAlign.center,
+      ),
+      pw.SizedBox(height: settings.feedMm * PdfPageFormat.mm),
+    ],
   );
-
-  return doc;
 }
 
 // Bundle the invoice fonts so Cyrillic and the tenge sign render offline
@@ -706,10 +729,10 @@ Future<pw.Document> buildInvoicePdf(InvoicePdfData data) async {
 }
 
 Future<pw.Document> buildShiftReportPdf(ShiftReportPdfData data) async {
+  final settings = await ReceiptPrinterSettings.load();
   final fonts = await _loadPdfFonts();
   final base = fonts.regular;
   final bold = fonts.bold;
-  final doc = pw.Document();
 
   pw.Widget divider() => pw.Container(
         margin: const pw.EdgeInsets.symmetric(vertical: 3),
@@ -753,134 +776,122 @@ Future<pw.Document> buildShiftReportPdf(ShiftReportPdfData data) async {
     );
   }
 
-  doc.addPage(
-    pw.Page(
-      pageFormat: data.pageFormat,
-      orientation: pw.PageOrientation.portrait,
-      margin: const pw.EdgeInsets.only(
-        right: 24,
-        top: 12,
-        bottom: 12,
+  return _buildThermalDocument(
+    pageFormat: data.pageFormat,
+    options: settings,
+    buildWidgets: () => [
+      pw.Text(
+        data.storeName,
+        textAlign: pw.TextAlign.center,
+        style: pw.TextStyle(font: base, fontSize: 9),
       ),
-      build: (_) => pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-        children: [
-          pw.Text(
-            data.storeName,
-            textAlign: pw.TextAlign.center,
-            style: pw.TextStyle(font: base, fontSize: 9),
-          ),
-          pw.SizedBox(height: 2),
-          pw.Text(
-            data.reportTitle,
-            textAlign: pw.TextAlign.center,
-            style: pw.TextStyle(font: bold, fontSize: 9),
-          ),
-          pw.SizedBox(height: 2),
-          pw.Text(
-            data.reportSubtitle,
-            textAlign: pw.TextAlign.center,
-            style: pw.TextStyle(font: base, fontSize: 7),
-          ),
-          pw.SizedBox(height: 2),
-          pw.Text(
-            'Дата закрытия: ${data.closedAt == null ? '-' : formatReceiptDate(data.closedAt!)}',
-            style: pw.TextStyle(font: base, fontSize: 7),
-          ),
-          pw.SizedBox(height: 2),
-          pw.Text(
-            'Смена №: ${data.sessionId}',
-            style: pw.TextStyle(font: base, fontSize: 7),
-          ),
-          pw.SizedBox(height: 2),
-          pw.Text(
-            'Кассир: ${data.cashierName}',
-            style: pw.TextStyle(font: base, fontSize: 7),
-          ),
-          pw.SizedBox(height: 2),
-          pw.Text(
-            'Касса: ${data.posName}',
-            style: pw.TextStyle(font: base, fontSize: 7),
-          ),
-          divider(),
-          kv(
-            'Открытие смены',
-            data.openedAt == null ? '-' : formatReceiptDate(data.openedAt!),
-          ),
-          kv(
-            'Закрытие смены',
-            data.closedAt == null ? '-' : formatReceiptDate(data.closedAt!),
-          ),
-          divider(),
-          pw.Text(
-            'Проданные товары',
-            style: pw.TextStyle(font: bold, fontSize: 7),
-          ),
-          pw.SizedBox(height: 2),
-          if (data.items.isEmpty)
+      pw.SizedBox(height: 2),
+      pw.Text(
+        data.reportTitle,
+        textAlign: pw.TextAlign.center,
+        style: pw.TextStyle(font: bold, fontSize: 9),
+      ),
+      pw.SizedBox(height: 2),
+      pw.Text(
+        data.reportSubtitle,
+        textAlign: pw.TextAlign.center,
+        style: pw.TextStyle(font: base, fontSize: 7),
+      ),
+      pw.SizedBox(height: 2),
+      pw.Text(
+        'Дата закрытия: ${data.closedAt == null ? '-' : formatReceiptDate(data.closedAt!)}',
+        style: pw.TextStyle(font: base, fontSize: 7),
+      ),
+      pw.SizedBox(height: 2),
+      pw.Text(
+        'Смена №: ${data.sessionId}',
+        style: pw.TextStyle(font: base, fontSize: 7),
+      ),
+      pw.SizedBox(height: 2),
+      pw.Text(
+        'Кассир: ${data.cashierName}',
+        style: pw.TextStyle(font: base, fontSize: 7),
+      ),
+      pw.SizedBox(height: 2),
+      pw.Text(
+        'Касса: ${data.posName}',
+        style: pw.TextStyle(font: base, fontSize: 7),
+      ),
+      divider(),
+      kv(
+        'Открытие смены',
+        data.openedAt == null ? '-' : formatReceiptDate(data.openedAt!),
+      ),
+      kv(
+        'Закрытие смены',
+        data.closedAt == null ? '-' : formatReceiptDate(data.closedAt!),
+      ),
+      divider(),
+      pw.Text(
+        'Проданные товары',
+        style: pw.TextStyle(font: bold, fontSize: 7),
+      ),
+      pw.SizedBox(height: 2),
+      if (data.items.isEmpty)
+        pw.Text(
+          'Нет проданных товаров',
+          style: pw.TextStyle(font: base, fontSize: 7),
+        ),
+      for (final item in data.items) ...[
+        pw.Text(item.name, style: pw.TextStyle(font: base, fontSize: 7)),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
             pw.Text(
-              'Нет проданных товаров',
+              '${item.quantity} шт.',
               style: pw.TextStyle(font: base, fontSize: 7),
             ),
-          for (final item in data.items) ...[
-            pw.Text(item.name, style: pw.TextStyle(font: base, fontSize: 7)),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Text(
-                  '${item.quantity} шт.',
-                  style: pw.TextStyle(font: base, fontSize: 7),
-                ),
-                pw.SizedBox(width: 10),
-                pw.Text(
-                  data.money(item.lineTotal),
-                  style: pw.TextStyle(font: base, fontSize: 7),
-                ),
-              ],
-            ),
-            pw.SizedBox(height: 2),
-          ],
-          divider(),
-          kv('Количество чеков', '${data.salesCount}'),
-          kv('Наличные', data.money(data.cashTotal)),
-          kv('Карта', data.money(data.cardTotal)),
-          kv('Перевод', data.money(data.transferTotal)),
-          kv('В долг', data.money(data.creditTotal)),
-          divider(),
-          kv('ИТОГ', data.money(data.grandTotal), strong: true),
-          divider(),
-          kv('Наличные при открытии', data.money(data.openingCashAmount)),
-          kv('Возвраты', data.money(data.refundsTotal)),
-          kv('Приход в кассу', data.money(data.incomeTotal)),
-          kv('Расход из кассы', data.money(data.expenseTotal)),
-          divider(),
-          kv(
-            'Должно быть в кассе',
-            data.money(data.expectedCashAmount),
-            strong: true,
-          ),
-          if (data.closedAt != null) ...[
-            kv(
-              'Фактически в кассе',
-              data.money(data.closingCashAmount),
-            ),
-            kv(
-              'Разница',
-              data.money(data.closingCashAmount - data.expectedCashAmount),
-              strong: true,
+            pw.SizedBox(width: 10),
+            pw.Text(
+              data.money(item.lineTotal),
+              style: pw.TextStyle(font: base, fontSize: 7),
             ),
           ],
-          pw.SizedBox(height: 6),
-          pw.Text(
-            data.footerText,
-            style: pw.TextStyle(font: base, fontSize: 8),
-            textAlign: pw.TextAlign.center,
-          ),
-          pw.SizedBox(height: 35 * PdfPageFormat.mm),
-        ],
+        ),
+        pw.SizedBox(height: 2),
+      ],
+      divider(),
+      kv('Количество чеков', '${data.salesCount}'),
+      kv('Наличные', data.money(data.cashTotal)),
+      kv('Карта', data.money(data.cardTotal)),
+      kv('Перевод', data.money(data.transferTotal)),
+      kv('В долг', data.money(data.creditTotal)),
+      divider(),
+      kv('ИТОГ', data.money(data.grandTotal), strong: true),
+      divider(),
+      kv('Наличные при открытии', data.money(data.openingCashAmount)),
+      kv('Возвраты', data.money(data.refundsTotal)),
+      kv('Приход в кассу', data.money(data.incomeTotal)),
+      kv('Расход из кассы', data.money(data.expenseTotal)),
+      divider(),
+      kv(
+        'Должно быть в кассе',
+        data.money(data.expectedCashAmount),
+        strong: true,
       ),
-    ),
+      if (data.closedAt != null) ...[
+        kv(
+          'Фактически в кассе',
+          data.money(data.closingCashAmount),
+        ),
+        kv(
+          'Разница',
+          data.money(data.closingCashAmount - data.expectedCashAmount),
+          strong: true,
+        ),
+      ],
+      pw.SizedBox(height: 6),
+      pw.Text(
+        data.footerText,
+        style: pw.TextStyle(font: base, fontSize: 8),
+        textAlign: pw.TextAlign.center,
+      ),
+      pw.SizedBox(height: settings.feedMm * PdfPageFormat.mm),
+    ],
   );
-
-  return doc;
 }

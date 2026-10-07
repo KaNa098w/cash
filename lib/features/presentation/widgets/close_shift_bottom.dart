@@ -1,3 +1,4 @@
+import 'shift_print_failure_dialog.dart';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -241,7 +242,7 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
     _focusAmountInput();
   }
 
-  Future<void> _submit() async {
+  Future<void> _submit({bool skipReportPrinting = false}) async {
     if (_submitting) return;
 
     final auth = context.read<AuthTokenProvider>();
@@ -315,6 +316,11 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
     await context.read<AuthCubit>().closeSessionWithCash(
           closingCashAmount: amount,
           comment: closeComment,
+          skipReportPrinting: skipReportPrinting,
+          onPrintFailure: (error) async {
+            if (!mounted) return false;
+            return showShiftPrintFailureDialog(context, error);
+          },
         );
     if (mounted) setState(() => _submitting = false);
   }
@@ -329,7 +335,10 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
     setState(() => _printingReport = true);
     try {
       final report = await _loadShiftReport(sessionId);
-      if (report == null || !mounted) return;
+      if (!mounted) return;
+      if (report == null) {
+        throw StateError('Не удалось получить данные для печати отчёта.');
+      }
 
       final storeName = (tokenProvider.storeName ?? '').trim().isEmpty
           ? ((tokenProvider.posName ?? '').trim().isEmpty
@@ -387,6 +396,14 @@ class _CloseShiftPageState extends State<CloseShiftPage> {
         format: pageFormat,
         printerName: tokenProvider.receiptPrinterName,
       );
+    } catch (error) {
+      if (!mounted) return;
+      final closeWithoutPrinting =
+          await showShiftPrintFailureDialog(context, error);
+      if (closeWithoutPrinting && mounted) {
+        setState(() => _printingReport = false);
+        await _submit(skipReportPrinting: true);
+      }
     } finally {
       if (mounted) {
         setState(() => _printingReport = false);

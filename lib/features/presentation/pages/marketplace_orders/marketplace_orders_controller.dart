@@ -34,6 +34,7 @@ class MarketplaceOrdersController extends ChangeNotifier
   List<MarketplaceOrder> _historyOrders = const [];
   int _historyNextSkip = 0;
   bool _historyLoadingMore = false;
+  Future<void>? _historyPageFuture;
   bool _historyHasMore = true;
   final Set<String> _knownNewOrderIds = <String>{};
   MarketplaceOrder? _latestIncomingOrder;
@@ -62,15 +63,48 @@ class MarketplaceOrdersController extends ChangeNotifier
   int get notificationRevision => _notificationRevision;
   MarketplaceOrder? get selectedOrder => _selectedOrder;
   List<MarketplaceOrder> get visibleOrders {
-    switch (_scope) {
-      case MarketplaceOrderScope.newOrders:
-        return _newOrders;
-      case MarketplaceOrderScope.active:
-        return _activeOrders;
-      case MarketplaceOrderScope.history:
-        return _historyOrders;
-    }
+    final orders = _deduplicateOrders(
+        [..._historyOrders, ..._activeOrders, ..._newOrders]);
+    orders.sort((a, b) {
+      final byDate = (b.createdAt ?? DateTime(1970))
+          .compareTo(a.createdAt ?? DateTime(1970));
+      return byDate != 0 ? byDate : a.id.compareTo(b.id);
+    });
+    return List.unmodifiable(orders);
   }
+
+  MarketplaceOrder? get latestNewOrder {
+    final pending = _newOrders
+        .where((order) => order.status == 'awaiting_confirmation')
+        .toList();
+    if (pending.isEmpty) return null;
+    final lastIncoming = _latestIncomingOrder;
+    if (lastIncoming != null) {
+      for (final order in pending) {
+        if (order.id == lastIncoming.id) return order;
+      }
+    }
+    var latest = pending.first;
+    for (final order in pending.skip(1)) {
+      if (order.createdAt != null &&
+          (latest.createdAt == null ||
+              order.createdAt!.isAfter(latest.createdAt!))) {
+        latest = order;
+      }
+    }
+    return latest;
+  }
+
+  List<MarketplaceOrder> get shippedOrders => visibleOrders
+      .where((order) => order.status == 'shipped')
+      .toList(growable: false);
+
+  List<MarketplaceOrder> get topBarOrders => visibleOrders
+      .where((order) =>
+          order.status == 'awaiting_confirmation' ||
+          order.status == 'processing' ||
+          order.status == 'partially_shipped')
+      .toList(growable: false);
 
   Future<void> configure({
     required String posKey,
@@ -125,9 +159,16 @@ class MarketplaceOrdersController extends ChangeNotifier
           scope: MarketplaceOrderScope.active,
           take: 20,
         ),
+        _remote.listOrders(
+            key: _posKey,
+            scope: MarketplaceOrderScope.history,
+            take: _historyPageSize),
       ]);
       _applyNewOrders(results[0].items, notifyNew: false);
       _activeOrders = results[1].items;
+      _historyOrders = _deduplicateOrders(results[2].items);
+      _historyNextSkip = results[2].items.length;
+      _historyHasMore = results[2].items.length == _historyPageSize;
       await _selectFallbackIfNeeded();
     } catch (e) {
       _error = _friendlyError(e);
@@ -192,14 +233,7 @@ class MarketplaceOrdersController extends ChangeNotifier
     await refreshAll();
   }
 
-  Future<void> refreshVisibleOrders() async {
-    if (!hasMarketplaceIntegration) return;
-    if (_scope == MarketplaceOrderScope.history) {
-      await refreshHistory();
-    } else {
-      await refreshAll();
-    }
-  }
+  Future<void> refreshVisibleOrders() => refreshAll();
 
   Future<void> refreshHistory() async {
     if (_posKey.isEmpty || _loading || !hasMarketplaceIntegration) return;
@@ -225,10 +259,12 @@ class MarketplaceOrdersController extends ChangeNotifier
     }
   }
 
-  Future<void> loadMoreHistory() async {
+  Future<void> loadMoreHistory() => _historyPageFuture ??=
+      _loadMoreHistory().whenComplete(() => _historyPageFuture = null);
+
+  Future<void> _loadMoreHistory() async {
     if (_posKey.isEmpty ||
         !hasMarketplaceIntegration ||
-        _scope != MarketplaceOrderScope.history ||
         _loading ||
         _historyLoadingMore ||
         !_historyHasMore) {
@@ -268,7 +304,7 @@ class MarketplaceOrdersController extends ChangeNotifier
     return byId.values.toList(growable: false);
   }
 
-  Future<void> selectOrder(String orderId) async {
+  Future<void> selectOrder(String orderId, {MarketplaceOrder? fallback}) async {
     final safeOrderId = orderId.trim();
     if (_posKey.isEmpty || safeOrderId.isEmpty || !hasMarketplaceIntegration) {
       return;
@@ -287,6 +323,11 @@ class MarketplaceOrdersController extends ChangeNotifier
         _selectedOrder = order;
       }
     } catch (e) {
+      if (fallback?.id == safeOrderId &&
+          revision == _selectionRevision &&
+          selectedScope == _scope) {
+        _selectedOrder = fallback;
+      }
       _error = _friendlyError(e);
     } finally {
       _loading = false;
@@ -297,7 +338,7 @@ class MarketplaceOrdersController extends ChangeNotifier
   Future<void> acceptSelected() async {
     final order = _selectedOrder;
     if (order == null || _posKey.isEmpty || !hasMarketplaceIntegration) return;
-    if (_actionLoading) return;
+    if (_actionLoading || order.status != 'awaiting_confirmation') return;
     _actionLoading = true;
     _error = null;
     notifyListeners();
@@ -373,6 +414,22 @@ class MarketplaceOrdersController extends ChangeNotifier
   Future<void> _selectFallbackIfNeeded() async {
     if (_selectedOrder != null &&
         visibleOrders.any((order) => order.id == _selectedOrder!.id)) {
+      final current = _selectedOrder!;
+      final listed =
+          visibleOrders.firstWhere((order) => order.id == current.id);
+      if (listed.status != current.status) {
+        final revision = _selectionRevision;
+        MarketplaceOrder refreshed;
+        try {
+          refreshed = await _remote.getOrder(key: _posKey, orderId: current.id);
+        } catch (_) {
+          refreshed = listed;
+        }
+        if (revision == _selectionRevision &&
+            _selectedOrder?.id == current.id) {
+          _selectedOrder = refreshed;
+        }
+      }
       return;
     }
     _selectedOrder = null;
@@ -406,9 +463,16 @@ class MarketplaceOrdersController extends ChangeNotifier
         scope: MarketplaceOrderScope.active,
         take: 20,
       ),
+      _remote.listOrders(
+          key: _posKey,
+          scope: MarketplaceOrderScope.history,
+          take: _historyPageSize),
     ]);
     _applyNewOrders(results[0].items, notifyNew: false);
     _activeOrders = results[1].items;
+    _historyOrders = _deduplicateOrders(results[2].items);
+    _historyNextSkip = results[2].items.length;
+    _historyHasMore = results[2].items.length == _historyPageSize;
   }
 
   void _applyNewOrders(
