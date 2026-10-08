@@ -17,7 +17,7 @@ MarketplaceOrder _order(String id, String status) => MarketplaceOrder.fromJson({
       'id': id,
       'status': status,
       'items': [
-        {'name': id, 'quantity': 1, 'price': 100}
+        {'id': 'item-$id', 'name': id, 'quantity': 1, 'price': 100}
       ],
     });
 
@@ -29,6 +29,26 @@ class _Remote extends MarketplaceOrdersRemoteDataSource {
   List<MarketplaceOrder>? historyItems;
   List<MarketplaceOrder>? pendingItems;
   int accepts = 0;
+  bool failAccept = false;
+  bool failShipment = false;
+  final acceptedQuantities = <num>[];
+  final shipmentKeys = <String>[];
+  @override
+  Future<MarketplaceShipmentResult> shipOrder(
+      {required String key,
+      required String orderId,
+      required String idempotencyKey,
+      List<MarketplaceOrderQuantity>? items}) async {
+    shipmentKeys.add(idempotencyKey);
+    if (failShipment) throw Exception('network failure');
+    return MarketplaceShipmentResult(
+        ok: true,
+        status: 200,
+        order: _order(orderId, 'partially_shipped'),
+        saleCreated: true,
+        saleId: 'sale');
+  }
+
   bool emptyActive = false;
   bool failDetails = false;
   @override
@@ -52,8 +72,12 @@ class _Remote extends MarketplaceOrdersRemoteDataSource {
       });
   @override
   Future<MarketplaceAcceptResult> acceptOrder(
-      {required String key, required String orderId}) async {
+      {required String key,
+      required String orderId,
+      required List<MarketplaceOrderQuantity> items}) async {
     accepts++;
+    acceptedQuantities.add(items.single.quantity);
+    if (failAccept) throw Exception('network failure');
     newOrder = _order(orderId, 'processing');
     return const MarketplaceAcceptResult(
         ok: true, status: 200, accepted: true, assignmentId: 'assignment');
@@ -75,6 +99,43 @@ class _Remote extends MarketplaceOrdersRemoteDataSource {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+  test(
+      'shipment retry keeps key after restart and accepts partial order status',
+      () async {
+    final remote = _Remote()..failShipment = true;
+    final first = MarketplaceOrdersController(remote);
+    await first.configure(posKey: 'pos', deviceId: 'device');
+    await first.selectOrder('active-1');
+    expect(await first.shipSelectedOrder(), isNull);
+    first.dispose();
+    final second = MarketplaceOrdersController(remote);
+    addTearDown(second.dispose);
+    await second.configure(posKey: 'pos', deviceId: 'device');
+    await second.selectOrder('active-1');
+    remote.failShipment = false;
+    expect((await second.shipSelectedOrder())?.saleId, 'sale');
+    expect(remote.shipmentKeys[0], remote.shipmentKeys[1]);
+    await second.shipSelectedOrder();
+    expect(remote.shipmentKeys[2], isNot(remote.shipmentKeys[1]));
+  });
+  test('accept retry after restart reuses original quantities', () async {
+    final remote = _Remote()..failAccept = true;
+    final first = MarketplaceOrdersController(remote);
+    await first.configure(posKey: 'pos', deviceId: 'device');
+    await first.selectOrder('new-1');
+    await first.acceptSelected(
+        items: const [MarketplaceOrderQuantity(id: 'item-new-1', quantity: 1)]);
+    first.dispose();
+    final second = MarketplaceOrdersController(remote);
+    addTearDown(second.dispose);
+    await second.configure(posKey: 'pos', deviceId: 'device');
+    await second.selectOrder('new-1');
+    remote.failAccept = false;
+    await second.acceptSelected(
+        items: const [MarketplaceOrderQuantity(id: 'item-new-1', quantity: 2)]);
+    expect(remote.acceptedQuantities, [1, 1]);
+  });
   test('all order statuses share one list and selection survives refresh',
       () async {
     final remote = _Remote();
@@ -130,7 +191,8 @@ void main() {
     addTearDown(controller.dispose);
     await controller.configure(posKey: 'pos', deviceId: 'device');
     await controller.selectOrder('new-1');
-    await controller.acceptSelected();
+    await controller.acceptSelected(
+        items: const [MarketplaceOrderQuantity(id: 'item-new-1', quantity: 1)]);
     expect(controller.selectedOrder?.id, 'new-1');
     expect(controller.selectedOrder?.status, 'processing');
     expect(remote.accepts, 1);

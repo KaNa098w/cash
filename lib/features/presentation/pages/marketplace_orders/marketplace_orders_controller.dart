@@ -10,6 +10,7 @@ import 'package:flutter/widgets.dart';
 import 'package:leemon_app/core/models/marketplace_order_models.dart';
 import 'package:leemon_app/features/data/datasources/marketplace_orders_remote_datasource.dart';
 import 'package:uuid/uuid.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MarketplaceOrdersController extends ChangeNotifier
     with WidgetsBindingObserver {
@@ -40,6 +41,8 @@ class MarketplaceOrdersController extends ChangeNotifier
   MarketplaceOrder? _latestIncomingOrder;
   int _notificationRevision = 0;
   final Map<String, String> _shipmentIdempotencyKeys = <String, String>{};
+  final Set<String> _acceptedOperations = {};
+  final Map<String, List<MarketplaceOrderQuantity>> _acceptanceItems = {};
   MarketplaceOrder? _selectedOrder;
   Timer? _pollTimer;
   WebSocket? _socket;
@@ -62,6 +65,9 @@ class MarketplaceOrdersController extends ChangeNotifier
   MarketplaceOrder? get latestIncomingOrder => _latestIncomingOrder;
   int get notificationRevision => _notificationRevision;
   MarketplaceOrder? get selectedOrder => _selectedOrder;
+  bool get selectedOrderAcceptedByThisPos =>
+      _selectedOrder != null &&
+      _acceptedOperations.contains('$_posKey:$_deviceId:${_selectedOrder!.id}');
   List<MarketplaceOrder> get visibleOrders {
     final orders = _deduplicateOrders(
         [..._historyOrders, ..._activeOrders, ..._newOrders]);
@@ -335,15 +341,47 @@ class MarketplaceOrdersController extends ChangeNotifier
     }
   }
 
-  Future<void> acceptSelected() async {
+  Future<void> acceptSelected({List<MarketplaceOrderQuantity>? items}) async {
     final order = _selectedOrder;
     if (order == null || _posKey.isEmpty || !hasMarketplaceIntegration) return;
-    if (_actionLoading || order.status != 'awaiting_confirmation') return;
+    if (_actionLoading ||
+        (order.status != 'awaiting_confirmation' &&
+            order.status != 'processing')) {
+      return;
+    }
+    if (_acceptedOperations.contains('$_posKey:$_deviceId:${order.id}')) return;
     _actionLoading = true;
     _error = null;
     notifyListeners();
     try {
-      await _remote.acceptOrder(key: _posKey, orderId: order.id);
+      final operationKey = '$_posKey:$_deviceId:${order.id}';
+      final preferences = await SharedPreferences.getInstance();
+      final storageKey = 'marketplace.accept.$operationKey';
+      final stored = preferences.getString(storageKey);
+      final persistedItems = stored == null
+          ? null
+          : (jsonDecode(stored) as List)
+              .map((item) => MarketplaceOrderQuantity(
+                  id: item['id'] as String, quantity: item['quantity'] as num))
+              .toList();
+      final quantities =
+          _acceptanceItems[operationKey] ?? persistedItems ?? items;
+      if (quantities == null || quantities.isEmpty) {
+        throw ArgumentError('Выберите позиции и количества для приёма');
+      }
+      _acceptanceItems.putIfAbsent(
+          operationKey, () => List.unmodifiable(quantities));
+      if (!await preferences.setString(storageKey,
+          jsonEncode(quantities.map((item) => item.toJson()).toList()))) {
+        throw StateError('Не удалось сохранить данные для повторного приёма');
+      }
+      final result = await _remote.acceptOrder(
+          key: _posKey, orderId: order.id, items: quantities);
+      if (!result.ok) {
+        throw const MarketplaceOrdersApiException(
+            operation: 'acceptOrder', message: 'Приём заказа не подтверждён');
+      }
+      _acceptedOperations.add(operationKey);
       await refreshAll();
       _scope = MarketplaceOrderScope.active;
       await selectOrder(order.id);
@@ -367,27 +405,29 @@ class MarketplaceOrdersController extends ChangeNotifier
       notifyListeners();
       return null;
     }
-    final operationKey = order.id;
-    final idempotencyKey = _shipmentIdempotencyKeys.putIfAbsent(
-      operationKey,
-      () => const Uuid().v4(),
-    );
+    final operationKey = '$_posKey:$_deviceId:${order.id}';
     _actionLoading = true;
     _error = null;
     notifyListeners();
     try {
+      final preferences = await SharedPreferences.getInstance();
+      final storageKey = 'marketplace.shipment.$operationKey';
+      final idempotencyKey = _shipmentIdempotencyKeys.putIfAbsent(operationKey,
+          () => preferences.getString(storageKey) ?? const Uuid().v4());
+      if (!await preferences.setString(storageKey, idempotencyKey)) {
+        throw StateError('Не удалось сохранить ключ повторной отгрузки');
+      }
       final result = await _remote.shipOrder(
         key: _posKey,
         orderId: order.id,
         idempotencyKey: idempotencyKey,
       );
-      if (result.order.status != 'shipped') {
+      if (!result.ok) {
         throw const MarketplaceOrdersApiException(
-          operation: 'shipOrder',
-          message: 'Backend не подтвердил полную отгрузку заказа.',
-        );
+            operation: 'shipOrder', message: 'Отгрузка не подтверждена');
       }
       _shipmentIdempotencyKeys.remove(operationKey);
+      await preferences.remove(storageKey);
       await _refreshListsQuietly();
       _selectedOrder = await _remote.getOrder(
         key: _posKey,
@@ -401,6 +441,8 @@ class MarketplaceOrdersController extends ChangeNotifier
       // operation on the next attempt.
       if (_isDefinitiveClientError(e)) {
         _shipmentIdempotencyKeys.remove(operationKey);
+        final preferences = await SharedPreferences.getInstance();
+        await preferences.remove('marketplace.shipment.$operationKey');
       }
       _error = _friendlyError(e);
       notifyListeners();

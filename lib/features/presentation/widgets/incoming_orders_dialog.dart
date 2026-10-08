@@ -1002,8 +1002,10 @@ class _MarketplaceFooter extends StatelessWidget {
         (order.status == 'processing' || order.status == 'partially_shipped') &&
         order.groupedItems.any((item) => item.remainingQuantity > 0);
     final canAccept = order != null &&
-        !order.isAccepted &&
-        order.status == 'awaiting_confirmation';
+        !controller.selectedOrderAcceptedByThisPos &&
+        order.acceptableItems.isNotEmpty &&
+        (order.status == 'awaiting_confirmation' ||
+            order.status == 'processing');
     return LayoutBuilder(builder: (context, constraints) {
       final compact = constraints.maxWidth < 900;
       final controls = FooterControlsOnly(
@@ -1032,7 +1034,7 @@ class _MarketplaceFooter extends StatelessWidget {
         onPay: busy || (!canAccept && !canShip)
             ? null
             : canAccept
-                ? controller.acceptSelected
+                ? () => _confirmAndAccept(context, controller)
                 : () => _confirmAndShip(context, controller),
       );
       final customer = order == null
@@ -1102,6 +1104,98 @@ class _MarketplaceFooter extends StatelessWidget {
   }
 }
 
+Future<void> _confirmAndAccept(
+  BuildContext context,
+  MarketplaceOrdersController controller,
+) async {
+  final order = controller.selectedOrder;
+  if (order == null) return;
+  final items = order.acceptableItems;
+  final fields = items
+      .map((item) =>
+          TextEditingController(text: item.availableQuantity.toString()))
+      .toList();
+  String? error;
+  try {
+    final selected = await showDialog<List<MarketplaceOrderQuantity>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(builder: (context, setState) {
+        return AlertDialog(
+          title: const Text('Приём товаров со склада этой кассы'),
+          content: SizedBox(
+              width: 480,
+              child: SingleChildScrollView(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const Text(
+                      'Укажите все количества одним запросом. После приёма изменить их нельзя. 0 — пропустить позицию.'),
+                  for (var i = 0; i < items.length; i++)
+                    Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: TextField(
+                          controller: fields[i],
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: InputDecoration(
+                            labelText: items[i].name.isEmpty
+                                ? items[i].id
+                                : items[i].name,
+                            helperText:
+                                'Доступно: ${items[i].availableQuantity}',
+                          ),
+                        )),
+                  if (error != null)
+                    Text(error!, style: const TextStyle(color: Colors.red)),
+                ]),
+              )),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Отмена')),
+            FilledButton(
+                onPressed: () {
+                  final quantities = <MarketplaceOrderQuantity>[];
+                  for (var i = 0; i < items.length; i++) {
+                    final quantity = num.tryParse(
+                        fields[i].text.trim().replaceAll(',', '.'));
+                    if (quantity == null ||
+                        !quantity.isFinite ||
+                        quantity < 0 ||
+                        quantity > items[i].availableQuantity) {
+                      setState(() => error =
+                          'Количество должно быть от 0 до доступного остатка.');
+                      return;
+                    }
+                    if (quantity > 0) {
+                      quantities.add(MarketplaceOrderQuantity(
+                          id: items[i].id, quantity: quantity));
+                    }
+                  }
+                  if (quantities.isEmpty) {
+                    setState(() =>
+                        error = 'Укажите количество хотя бы одной позиции.');
+                    return;
+                  }
+                  Navigator.pop(dialogContext, quantities);
+                },
+                child: const Text('Принять')),
+          ],
+        );
+      }),
+    );
+    if (selected != null &&
+        context.mounted &&
+        controller.selectedOrder?.id == order.id) {
+      await controller.acceptSelected(items: selected);
+    }
+  } finally {
+    // Dispose after the dialog route has finished its closing animation.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    for (final field in fields) {
+      field.dispose();
+    }
+  }
+}
+
 Future<void> _confirmAndShip(
   BuildContext context,
   MarketplaceOrdersController controller,
@@ -1111,7 +1205,8 @@ Future<void> _confirmAndShip(
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: const Text('Подтверждение отгрузки'),
-      content: const Text('Отгрузить все оставшиеся позиции заказа?'),
+      content:
+          const Text('Отгрузить весь оставшийся объём, принятый этой кассой?'),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -1137,7 +1232,8 @@ Future<void> _confirmAndShip(
       ? ' Продажа создана: ${result.saleId}'
       : '';
   ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('Заказ полностью отгружен.$saleSuffix')),
+    SnackBar(
+        content: Text('Принятые этой кассой товары отгружены.$saleSuffix')),
   );
 }
 

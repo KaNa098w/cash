@@ -71,26 +71,38 @@ class MarketplaceOrdersRemoteDataSource {
   Future<MarketplaceAcceptResult> acceptOrder({
     required String key,
     required String orderId,
+    required List<MarketplaceOrderQuantity> items,
   }) async {
     final safeKey = key.trim();
     final safeOrderId = orderId.trim();
     if (safeKey.isEmpty) throw Exception('pos key is empty');
     if (safeOrderId.isEmpty) throw Exception('order id is empty');
-    
+
     final path =
         '/organizations/pos/$safeKey/marketplace/orders/$safeOrderId/accept';
-    _logMarketplaceRequest('POST', path, body: const <String, dynamic>{});
-    final response = await _dio.post(path);
+    _validateItems(items);
+    final body = {'items': items.map((item) => item.toJson()).toList()};
+    _logMarketplaceRequest('POST', path, body: body);
+    final response = await _dio.post(path, data: body);
     _logMarketplaceResponse('POST', path, response);
-    return MarketplaceAcceptResult.fromJson(
-      _checkedMap(response.data, 'acceptOrder'),
-    );
+    final bodyResult = _checkedMap(response.data, 'acceptOrder');
+    final result = MarketplaceAcceptResult.fromJson(bodyResult);
+    if (!result.ok) {
+      throw MarketplaceOrdersApiException(
+        operation: 'acceptOrder',
+        message:
+            (bodyResult['message'] ?? 'Приём заказа не подтверждён').toString(),
+        statusCode: result.status,
+      );
+    }
+    return result;
   }
 
   Future<MarketplaceShipmentResult> shipOrder({
     required String key,
     required String orderId,
     required String idempotencyKey,
+    List<MarketplaceOrderQuantity>? items,
   }) async {
     final safeKey = key.trim();
     final safeOrderId = orderId.trim();
@@ -98,13 +110,20 @@ class MarketplaceOrdersRemoteDataSource {
 
     if (safeKey.isEmpty) throw Exception('pos key is empty');
     if (safeOrderId.isEmpty) throw Exception('order id is empty');
+    if (safeIdempotencyKey.length > 200) {
+      throw ArgumentError(
+          'Idempotency-Key должен содержать не более 200 символов');
+    }
     if (safeIdempotencyKey.isEmpty) {
       throw Exception('idempotency key is empty');
     }
 
     final path =
         '/organizations/pos/$safeKey/marketplace/orders/$safeOrderId/items/shipment';
-    final body = <String, dynamic>{};
+    if (items != null) _validateItems(items);
+    final body = <String, dynamic>{
+      if (items != null) 'items': items.map((item) => item.toJson()).toList(),
+    };
     _logMarketplaceRequest('PUT', path, body: body);
     final response = await _dio.put(
       path,
@@ -211,4 +230,17 @@ class MarketplaceOrdersApiException implements Exception {
 
   @override
   String toString() => message;
+}
+
+void _validateItems(List<MarketplaceOrderQuantity> items) {
+  final ids = <String>{};
+  if (items.isEmpty ||
+      items.any((item) =>
+          item.id.trim().isEmpty ||
+          !item.quantity.isFinite ||
+          item.quantity <= 0 ||
+          !ids.add(item.id))) {
+    throw ArgumentError(
+        'Укажите уникальные позиции и положительные количества');
+  }
 }

@@ -33,10 +33,10 @@ class _Controller extends MarketplaceOrdersController {
   });
   bool secondSelected = false;
   @override
-  Future<void> selectOrder(String orderId) async {
-    secondSelected = orderId == secondOrder.id;
-    notifyListeners();
-  }
+  // Future<void> selectOrder(String orderId) async {
+  //   secondSelected = orderId == secondOrder.id;
+  //   notifyListeners();
+  // }
 
   @override
   Future<void> refreshVisibleOrders() async {}

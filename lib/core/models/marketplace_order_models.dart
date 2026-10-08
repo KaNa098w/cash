@@ -264,6 +264,13 @@ class MarketplaceOrder {
   final String fulfillmentType;
   final String deliveryAddress;
 
+  List<MarketplaceAcceptableItem> get acceptableItems => items
+      .whereType<Map>()
+      .map((item) =>
+          MarketplaceAcceptableItem.fromJson(Map<String, dynamic>.from(item)))
+      .where((item) => item.id.isNotEmpty && item.availableQuantity > 0)
+      .toList(growable: false);
+
   bool get isAccepted =>
       status == 'processing' ||
       status == 'partially_shipped' ||
@@ -586,6 +593,34 @@ class MarketplaceProductImageSize {
   final int width;
   final int height;
   final String url;
+}
+
+class MarketplaceOrderQuantity {
+  const MarketplaceOrderQuantity({required this.id, required this.quantity});
+
+  final String id;
+  final num quantity;
+
+  Map<String, dynamic> toJson() => {'id': id, 'quantity': quantity};
+}
+
+class MarketplaceAcceptableItem {
+  MarketplaceAcceptableItem.fromJson(Map<String, dynamic> json)
+      : id = _string(json['id']),
+        name = _string(json['name'] ??
+            json['product_name'] ??
+            _map(json['product'])['name'] ??
+            _map(_map(json['offer'])['product'])['name']),
+        availableQuantity = (_num(json['requestedQuantity'] ??
+                    json['requested_quantity'] ??
+                    json['quantity']) -
+                _num(json['confirmedQuantity'] ?? json['confirmed_quantity']) -
+                _num(json['cancelledQuantity'] ?? json['cancelled_quantity']))
+            .clamp(0, double.infinity);
+
+  final String id;
+  final String name;
+  final num availableQuantity;
 }
 
 class MarketplaceAcceptResult {
