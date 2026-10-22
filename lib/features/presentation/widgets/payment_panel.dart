@@ -757,11 +757,6 @@ class _PaymentPanelState extends State<PaymentPanel> {
           sale: sale,
           payments: payments,
           requireOnline: requireOnline);
-      if (outcome.sale.fiscalizationMode == FiscalizationMode.fiscal &&
-          sale.fiscalizationMode == FiscalizationMode.skip) {
-        sale = sale.copyWith(fiscalizationMode: FiscalizationMode.fiscal);
-        await persist();
-      }
       if (outcome.result != CreateSaleResult.rejected) return outcome;
       if (outcome.errorCode == 'MARKING_PACKAGE_CHANGED') {
         needsMarkingCheck = true;
@@ -953,7 +948,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
             final fiscalMode = frozenSale is Map
                 ? fiscalizationModeFromJson(frozenSale['fiscalizationMode'] ??
                         frozenSale['fiscalization_mode']) ??
-                    FiscalizationMode.fiscal
+                    FiscalizationMode.automatic
                 : resolveFiscalizationMode(
                     enabled: fiscalAuth.fiscalizationEnabled,
                     markedProductsOnly:
@@ -1094,7 +1089,11 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 // Capture amounts before async gap
                 final isMixed = _isMixedPayment;
                 final fiscalizationEnabled =
-                    fiscalMode == FiscalizationMode.fiscal;
+                    fiscalAuth.fiscalizationEnabled &&
+                    (fiscalMode == FiscalizationMode.fiscal ||
+                        (fiscalMode == FiscalizationMode.automatic &&
+                            (!fiscalAuth.fiscalizationMarkedProductsOnly ||
+                                posCubit.requiresMarkingCheck)));
                 final totalAmountInt = (posCubit.total * 100).round() / 100;
                 final customPricesOk = _validateCustomSalePrices(
                   posCubit.state.items,
@@ -1371,7 +1370,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   var localReceiptPrinted = false;
                   if (!mounted) return;
                   final shouldPrintLocalReceipt = !isDebtSale &&
-                          fiscalReceipt == null &&
+                          (fiscalReceipt == null ||
+                              auth.printLocalReceiptImmediately) &&
                           (outcome.responseData
                                       ?.containsKey('fiscal_receipt') ==
                                   true ||

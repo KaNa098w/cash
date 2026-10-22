@@ -13,6 +13,7 @@ import 'package:leemon_app/core/service/fiscal_receipt_service.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:leemon_app/core/models/product_response.dart';
+import 'package:leemon_app/core/models/pos_category.dart';
 import 'package:leemon_app/core/models/refund_model.dart';
 import 'package:leemon_app/core/models/sale_model.dart' show SaleModel;
 import 'package:leemon_app/features/data/sync/pos_sync_local_store.dart';
@@ -219,6 +220,10 @@ class PosSyncService {
 
   Future<List<ProductModel>> loadFavoriteProducts() {
     return _localStore.loadFavoriteProducts();
+  }
+
+  Future<List<PosCategory>> loadCategories() {
+    return _localStore.loadCategories();
   }
 
   Future<List<LocalExpenseType>> loadExpenseTypes() {
@@ -499,6 +504,11 @@ class PosSyncService {
             .map((e) => Map<String, dynamic>.from(e))
             .toList() ??
         <Map<String, dynamic>>[];
+    final rawCategories = (snapshotFile['categories'] as List?)
+            ?.whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList() ??
+        <Map<String, dynamic>>[];
     final rawSales = (snapshotFile['sales'] as List?)
             ?.whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))
@@ -549,6 +559,7 @@ class PosSyncService {
       cursorBefore: snapshotCursor,
       posInfo: posInfo,
       products: rawProducts,
+      categories: rawCategories,
       sales: rawSales,
       refunds: rawRefunds,
       accounts: accounts,
@@ -568,6 +579,7 @@ class PosSyncService {
       'snapshot_cursor': snapshotCursor,
       'saved_counts': {
         'products': rawProducts.length,
+        'categories': rawCategories.length,
         'sales': rawSales.length,
         'refunds': rawRefunds.length,
         'accounts': accounts.length,
@@ -677,9 +689,10 @@ class PosSyncService {
           changes: batch.items,
           nextCursor: batch.nextCursor,
         );
-        final hasProducts = batch.items.any(
-          (c) => c.entity.trim().toLowerCase().contains('product'),
-        );
+        final hasProducts = batch.items.any((c) {
+          final entity = c.entity.trim().toLowerCase();
+          return entity.contains('product') || entity.contains('category');
+        });
         if (hasProducts && !_productsChangedController.isClosed) {
           _productsChangedController.add(null);
         }
@@ -1008,7 +1021,7 @@ class PosSyncService {
       'client_sale_id': sale.localId,
       'fiscalization_mode': previous?.payload['fiscalization_mode'] ??
           fiscalizationModeToJson(
-              sale.fiscalizationMode ?? FiscalizationMode.fiscal),
+              sale.fiscalizationMode ?? FiscalizationMode.automatic),
       if (sendInBackground && !requireOnline) '_local_background_sale': true,
       'local_number': localNumber,
       if (localPosSessionId.isNotEmpty) 'pos_session_id': localPosSessionId,
@@ -2167,36 +2180,6 @@ class PosSyncService {
           fieldErrors: errors,
           errorMessage: errorMessage,
         );
-      }
-
-      // A first, explicit validation rejection proves this request was not
-      // registered. Never change a mode after a timeout or idempotency conflict.
-      if (record.type == OutboxOperationType.sale &&
-          response is Map &&
-          response['status_code'] == 422 &&
-          errors.containsKey('fiscalization_mode') &&
-          payloadForSend['fiscalization_mode'] == 'skip' &&
-          record.retryCount == 0 &&
-          record.lastErrorCode != 'NETWORK_RECONCILIATION_REQUIRED' &&
-          record.lastErrorCode != 'IDEMPOTENCY_CONFLICT') {
-        final corrected = {...payloadForSend, 'fiscalization_mode': 'fiscal'};
-        await _localStore.saveClaimedPayload(record.id, corrected);
-        return _sendClaimedRecord(
-            key: key,
-            deviceId: deviceId,
-            record: OutboxOperationRecord(
-              id: record.id,
-              type: record.type,
-              clientId: record.clientId,
-              relatedClientId: record.relatedClientId,
-              payload: corrected,
-              status: record.status,
-              retryCount: record.retryCount,
-              createdAt: record.createdAt,
-              updatedAt: record.updatedAt,
-              lastErrorCode: record.lastErrorCode,
-              lastErrorMessage: record.lastErrorMessage,
-            ));
       }
 
       if (_remote.isRetryable(error) &&

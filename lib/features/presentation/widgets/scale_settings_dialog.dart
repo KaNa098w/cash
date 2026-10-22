@@ -23,7 +23,7 @@ class _ScaleSettingsDialogState extends State<_ScaleSettingsDialog> {
   bool loading = true,
       diagnosing = false,
       testing = false,
-      enabled = true,
+      enabled = false,
       dirty = false;
   String port = '';
   int baudRate = 9600;
@@ -61,6 +61,13 @@ class _ScaleSettingsDialogState extends State<_ScaleSettingsDialog> {
     if (mounted) {
       setState(() {
         hardware = result;
+        // When this POS has no saved scale port yet, default to the highest
+        // detected COM number. ScaleService returns Windows ports in that
+        // order, so the first item is the preferred one.
+        if (port.isEmpty && result.ports.isNotEmpty) {
+          port = result.ports.first;
+          dirty = true;
+        }
         diagnosing = false;
       });
     }

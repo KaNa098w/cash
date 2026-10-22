@@ -8,7 +8,7 @@ class SaleModel {
       .contains(paymentMethod.trim().toLowerCase());
 
   String? get debtFiscalStatus {
-    if (!isDebtSale || fiscalizationMode == FiscalizationMode.skip) return null;
+    if (!isDebtSale) return null;
     final receipt = fiscalReceipt;
     if (receipt == null) {
       return 'Продажа в долг. Фискальный чек будет сформирован после полного погашения.';
@@ -66,7 +66,7 @@ class SaleModel {
     required this.date,
     required this.totalAmount,
     required this.paymentMethod,
-    this.fiscalizationMode = FiscalizationMode.fiscal,
+    this.fiscalizationMode = FiscalizationMode.automatic,
     this.paymentType,
     this.paidAmount = 0,
     this.debtAmount = 0,

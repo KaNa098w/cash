@@ -24,7 +24,7 @@ class ScaleHardwareDiagnostics {
 
 class ScaleSettings {
   const ScaleSettings({
-    this.enabled = true,
+    this.enabled = false,
     this.port = '',
     this.baudRate = 9600,
     this.protocol = ScaleProtocol.auto,
@@ -39,7 +39,7 @@ class ScaleSettings {
     final prefs = await SharedPreferences.getInstance();
     final name = prefs.getString('scale_protocol') ?? 'auto';
     return ScaleSettings(
-      enabled: prefs.getBool('scale_enabled') ?? true,
+      enabled: prefs.getBool('scale_enabled') ?? false,
       port: prefs.getString('scale_port') ?? '',
       baudRate: prefs.getInt('scale_baud_rate') ?? 9600,
       protocol: ScaleProtocol.values.firstWhere(
@@ -151,7 +151,13 @@ class ScaleService {
               .where((port) =>
                   RegExp(r'^COM\d+$', caseSensitive: false).hasMatch(port))
               .toList();
-          ports.sort();
+          // USB scales normally receive the newest/highest COM number, while
+          // the lower ports are often built-in or already occupied devices.
+          ports.sort((left, right) {
+            final leftNumber = int.tryParse(left.substring(3)) ?? -1;
+            final rightNumber = int.tryParse(right.substring(3)) ?? -1;
+            return rightNumber.compareTo(leftNumber);
+          });
           return ports;
         }
       } catch (_) {}
@@ -167,6 +173,12 @@ class ScaleService {
       );
     }
 
+    // Windows can assign a different COM number on every POS. Resolve the
+    // actual ports here instead of relying on a machine-specific fallback.
+    final resolvedPortCandidates = portCandidates.isNotEmpty
+        ? List<String>.from(portCandidates)
+        : await availablePorts();
+
     final receivePort = ReceivePort();
     final readingController = StreamController<ScaleReading>();
     final errorController = StreamController<String>();
@@ -176,7 +188,12 @@ class ScaleService {
     );
     final isolate = await Isolate.spawn(
       _scaleReaderEntry,
-      <Object>[receivePort.sendPort, baudRate, portCandidates, protocol.index],
+      <Object>[
+        receivePort.sendPort,
+        baudRate,
+        resolvedPortCandidates,
+        protocol.index,
+      ],
       debugName: 'pos-scale-reader',
     );
     connection._attachIsolate(isolate);
@@ -215,13 +232,22 @@ Future<void> _scaleReaderEntry(List<Object> args) async {
       ? configuredPorts
       : Platform.isMacOS
           ? _macScalePorts()
-          : const ['COM8'];
+          : const <String>[];
   final controlPort = ReceivePort();
   var stopping = false;
   controlPort.listen((message) {
     if (message == 'stop') stopping = true;
   });
   sendPort.send({'control': controlPort.sendPort});
+
+  if (Platform.isWindows && ports.isEmpty) {
+    sendPort.send({
+      'error': 'Не найдено ни одного COM-порта. '
+          'Подключите весы и обновите список портов.',
+    });
+    controlPort.close();
+    return;
+  }
 
   if (Platform.isMacOS && ports.isEmpty) {
     sendPort.send({

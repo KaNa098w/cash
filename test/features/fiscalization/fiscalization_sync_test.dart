@@ -43,21 +43,16 @@ void main() {
           ],
           requireOnline: !background,
           sendInBackground: background);
-  test('422 correction changes only the mode and persists it before retry',
-      () async {
-    remote.handler = (p) async {
-      if (p['fiscalization_mode'] == 'skip') throw fiscalRequired();
-      return accepted(p, codes: []);
-    };
+  test('422 keeps the selected mode and reports field validation', () async {
+    remote.handler = (_) async => throw fiscalRequired();
     final result = await send(FiscalizationMode.skip);
-    expect(result.result, QueueSendResult.sent);
-    expect(remote.requests, hasLength(2));
-    final original = {...remote.requests.first, 'fiscalization_mode': 'fiscal'};
-    expect(remote.requests.last, original);
+    expect(result.result, QueueSendResult.manual);
+    expect(remote.requests, hasLength(1));
+    expect(result.fieldErrors, contains('fiscalization_mode'));
     expect(
         (await store.findOperation(OutboxOperationType.sale, sale().localId))!
             .payload['fiscalization_mode'],
-        'fiscal');
+        'skip');
   });
   test(
       'timeout retry preserves original mode despite caller changing selection',
@@ -81,34 +76,14 @@ void main() {
     expect(remote.requests.every((r) => r['fiscalization_mode'] == 'skip'),
         isTrue);
   });
-  test('corrected fiscal mode survives a second network failure and retry',
-      () async {
-    remote.handler = (p) async {
-      if (p['fiscalization_mode'] == 'skip') throw fiscalRequired();
-      throw timeout();
-    };
-    await send(FiscalizationMode.skip);
-    remote.handler = (p) async => accepted(p, codes: []);
-    await send(FiscalizationMode.skip);
-    expect(remote.requests.map((r) => r['fiscalization_mode']),
-        ['skip', 'fiscal', 'fiscal']);
-    expect(remote.requests[2], remote.requests[1]);
-  });
-  test(
-      'background outbox retains explicit mode and corrects validation without a duplicate ID',
-      () async {
-    await send(FiscalizationMode.skip, background: true);
+  test('automatic mode survives background persistence and delivery', () async {
+    await send(FiscalizationMode.automatic, background: true);
     expect(remote.requests, isEmpty);
     expect((await store.loadPendingSales()).single.fiscalizationMode,
-        FiscalizationMode.skip);
-    remote.handler = (p) async {
-      if (p['fiscalization_mode'] == 'skip') throw fiscalRequired();
-      return accepted(p, codes: []);
-    };
+        FiscalizationMode.automatic);
+    remote.handler = (p) async => accepted(p, codes: []);
     await sync.pushPending(key: 'KEY', deviceId: 'DEVICE');
-    expect(remote.requests.map((r) => r['fiscalization_mode']),
-        ['skip', 'fiscal']);
-    expect(remote.requests.map((r) => r['client_sale_id']).toSet(),
-        {sale().localId});
+    expect(remote.requests.single['fiscalization_mode'], 'automatic');
+    expect(remote.requests.single['device_id'], 'DEVICE');
   });
 }

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/product_response.dart';
+import 'package:leemon_app/core/models/pos_category.dart';
 import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'package:leemon_app/features/data/utils/money.dart';
 
@@ -35,6 +36,8 @@ class _QuickProductsDialog extends StatefulWidget {
 
 class _QuickProductsDialogState extends State<_QuickProductsDialog> {
   List<ProductModel> products = const [];
+  List<PosCategory> categories = const [];
+  String? selectedCategoryId;
   bool loading = true;
   StreamSubscription<void>? subscription;
   int _loadGeneration = 0;
@@ -64,24 +67,79 @@ class _QuickProductsDialogState extends State<_QuickProductsDialog> {
   Future<void> _loadLocal() async {
     final generation = ++_loadGeneration;
     try {
-      final items = (await sl<PosSyncService>().loadFavoriteProducts())
+      final sync = sl<PosSyncService>();
+      final results = await Future.wait([
+        sync.loadFavoriteProducts(),
+        sync.loadCategories(),
+      ]);
+      final items = (results[0] as List<ProductModel>)
           .where((product) => !product.isUniversal)
           .toList(growable: false);
+      final loadedCategories = results[1] as List<PosCategory>;
       if (!mounted || generation != _loadGeneration) return;
       final oldSignature = jsonEncode(products.map((p) => p.toJson()).toList());
       final newSignature = jsonEncode(items.map((p) => p.toJson()).toList());
       _quickProductsMemory[widget.posKey] = items;
-      if (oldSignature != newSignature || loading) {
+      if (oldSignature != newSignature || loading || categories.isEmpty) {
         setState(() {
           products = items;
+          categories = loadedCategories;
           loading = false;
         });
+      } else {
+        // Category-only pull changes must refresh the tree even when the
+        // favorite product payload itself did not change.
+        setState(() => categories = loadedCategories);
       }
     } catch (_) {
       if (mounted && generation == _loadGeneration) {
         setState(() => loading = false);
       }
     }
+  }
+
+  Set<String> _categoryBranchIds(String id) {
+    final result = <String>{};
+    void visit(PosCategory category) {
+      if (category.id == id || result.contains(category.parentId)) {
+        result.add(category.id);
+      }
+      for (final child in category.children) {
+        visit(child);
+      }
+    }
+
+    for (final category in categories) {
+      visit(category);
+    }
+    return result;
+  }
+
+  List<({PosCategory category, int depth})> get _flatCategories {
+    final result = <({PosCategory category, int depth})>[];
+    void add(PosCategory category, int depth) {
+      result.add((category: category, depth: depth));
+      for (final child in category.children) {
+        add(child, depth + 1);
+      }
+    }
+
+    for (final category in categories) {
+      add(category, 0);
+    }
+    return result;
+  }
+
+  List<ProductModel> get _visibleProducts {
+    final selected = selectedCategoryId;
+    if (selected == null) return products;
+    if (selected.isEmpty) {
+      return products.where((product) => product.categoryId == null).toList();
+    }
+    final ids = _categoryBranchIds(selected);
+    return products
+        .where((product) => ids.contains(product.categoryId))
+        .toList();
   }
 
   @override
@@ -146,6 +204,44 @@ class _QuickProductsDialogState extends State<_QuickProductsDialog> {
                       ],
                     ),
                     const SizedBox(height: 18),
+                    if (categories.isNotEmpty) ...[
+                      SizedBox(
+                        height: 42,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: [
+                            ChoiceChip(
+                              label: const Text('Все'),
+                              selected: selectedCategoryId == null,
+                              onSelected: (_) =>
+                                  setState(() => selectedCategoryId = null),
+                            ),
+                            const SizedBox(width: 8),
+                            for (final item in _flatCategories) ...[
+                              ChoiceChip(
+                                avatar: item.depth == 0
+                                    ? null
+                                    : const Icon(Icons.subdirectory_arrow_right,
+                                        size: 16),
+                                label: Text(item.category.name),
+                                selected:
+                                    selectedCategoryId == item.category.id,
+                                onSelected: (_) => setState(() =>
+                                    selectedCategoryId = item.category.id),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            ChoiceChip(
+                              label: const Text('Без категории'),
+                              selected: selectedCategoryId == '',
+                              onSelected: (_) =>
+                                  setState(() => selectedCategoryId = ''),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     Expanded(
                       child: loading
                           ? const Center(child: CircularProgressIndicator())
@@ -158,11 +254,20 @@ class _QuickProductsDialogState extends State<_QuickProductsDialog> {
                                     crossAxisCount: columns,
                                     mainAxisSpacing: 16,
                                     crossAxisSpacing: 16,
-                                    childAspectRatio: 0.78,
+                                    mainAxisExtent:
+                                        ((width - 12 - (columns - 1) * 16) /
+                                                    columns -
+                                                20) *
+                                            3 /
+                                            4 +
+                                        38 +
+                                        MediaQuery.textScalerOf(context)
+                                                .scale(14) *
+                                            4,
                                   ),
-                                  itemCount: products.length,
+                                  itemCount: _visibleProducts.length,
                                   itemBuilder: (context, index) {
-                                    final product = products[index];
+                                    final product = _visibleProducts[index];
                                     return _QuickProductTile(
                                       product: product,
                                       onTap: () =>
@@ -209,7 +314,8 @@ class _QuickProductTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
+              AspectRatio(
+                aspectRatio: 4 / 3,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(13),
                   child: _ProductImage(url: product.coverUrl),
@@ -244,7 +350,7 @@ class _QuickProductTile extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    money(product.effectivePrice),
+                    money(product.sellingPrice),
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,

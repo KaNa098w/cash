@@ -2230,11 +2230,11 @@ class CartProductImage extends StatelessWidget {
     );
 
     if (url.isEmpty) {
-      return SizedBox(width: 30, height: 30, child: placeholder);
+      return SizedBox(width: 40, height: 30, child: placeholder);
     }
 
     return SizedBox(
-      width: 30,
+      width: 40,
       height: 30,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),

@@ -32,6 +32,7 @@ class ProductModel {
   final double wholesalePrice;
   final double quantity;
   final bool isFavorite;
+  final int favoritePosition;
   final String? sku;
   final String? coverUrl;
   final List<String> images;
@@ -84,6 +85,7 @@ class ProductModel {
     required this.wholesalePrice,
     this.quantity = 0.0,
     this.isFavorite = false,
+    this.favoritePosition = 0,
     this.barcode,
     this.localBarcode,
     this.sku,
@@ -219,6 +221,9 @@ class ProductModel {
       isFavorite: json['is_favorite'] == true ||
           json['is_favorite'] == 1 ||
           json['is_favorite']?.toString().trim() == '1',
+      favoritePosition: (json['favorite_position'] as num?)?.toInt() ??
+          int.tryParse('${json['favorite_position'] ?? 0}') ??
+          0,
       sku: _asString(json['sku']),
       coverUrl: _asString(json['cover_url']),
       images: _asImages(json['images']),
@@ -253,6 +258,7 @@ class ProductModel {
       'wholesale_price': wholesalePrice,
       'quantity': quantity,
       'is_favorite': isFavorite ? 1 : 0,
+      'favorite_position': favoritePosition,
       'sku': sku,
       'cover_url': coverUrl,
       'images': images,

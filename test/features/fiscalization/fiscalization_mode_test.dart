@@ -11,7 +11,7 @@ import '../data/sync/marked_sale_sync_test.dart' show sale;
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
-  test('ordinary sales default to skip; marked goods cannot opt out', () {
+  test('switch off selects automatic for marked goods and skip otherwise', () {
     for (final enabled in [false, true]) {
       for (final onlyMarked in [false, true]) {
         for (final marked in [false, true]) {
@@ -19,7 +19,8 @@ void main() {
               enabled: enabled,
               markedProductsOnly: onlyMarked,
               cartHasMarkedProducts: marked);
-          expect(value == FiscalizationMode.fiscal, enabled && marked);
+          expect(value,
+              marked ? FiscalizationMode.automatic : FiscalizationMode.skip);
         }
       }
     }
@@ -29,7 +30,7 @@ void main() {
             markedProductsOnly: false,
             cartHasMarkedProducts: true,
             selected: FiscalizationMode.skip),
-        FiscalizationMode.fiscal);
+        FiscalizationMode.automatic);
     expect(
         resolveFiscalizationMode(
             enabled: true,
@@ -83,12 +84,23 @@ void main() {
     final legacy = sale().toJson()..remove('fiscalizationMode');
     expect(SaleModel.fromJson(legacy).fiscalizationMode, isNull);
   });
-  testWidgets(
-      'toggle hides when disabled, locks for marking and accepts ordinary choice',
+  test('switch on always requests fiscal regardless of configuration', () {
+    for (final enabled in [false, true]) {
+      for (final marked in [false, true]) {
+        expect(
+            resolveFiscalizationMode(
+                enabled: enabled,
+                markedProductsOnly: true,
+                cartHasMarkedProducts: marked,
+                selected: FiscalizationMode.fiscal),
+            FiscalizationMode.fiscal);
+      }
+    }
+  });
+  testWidgets('switch requires Webkassa and accepts marked cart choices',
       (tester) async {
     FiscalizationMode? choice;
-    Future<void> mount(
-            {bool enabled = true, bool marked = false, bool locked = false}) =>
+    Future<void> mount({bool enabled = true, bool locked = false, bool marked = false}) =>
         tester.pumpWidget(MaterialApp(
             home: Scaffold(
                 body: FiscalizationToggle(
@@ -99,14 +111,13 @@ void main() {
                     onChanged: (v) => choice = v))));
     await mount(enabled: false);
     expect(find.byType(Switch), findsNothing);
-    await mount(marked: true);
-    expect(tester.widget<Switch>(find.byType(Switch)).onChanged, isNull);
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
     await mount(locked: true);
     expect(tester.widget<Switch>(find.byType(Switch)).onChanged, isNull);
+    await mount(marked: true);
+    await tester.tap(find.byType(Switch));
+    expect(choice, FiscalizationMode.automatic);
     await mount();
     await tester.tap(find.byType(Switch));
     expect(choice, FiscalizationMode.skip);
-    expect(find.byType(AlertDialog), findsNothing);
   });
 }

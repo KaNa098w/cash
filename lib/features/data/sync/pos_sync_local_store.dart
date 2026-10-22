@@ -8,6 +8,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 import 'package:leemon_app/core/models/refund_model.dart';
 import 'package:leemon_app/core/models/product_response.dart';
+import 'package:leemon_app/core/models/pos_category.dart';
 import 'package:leemon_app/core/models/sale_model.dart'
     show SaleItemModel, SaleModel;
 import 'package:leemon_app/core/models/sale_model.dart' as sale_models
@@ -183,6 +184,18 @@ class PosSyncLocalStore {
     db.execute('''
       CREATE INDEX IF NOT EXISTS products_name_nocase_idx
       ON products (name COLLATE NOCASE);
+    ''');
+
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        parent_id TEXT NULL,
+        icon_url TEXT NULL,
+        position INTEGER NOT NULL DEFAULT 0,
+        raw_json TEXT NOT NULL,
+        updated_at_local TEXT NOT NULL
+      );
     ''');
 
     db.execute('''
@@ -439,6 +452,7 @@ class PosSyncLocalStore {
       'ALTER TABLE products ADD COLUMN arrival_cost REAL NULL',
       'ALTER TABLE products ADD COLUMN wholesale_price REAL NULL',
       'ALTER TABLE products ADD COLUMN conversion_value REAL NULL',
+      'ALTER TABLE products ADD COLUMN favorite_position INTEGER NOT NULL DEFAULT 0',
     ]) {
       try {
         db.execute(stmt);
@@ -483,6 +497,7 @@ class PosSyncLocalStore {
         'sync_state',
         'pos_info',
         'products',
+        'categories',
         'accounts',
         'expense_types',
         'customers',
@@ -647,6 +662,7 @@ class PosSyncLocalStore {
     required int cursorBefore,
     required Map<String, dynamic> posInfo,
     required List<Map<String, dynamic>> products,
+    List<Map<String, dynamic>> categories = const <Map<String, dynamic>>[],
     required List<Map<String, dynamic>> sales,
     required List<Map<String, dynamic>> refunds,
     required List<Map<String, dynamic>> accounts,
@@ -659,6 +675,7 @@ class PosSyncLocalStore {
     _inTransaction<void>(db, () {
       db.execute('DELETE FROM pos_info;');
       db.execute('DELETE FROM products;');
+      db.execute('DELETE FROM categories;');
       db.execute('DELETE FROM accounts;');
       db.execute('DELETE FROM expense_types;');
       db.execute('DELETE FROM customers;');
@@ -676,6 +693,10 @@ class PosSyncLocalStore {
       for (final raw in products) {
         final row = _mapProductRow(raw, now);
         if (row != null) _upsertRow(db, 'products', row);
+      }
+      for (final raw in categories) {
+        final row = _mapCategoryRow(raw, now);
+        if (row != null) _upsertRow(db, 'categories', row);
       }
       for (final raw in sales) {
         try {
@@ -880,13 +901,32 @@ class PosSyncLocalStore {
       SELECT raw_json
       FROM products
       WHERE is_favorite = 1
-      ORDER BY name COLLATE NOCASE
+      ORDER BY favorite_position, name COLLATE NOCASE, id
       ''',
     );
     return rows
         .map((row) => ProductModel.fromJson(
             decodeJsonMap((row['raw_json'] ?? '{}').toString())))
         .toList(growable: false);
+  }
+
+  Future<List<PosCategory>> loadCategories() async {
+    final db = await _database;
+    final rows = db.select('''
+      SELECT id, name, parent_id, icon_url, position
+      FROM categories
+      ORDER BY position, name COLLATE NOCASE, id
+    ''');
+    final flat = rows
+        .map((row) => PosCategory(
+              id: row['id'].toString(),
+              name: row['name'].toString(),
+              parentId: _nullableString(row['parent_id']),
+              iconUrl: _nullableString(row['icon_url']),
+              position: (row['position'] as num?)?.toInt() ?? 0,
+            ))
+        .toList(growable: false);
+    return PosCategory.buildTree(flat);
   }
 
   Future<List<LocalExpenseType>> loadExpenseTypes() async {
@@ -1767,6 +1807,7 @@ class PosSyncLocalStore {
 
     final row = switch (entity) {
       _EntityKind.product => _mapProductRow(payload, now),
+      _EntityKind.category => _mapCategoryRow(payload, now),
       _EntityKind.account => _mapAccountRow(payload, now),
       _EntityKind.expenseType => _mapExpenseTypeRow(payload, now),
       _EntityKind.customer => _mapCustomerRow(payload, now),
@@ -2397,6 +2438,21 @@ class PosSyncLocalStore {
           : _asDouble(raw['conversion_value']),
       'cover_url': _nullableString(raw['cover_url']),
       'is_favorite': _asBoolInt(raw['is_favorite']),
+      'favorite_position': _asInt(raw['favorite_position']),
+      'raw_json': jsonEncode(raw),
+      'updated_at_local': now,
+    };
+  }
+
+  Map<String, dynamic>? _mapCategoryRow(Map<String, dynamic> raw, String now) {
+    final id = _string(raw['id']);
+    if (id.isEmpty) return null;
+    return {
+      'id': id,
+      'name': _string(raw['name'], fallback: id),
+      'parent_id': _nullableString(raw['parent_id']),
+      'icon_url': _nullableString(raw['icon_url']),
+      'position': _asInt(raw['position']),
       'raw_json': jsonEncode(raw),
       'updated_at_local': now,
     };
@@ -3827,6 +3883,9 @@ class PosSyncLocalStore {
       case 'product':
       case 'products':
         return _EntityKind.product;
+      case 'category':
+      case 'categories':
+        return _EntityKind.category;
       case 'account':
       case 'accounts':
         return _EntityKind.account;
@@ -3859,6 +3918,7 @@ class PosSyncLocalStore {
 enum _EntityKind {
   posInfo('pos_info'),
   product('products'),
+  category('categories'),
   account('accounts'),
   expenseType('expense_types'),
   customer('customers'),
