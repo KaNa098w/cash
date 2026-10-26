@@ -1,4 +1,5 @@
 import 'printer_settings_dialog.dart';
+import 'kaspi_settings_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/customer_display_settings_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/invoices/invoice_history_dialog.dart';
 import 'dart:async';
@@ -274,6 +275,12 @@ Future<void> _showDevicesDialog(BuildContext context) => showDialog<void>(
                           'Весы',
                           'Подключение, порты и диагностика',
                           () => showScaleSettingsDialog(context)),
+                      const Divider(height: 1, indent: 20, endIndent: 20),
+                      deviceTile(
+                          Icons.payment_rounded,
+                          'Kaspi POS',
+                          'Терминал, подключение и регистрация кассы',
+                          () => showKaspiSettingsDialog(context)),
                       const Divider(height: 1, indent: 20, endIndent: 20),
                       deviceTile(
                           Icons.calculate_outlined,

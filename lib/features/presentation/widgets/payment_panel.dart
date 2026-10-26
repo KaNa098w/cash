@@ -1,4 +1,6 @@
 import 'fiscalization_toggle.dart';
+import 'kaspi_payment_dialog.dart';
+import 'package:leemon_app/core/service/kaspi_payment_service.dart';
 import 'package:leemon_app/core/models/fiscalization_mode.dart';
 import 'package:leemon_app/features/presentation/pages/invoices/invoice_issue_dialog.dart';
 import 'dart:async';
@@ -415,6 +417,36 @@ class _PaymentPanelState extends State<PaymentPanel> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final cubit = context.read<PosCubit>();
+      final frozen = cubit.state.activeTicket.checkout;
+      if (frozen?['kaspi_required'] == true) {
+        final sale =
+            SaleModel.fromJson(Map<String, dynamic>.from(frozen!['sale']));
+        final method = sale.paymentMethod;
+        final payments = (frozen['payments'] as List)
+            .map((p) => Map<String, dynamic>.from(p))
+            .toList();
+        final cash = payments
+            .where((p) =>
+                p['account_id'] == context.read<AuthTokenProvider>().accountId)
+            .fold(0.0, (sum, p) => sum + (p['amount'] as num).toDouble());
+        final bank = payments
+            .where((p) =>
+                p['account_id'] != context.read<AuthTokenProvider>().accountId)
+            .toList();
+        setState(() {
+          _isMixedPayment = method == 'mixed';
+          _selectedBankAccountId =
+              bank.isEmpty ? null : bank.first['account_id'].toString();
+          _cashCtrl.text = _fmt(cash);
+          _cardCtrl.text = _fmt(bank.fold(
+              0.0, (sum, p) => sum + (p['amount'] as num).toDouble()));
+        });
+        cubit.setPaymentKind(method == 'card' || method == 'mixed'
+            ? PaymentKind.card
+            : PaymentKind.cash);
+        cubit.setReceived(sale.totalAmount.toDouble());
+        return;
+      }
       cubit.setPaymentKind(PaymentKind.cash);
       cubit.setReceived(0);
       _cashCtrl.clear();
@@ -467,6 +499,19 @@ class _PaymentPanelState extends State<PaymentPanel> {
   }
 
   LocalAccount? get _selectedBankAccount {
+    final frozen = context.read<PosCubit>().state.activeTicket.checkout;
+    if (frozen?['kaspi_required'] == true) {
+      for (final payment in (frozen!['payments'] as List)) {
+        final account = payment['account'];
+        if (account is Map &&
+            (account['type'] ?? '').toString().toLowerCase() == 'bank') {
+          return LocalAccount(
+              id: account['id'].toString(),
+              name: (account['name'] ?? '').toString(),
+              type: 'bank');
+        }
+      }
+    }
     final selectedId = (_selectedBankAccountId ?? '').trim();
     if (selectedId.isEmpty) {
       return null;
@@ -714,6 +759,23 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 'Для завершения оплаты вернитесь в исходный магазин и терминал');
       }
     }
+    // Legacy frozen checkouts may already have been paid manually. Only new
+    // checkouts and explicitly recorded terminal checkouts trigger Kaspi.
+    final kaspiAmount =
+        (sale.paymentMethod == 'card' || sale.paymentMethod == 'mixed') &&
+                (frozen == null || frozen['kaspi_required'] == true)
+            ? kaspiPaymentAmount(payments)
+            : 0.0;
+    if (kaspiAmount > 0 && kaspiAmount != kaspiAmount.roundToDouble()) {
+      return CreateSaleOutcome(
+          result: CreateSaleResult.rejected,
+          sale: sale,
+          errorMessage:
+              'Kaspi принимает только целую сумму в тенге. Исправьте сумму безналичной оплаты.');
+    }
+    Map<String, dynamic>? kaspiPayment = frozen?['kaspi_payment'] is Map
+        ? Map<String, dynamic>.from(frozen!['kaspi_payment'])
+        : null;
     var needsMarkingCheck = frozen?['needs_marking_check'] == true;
     Future<void> persist() => cubit.saveCheckout({
           'sale': sale.toJson(),
@@ -722,6 +784,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
           'requires_online': requireOnline,
           'pos_key': key,
           'device_id': deviceId,
+          'kaspi_required': kaspiAmount > 0,
+          if (kaspiPayment != null) 'kaspi_payment': kaspiPayment,
         });
     await persist();
     Future<bool> recheckMarking() async {
@@ -749,6 +813,30 @@ class _PaymentPanelState extends State<PaymentPanel> {
           sale: sale,
           errorCode: 'MARKING_PACKAGE_CHANGED',
           errorMessage: 'Оплата сохранена. Завершите проверку маркировки');
+    }
+    if (kaspiAmount > 0 && kaspiPayment == null) {
+      if (!mounted) throw StateError('Payment panel closed');
+      kaspiPayment = await showDialog<Map<String, dynamic>>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) =>
+            KaspiPaymentDialog(saleId: sale.localId, amount: kaspiAmount),
+      );
+      if (kaspiPayment?['status'] == 'fail') {
+        cubit.releaseCheckout();
+        return CreateSaleOutcome(
+            result: CreateSaleResult.rejected,
+            sale: sale,
+            errorMessage:
+                'Оплата Kaspi отменена или отклонена. Можно выбрать другой способ оплаты.');
+      }
+      if (kaspiPayment == null) {
+        return CreateSaleOutcome(
+            result: CreateSaleResult.rejected,
+            sale: sale,
+            errorMessage: 'Kaspi не подтвердил оплату. Продажа не завершена.');
+      }
+      await persist();
     }
     while (true) {
       final outcome = await repo.createSale(
@@ -783,14 +871,15 @@ class _PaymentPanelState extends State<PaymentPanel> {
           }
         } catch (_) {/* Keep the original API error visible. */}
       }
-      if (const {
-        'VALIDATION_FAILED',
-        'INSUFFICIENT_STOCK',
-        'REFERENCE_NOT_FOUND',
-        'ACCOUNT_NOT_ALLOWED',
-        'POS_NOT_CONFIGURED',
-        'MARKING_CONFLICT'
-      }.contains(outcome.errorCode)) {
+      if (kaspiPayment == null &&
+          const {
+            'VALIDATION_FAILED',
+            'INSUFFICIENT_STOCK',
+            'REFERENCE_NOT_FOUND',
+            'ACCOUNT_NOT_ALLOWED',
+            'POS_NOT_CONFIGURED',
+            'MARKING_CONFLICT'
+          }.contains(outcome.errorCode)) {
         cubit.releaseCheckout();
       }
       return outcome;
@@ -958,13 +1047,19 @@ class _PaymentPanelState extends State<PaymentPanel> {
             final total = cubit.total;
             final change = cubit.change.clamp(0, double.infinity);
             final hasItems = state.items.isNotEmpty;
-            final isDebtSale = state.paymentKind == PaymentKind.credit;
+            final isDebtSale = frozenSale is Map
+                ? const {'debt', 'partial_debt', 'credit'}
+                    .contains(frozenSale['paymentMethod'])
+                : state.paymentKind == PaymentKind.credit;
             final requiresBankAccount =
                 state.paymentKind == PaymentKind.card || _isMixedPayment;
             final hasSelectedBankAccount =
-                !requiresBankAccount || _selectedBankAccount != null;
+                state.activeTicket.checkout != null ||
+                    !requiresBankAccount ||
+                    _selectedBankAccount != null;
             final hasSelectedPaymentMethod =
-                state.paymentKind == PaymentKind.card ||
+                state.activeTicket.checkout != null ||
+                    state.paymentKind == PaymentKind.card ||
                     state.paymentKind == PaymentKind.credit ||
                     state.received > 0;
             final canSubmitPayment = !_paying &&
@@ -1027,6 +1122,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
                 if (posCubit.state.paymentKind == PaymentKind.cash &&
                     !_isMixedPayment &&
+                    posCubit.state.activeTicket.checkout == null &&
                     posCubit.state.received < posCubit.total) {
                   _showError('Недостаточно наличных для оплаты');
                   return;
@@ -1088,8 +1184,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
                 // Capture amounts before async gap
                 final isMixed = _isMixedPayment;
-                final fiscalizationEnabled =
-                    fiscalAuth.fiscalizationEnabled &&
+                final fiscalizationEnabled = fiscalAuth.fiscalizationEnabled &&
                     (fiscalMode == FiscalizationMode.fiscal ||
                         (fiscalMode == FiscalizationMode.automatic &&
                             (!fiscalAuth.fiscalizationMarkedProductsOnly ||
@@ -1243,7 +1338,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
 
                 final needsBankAccount =
                     paymentMethod == 'card' || paymentMethod == 'mixed';
-                if (needsBankAccount && bankAccounts.isEmpty) {
+                if (needsBankAccount &&
+                    bankAccounts.isEmpty &&
+                    posCubit.state.activeTicket.checkout == null) {
                   _showError(
                     'Не найден банковский счет. Обновите синхронизацию POS или настройте счет типа BANK.',
                   );
