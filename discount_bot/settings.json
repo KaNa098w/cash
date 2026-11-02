@@ -1,0 +1,145 @@
+{
+  "city": "Шымкент",
+  "min_discount_percent": 20,
+  "baseline": "store_old_price",
+  "interval_minutes": 10,
+  "max_pages_per_store": null,
+  "render_wait_ms": 3500,
+  "scroll_steps": 4,
+  "request_delay_ms": 2000,
+  "headed": false,
+  "stores": [
+    {
+      "id": "sulpak",
+      "home": "https://www.sulpak.kz/",
+      "enabled": true,
+      "city_selector": "header a.popup-city-link",
+      "category_path": "^/(f|p)/[^/]+(?:/shymkent)?/?$",
+      "allowed_path": "^/(?:$|shymkent/?$|(?:f|p)/[^/]+(?:/shymkent)?/?$)",
+      "urls": [
+        "https://www.sulpak.kz/f/smartfoniy/shymkent",
+        "https://www.sulpak.kz/f/noutbuki/shymkent",
+        "https://www.sulpak.kz/"
+      ],
+      "rules_verified_on_html": true,
+      "rules": [
+        {
+          "card": ".product__item",
+          "link": "a[href^=\"/g/\"]",
+          "price": ".product__item-price",
+          "old": ".product__item-price-old"
+        }
+      ],
+      "catalog_open_selector": "a.header__main-catalog-link"
+    },
+    {
+      "id": "shop",
+      "home": "https://shop.kz/",
+      "enabled": true,
+      "city_selector": "#region-selector .city-select__text",
+      "category_path": "^/(offers|catalog)/[^/]+/?$",
+      "urls": [],
+      "rules_verified_on_html": true,
+      "rules": [
+        {
+          "card": ".bx_catalog_item",
+          "link": ".bx_catalog_item_title a",
+          "price": ".current_price",
+          "old": ".old_price > span"
+        },
+        {
+          "card": ".daily-product-item",
+          "link": ".daily-product-item-name a",
+          "price": ".daily-product-item-price",
+          "old": ".daily-product-item-old-price"
+        },
+        {
+          "card": ".carousel-detail-item",
+          "link": "a[href^=\"/offer/\"]",
+          "price": ".carousel-detail-item__price-current",
+          "old": ".carousel-detail-item__price-old span"
+        }
+      ]
+    },
+    {
+      "id": "mechta",
+      "home": "https://www.mechta.kz/",
+      "enabled": true,
+      "city_selector": null,
+      "category_path": "^/section/",
+      "urls": [],
+      "rules_verified_on_html": false,
+      "rules": [
+        {
+          "card": "[itemtype=\"https://schema.org/Product\"]",
+          "link": "a[href*=\"/product/\"]",
+          "price": "[itemprop=\"price\"]",
+          "old": "[data-old-price]"
+        }
+      ]
+    },
+    {
+      "id": "technodom",
+      "home": "https://www.technodom.kz/shymkent",
+      "enabled": true,
+      "city_selector": "[class*=\"CitySelector_title\"]",
+      "category_path": "^/shymkent/catalog/",
+      "allowed_path": "^/shymkent(?:/|$)",
+      "urls": [
+        "https://www.technodom.kz/shymkent/catalog"
+      ],
+      "rules_verified_on_html": true,
+      "rules": [
+        {
+          "card": "[data-testid=\"product-card\"]",
+          "link": "a[href*=\"/p/\"]",
+          "name": "[data-testid=\"product-title\"]",
+          "price": "[class*=\"ProductCardPrices_price__\"]",
+          "old": "[class*=\"ProductCardPrices_oldPrice__\"]"
+        }
+      ]
+    },
+    {
+      "id": "evrika",
+      "home": "https://evrika.com/catalog/shymkent",
+      "enabled": true,
+      "city_selector": ".location-color",
+      "category_path": "^/catalog/shymkent/[^/]+/c\\d+$",
+      "allowed_path": "^/catalog/shymkent(?:/|$)",
+      "urls": [],
+      "rules_verified_on_html": true,
+      "rules": [
+        {
+          "card": ".productCard-ui",
+          "link": "a[class*=\"__titleOfProduct\"]",
+          "price": "span[class$=\"__currentPrice\"]",
+          "old": "span[class$=\"__oldPrice\"]"
+        },
+        {
+          "card": "a.rees46-search-product",
+          "link": "__self__",
+          "name": ".rees46-search-product__name",
+          "price": ".rees46-search-product__price-current",
+          "old": ".rees46-search-product__price-old"
+        }
+      ]
+    },
+    {
+      "id": "dns",
+      "home": "https://www.dns-shop.kz/",
+      "enabled": true,
+      "city_selector": "[data-city-select-label] [data-analytics-city-id]",
+      "category_path": "^/catalog/",
+      "urls": [],
+      "rules_verified_on_html": false,
+      "rules": [
+        {
+          "card": ".catalog-product",
+          "link": "a.catalog-product__name",
+          "price": ".product-buy__price",
+          "old": ".product-buy__prev"
+        }
+      ]
+    }
+  ]
+}

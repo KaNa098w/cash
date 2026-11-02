@@ -33,10 +33,13 @@ class _Controller extends MarketplaceOrdersController {
   });
   bool secondSelected = false;
   @override
-  // Future<void> selectOrder(String orderId) async {
-  //   secondSelected = orderId == secondOrder.id;
-  //   notifyListeners();
-  // }
+  Future<void> selectOrder(String orderId, {MarketplaceOrder? fallback}) async {
+    secondSelected = orderId == secondOrder.id;
+    notifyListeners();
+  }
+
+  @override
+  bool get selectedOrderAcceptedByThisPos => true;
 
   @override
   Future<void> refreshVisibleOrders() async {}
@@ -93,6 +96,10 @@ void main() {
       ));
       await tester.tap(find.text('Открыть'));
       await tester.pumpAndSettle();
+      // With no newly arrived order, the current UI opens history first.
+      expect(find.text('ОТГРУЗИТЬ'), findsNothing);
+      await tester.tap(find.text('№ MP-123'));
+      await tester.pumpAndSettle();
       expect(find.text('Молоко'), findsOneWidget);
       expect(find.text('ОТГРУЗИТЬ'), findsOneWidget);
       final lineTotal = find.byKey(const ValueKey('line-total--Молоко'));
@@ -121,10 +128,13 @@ void main() {
       await tester.ensureVisible(find.text('История'));
       await tester.tap(find.text('История'));
       await tester.pumpAndSettle();
-      expect(controller.scope, MarketplaceOrderScope.history);
-      final shipButton = tester.widget<ElevatedButton>(find.ancestor(
-          of: find.text('ОТГРУЗИТЬ'), matching: find.byType(ElevatedButton)));
-      expect(shipButton.onPressed, isNull);
+      // History is a local view; the order payment/footer is not displayed.
+      expect(
+          find.byWidgetPredicate((widget) =>
+              widget is TextField &&
+              widget.decoration?.hintText == 'Поиск по номеру заказа'),
+          findsOneWidget);
+      expect(find.text('ОТГРУЗИТЬ'), findsNothing);
       await tester.pumpWidget(const SizedBox());
     });
   }

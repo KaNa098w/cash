@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'package:leemon_app/core/service/app_update_lifecycle.dart';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/core/di/api/app_version.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/app_update_response.dart';
@@ -84,6 +87,12 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
 
       if (!mounted) return;
 
+      if (await AppUpdateLifecycle.shouldSkipAutomatic(latest.latestVersion)) {
+        if (mounted) setState(() => _stage = _StartupUpdateStage.idle);
+        return;
+      }
+      if (!mounted) return;
+
       if (latest.updateAvailable &&
           _compareVersionStrings(latest.latestVersion, kAppVersion) > 0) {
         setState(() {
@@ -155,7 +164,8 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
     required void Function(double value, String text) onProgress,
   }) async {
     final dio = sl<Dio>();
-    final directory = await getTemporaryDirectory();
+    final directory =
+        await (await getTemporaryDirectory()).createTemp('leemon_update_');
     final safeVersion =
         latest.latestVersion.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
     final packageType = latest.packageType.trim().toLowerCase();
@@ -179,6 +189,7 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
     await dio.download(
       latest.downloadUrl,
       target.path,
+      options: Options(receiveTimeout: const Duration(seconds: 30)),
       onReceiveProgress: (received, total) {
         if (total <= 0) return;
         final ratio = received / total;
@@ -198,8 +209,8 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
     }
 
     if (latest.checksumSha256.isNotEmpty) {
-      final bytes = await target.readAsBytes();
-      final actual = sha256.convert(bytes).toString().toLowerCase();
+      final actual =
+          (await sha256.bind(target.openRead()).first).toString().toLowerCase();
       if (actual != latest.checksumSha256.toLowerCase()) {
         throw Exception('Контрольная сумма файла обновления не совпала.');
       }
@@ -223,7 +234,7 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
 
     final packageType = latest.packageType.trim().toLowerCase();
     if (packageType == 'zip') {
-      await _runZipUpdater(file);
+      await _runZipUpdater(file, latest.latestVersion);
       return;
     }
     if (packageType == 'exe') {
@@ -235,7 +246,8 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
         'Неподдерживаемый тип пакета обновления: ${latest.packageType}');
   }
 
-  Future<void> _runZipUpdater(File packageFile) async {
+  Future<void> _runZipUpdater(File packageFile, String version) async {
+    final cubit = context.read<PosCubit>();
     final updaterFile = _resolveUpdaterExecutable();
     if (!await updaterFile.exists()) {
       throw Exception(
@@ -244,22 +256,22 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
     }
 
     final targetDir = File(Platform.resolvedExecutable).parent.path;
-    await Process.start(
-      updaterFile.path,
-      [
-        '--zip',
-        packageFile.path,
-        '--target-dir',
-        targetDir,
-        '--app-exe',
-        _startupAppExeName,
-      ],
-      mode: ProcessStartMode.detached,
-      workingDirectory: updaterFile.parent.path,
+    await AppUpdateLifecycle.prepareZipUpdate(
+      packageFile: packageFile,
+      updaterFile: updaterFile,
+      targetDirectory: targetDir,
+      appExeName: _startupAppExeName,
+      version: version,
+      beforeShutdown: () async {
+        if (cubit.hasPaymentOperations) {
+          throw StateError('Завершите текущую оплату перед обновлением.');
+        }
+        await cubit.flushPendingState();
+      },
     );
 
     await Future.delayed(const Duration(milliseconds: 450));
-    await _exitAppFully();
+    await AppUpdateLifecycle.finishHandoff(_exitAppFully);
   }
 
   Future<void> _runSilentInstaller(File installerFile) async {
@@ -281,7 +293,7 @@ class _StartupUpdateGateState extends State<StartupUpdateGate> {
 
   File _resolveUpdaterExecutable() {
     final appDir = File(Platform.resolvedExecutable).parent.path;
-    return File(path.join(appDir, 'updater', _startupUpdaterExeName));
+    return AppUpdateLifecycle.resolveUpdater(appDir, _startupUpdaterExeName);
   }
 
   Future<void> _exitAppFully() async {

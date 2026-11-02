@@ -1,5 +1,6 @@
 import 'package:leemon_app/features/presentation/pages/invoices/invoice_issue_dialog.dart';
 import 'close_registered_checkout.dart';
+import 'remove_cart_item.dart';
 import 'package:flutter/material.dart';
 import 'marking_cart_observer.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -253,7 +254,8 @@ class _FooterDesktop extends StatelessWidget {
                                     productName: item.product.name,
                                   );
                                   if (!confirmed) return;
-                                  cubit.removeAt(idx);
+                                  if (!context.mounted) return;
+                                  await removeCartItem(context, idx);
                                 },
                                 onPlus: () async {
                                   final idx = cubit.state.selectedItemIndex;

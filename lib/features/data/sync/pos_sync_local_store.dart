@@ -1,6 +1,7 @@
 import 'package:leemon_app/core/models/fiscalization_mode.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -56,6 +57,7 @@ class PosSyncLocalStore {
   }
 
   sqlite.Database? _db;
+  Future<void>? _startupSessionRepair;
 
   void _recoverInterruptedOperations(sqlite.Database db) {
     // An ordinary checkout has already completed locally. Resume its background
@@ -93,6 +95,7 @@ class PosSyncLocalStore {
   Future<void> close() async {
     _db?.dispose();
     _db = null;
+    _startupSessionRepair = null;
   }
 
   Future<sqlite.Database> get _database async {
@@ -526,22 +529,20 @@ class PosSyncLocalStore {
         pos_key, device_id, cursor, last_bootstrap_at, last_pull_at, last_push_at, last_error
       ) VALUES (?, ?, 0, NULL, NULL, NULL, NULL)
       ON CONFLICT(pos_key) DO UPDATE SET
-        device_id = excluded.device_id
+        device_id = excluded.device_id, last_error = NULL
+      WHERE sync_state.device_id IS NOT excluded.device_id
+         OR sync_state.last_error IS NOT NULL
       ''',
       [posKey, deviceId],
     );
-    db.execute(
-      '''
-      UPDATE sync_state
-      SET device_id = ?, last_error = NULL
-      WHERE pos_key = ?
-      ''',
-      [deviceId, posKey],
-    );
-    db.execute(
-      "INSERT OR IGNORE INTO local_counters (name, value) VALUES ('sale_local_number', 0);",
-    );
-    await normalizeLegacySessionReferences();
+    // Repair legacy data once on this connection, rather than decoding the
+    // entire offline queue on every sale/push. New session bindings explicitly
+    // normalize their references in bindServerSessionId/upsertSession.
+    await (_startupSessionRepair ??= normalizeLegacySessionReferences()
+        .catchError((Object error, StackTrace stack) {
+      _startupSessionRepair = null;
+      Error.throwWithStackTrace(error, stack);
+    }));
   }
 
   Future<SyncStateSnapshot?> loadSyncState(String posKey) async {
@@ -836,11 +837,25 @@ class PosSyncLocalStore {
     final db = await _database;
     final rows = db
         .select('SELECT raw_json FROM products ORDER BY name COLLATE NOCASE;');
-    return rows
-        .map((row) => ProductModel.fromJson(
-            decodeJsonMap((row['raw_json'] ?? '{}').toString())))
+    final payloads = rows
+        .map((row) => (row['raw_json'] ?? '{}').toString())
         .toList(growable: false);
+    return _decodeProductPayloads(payloads);
   }
+
+  // Only send plain strings to the worker, never a native SQLite handle.
+  // Large catalogues must not decode thousands of products on the UI isolate.
+  static Future<List<ProductModel>> _decodeProductPayloads(
+      List<String> payloads) async {
+    if (payloads.length >= 250) {
+      return Isolate.run(() => _decodeProducts(payloads));
+    }
+    return _decodeProducts(payloads);
+  }
+
+  static List<ProductModel> _decodeProducts(List<String> payloads) => payloads
+      .map((raw) => ProductModel.fromJson(decodeJsonMap(raw)))
+      .toList(growable: false);
 
   Future<void> upsertLocalProduct(Map<String, dynamic> product) async {
     final db = await _database;
@@ -904,10 +919,9 @@ class PosSyncLocalStore {
       ORDER BY favorite_position, name COLLATE NOCASE, id
       ''',
     );
-    return rows
-        .map((row) => ProductModel.fromJson(
-            decodeJsonMap((row['raw_json'] ?? '{}').toString())))
-        .toList(growable: false);
+    return _decodeProductPayloads(rows
+        .map((row) => (row['raw_json'] ?? '{}').toString())
+        .toList(growable: false));
   }
 
   Future<List<PosCategory>> loadCategories() async {
@@ -1654,7 +1668,8 @@ class PosSyncLocalStore {
     });
   }
 
-  Future<void> deleteQueueOperation(String operationId) async {
+  Future<void> deleteQueueOperation(String operationId,
+      {bool force = false}) async {
     final db = await _database;
     _inTransaction<void>(db, () {
       final row = _firstRow(
@@ -1673,7 +1688,8 @@ class PosSyncLocalStore {
       final type = OutboxOperationTypeX.fromValue(_string(row['type'])) ??
           OutboxOperationType.sale;
       final clientId = _string(row['client_id']);
-      if ((type == OutboxOperationType.sale ||
+      if (!force &&
+          (type == OutboxOperationType.sale ||
               type == OutboxOperationType.refund ||
               type == OutboxOperationType.settlement) &&
           (row['status'] == 'acked' ||

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:leemon_app/features/presentation/widgets/remove_cart_item.dart';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -17,6 +18,7 @@ import 'package:leemon_app/features/presentation/pages/products/product_bloc/pro
 import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/features/presentation/pages/sales_history/widgets/refund_access_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/amount_keypad.dart';
+import 'package:leemon_app/features/presentation/widgets/app_scroll_behovir.dart';
 import 'package:leemon_app/features/presentation/widgets/conversion_product_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/footer_status.dart'
     show TouchDeleteDialog;
@@ -400,7 +402,9 @@ class _CartListState extends State<CartList> {
                   builder: (context, state) {
                     final visibleRows =
                         state.items.length < 6 ? 6 : state.items.length;
-                    return ListView.separated(
+                    return ScrollConfiguration(
+                      behavior: AppScrollBehavior(),
+                      child: ListView.separated(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(8),
                       itemCount: visibleRows,
@@ -470,8 +474,12 @@ class _CartListState extends State<CartList> {
                                                       it.product.name)
                                                   : '${_shortProductNameKeepEnd(it.product.name)} (${formatStockQty(it.product.quantity, it.product.measurementUnit)} ${it.product.measurementUnit})',
                                               style: const TextStyle(
-                                                fontSize: 20,
+                                                fontFamily: 'Inter',
+                                                fontSize: 22,
                                                 fontWeight: FontWeight.w600,
+                                                fontStyle: FontStyle.normal,
+                                                height: 1.4,
+                                                letterSpacing: 0.27,
                                               ),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
@@ -587,9 +595,9 @@ class _CartListState extends State<CartList> {
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
-                                                fontFamily: 'NotoSans',
+                                                fontFamily: 'NotoSansQuantity',
                                                 fontSize: 16,
-                                                fontWeight: FontWeight.w700,
+                                                fontWeight: FontWeight.w600,
                                                 height: 1.15,
                                               ),
                                             ),
@@ -633,7 +641,7 @@ class _CartListState extends State<CartList> {
                                     IconButton(
                                       icon: const Icon(Icons.close, size: 18),
                                       onPressed: () =>
-                                          context.read<PosCubit>().removeAt(i),
+                                          removeCartItem(context, i),
                                       tooltip: 'Удалить',
                                     ),
                                   ],
@@ -643,6 +651,7 @@ class _CartListState extends State<CartList> {
                           ),
                         );
                       },
+                      ),
                     );
                   },
                 ),
@@ -841,7 +850,7 @@ class _Header extends StatelessWidget {
         );
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
       child: Row(
         children: [
           const SizedBox(width: 65), // место под превью
@@ -2230,12 +2239,11 @@ class CartProductImage extends StatelessWidget {
     );
 
     if (url.isEmpty) {
-      return SizedBox(width: 40, height: 30, child: placeholder);
+      return SizedBox.square(dimension: 35, child: placeholder);
     }
 
-    return SizedBox(
-      width: 40,
-      height: 30,
+    return SizedBox.square(
+      dimension: 35,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: Image.network(

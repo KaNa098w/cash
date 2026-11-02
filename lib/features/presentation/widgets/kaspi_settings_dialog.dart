@@ -3,6 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:leemon_app/core/service/kaspi_payment_service.dart';
 import 'package:leemon_app/core/service/kaspi_terminal.dart';
+import 'package:leemon_app/core/service/kaspi_account_binding.dart';
+import 'package:leemon_app/core/di/api/service_locator.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_service.dart';
 import 'kaspi_dialog_style.dart';
 
 Future<void> showKaspiSettingsDialog(BuildContext context) => showDialog<void>(
@@ -12,8 +16,9 @@ Future<void> showKaspiSettingsDialog(BuildContext context) => showDialog<void>(
     );
 
 class KaspiSettingsDialog extends StatefulWidget {
-  const KaspiSettingsDialog({super.key, this.terminal});
+  const KaspiSettingsDialog({super.key, this.terminal, this.loadAccounts});
   final KaspiTerminal? terminal;
+  final Future<List<LocalAccount>> Function()? loadAccounts;
   @override
   State<KaspiSettingsDialog> createState() => _KaspiSettingsDialogState();
 }
@@ -22,6 +27,9 @@ class _KaspiSettingsDialogState extends State<KaspiSettingsDialog> {
   final _host = TextEditingController();
   bool _busy = true, _registering = false;
   String _registeredHost = '';
+  List<LocalAccount> _accounts = [];
+  String? _accountId;
+  bool _enabled = false, _bindingDirty = false;
   String _message = 'Читаем настройки терминала…';
   String _statusTitle = 'Подготовка';
   KaspiStatusTone _tone = KaspiStatusTone.busy;
@@ -44,7 +52,20 @@ class _KaspiSettingsDialogState extends State<KaspiSettingsDialog> {
   Future<void> _load() async {
     try {
       await _terminal.initialize();
+      final binding = await KaspiAccountBinding.load();
+      final accounts = widget.loadAccounts != null
+          ? await widget.loadAccounts!()
+          : sl.isRegistered<PosSyncService>()
+              ? await sl<PosSyncService>().loadAccounts()
+              : <LocalAccount>[];
       if (!mounted) return;
+      _accounts = accounts
+          .where((a) => a.visibleToPos && a.normalizedType == 'bank')
+          .toList();
+      _enabled = binding.enabled;
+      _accountId = _accounts.any((a) => a.id == binding.accountId)
+          ? binding.accountId
+          : null;
       _host.text = _terminal.host;
       _registeredHost = _terminal.host;
       _statusTitle = _terminal.registered
@@ -115,7 +136,7 @@ class _KaspiSettingsDialogState extends State<KaspiSettingsDialog> {
       _registeredHost = _terminal.host;
       _statusTitle = 'Терминал готов к оплате';
       _message =
-          'Связь установлена. При выборе счёта Kaspi сумма будет отправлена на этот терминал.';
+          'Связь установлена. Отправка суммы зависит от сохранённой привязки счёта ниже.';
       _tone = KaspiStatusTone.success;
     } catch (e) {
       if (!mounted) return;
@@ -275,10 +296,112 @@ class _KaspiSettingsDialogState extends State<KaspiSettingsDialog> {
         ])),
       ]));
 
+  Future<void> _saveBinding() async {
+    if (_busy || (_enabled && _accountId == null)) return;
+    setState(() => _busy = true);
+    try {
+      await KaspiAccountBinding(enabled: _enabled, accountId: _accountId)
+          .save();
+      if (!mounted) return;
+      _bindingDirty = false;
+      _statusTitle = 'Настройки сохранены';
+      _message = _enabled
+          ? 'Сумма отправляется только при оплате через выбранный счёт.'
+          : 'Отправка сумм на терминал отключена. Безналичные продажи работают без терминала.';
+      _tone = KaspiStatusTone.success;
+    } catch (e) {
+      if (!mounted) return;
+      _statusTitle = 'Не удалось сохранить';
+      _message = e is KaspiPaymentException
+          ? e.message
+          : 'Повторите сохранение настроек.';
+      _tone = KaspiStatusTone.error;
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  Widget _binding() => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFDCE4EB))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Expanded(
+                child: Text('Отправлять сумму на терминал',
+                    style: TextStyle(
+                        color: kaspiInk,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800))),
+            Switch(
+                key: const ValueKey('kaspi-binding-enabled'),
+                value: _enabled,
+                activeThumbColor: kaspiGreen,
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(() {
+                          _enabled = value;
+                          _bindingDirty = true;
+                        })),
+          ]),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+              key: ValueKey('kaspi-binding-account-$_accountId'),
+              initialValue: _accountId,
+              isExpanded: true,
+              itemHeight: 56,
+              decoration: const InputDecoration(
+                  labelText: 'Банковский счёт',
+                  border: OutlineInputBorder(),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 12, vertical: 16)),
+              hint: const Text('Выберите счёт'),
+              items: _accounts
+                  .map((a) => DropdownMenuItem(
+                      value: a.id,
+                      child: Text(a.name.isEmpty ? 'Счёт ${a.id}' : a.name,
+                          overflow: TextOverflow.ellipsis)))
+                  .toList(),
+              onChanged: _busy || !_enabled
+                  ? null
+                  : (value) => setState(() {
+                        _accountId = value;
+                        _bindingDirty = true;
+                      })),
+          const SizedBox(height: 10),
+          Text(
+              _accounts.isEmpty
+                  ? 'Нет банковских счетов. Выполните синхронизацию кассы.'
+                  : _bindingDirty
+                      ? 'Изменения ещё не сохранены.'
+                      : _enabled
+                          ? 'Только этот счёт будет отправлять сумму на терминал.'
+                          : 'По умолчанию отключено. Название счёта не влияет на подключение.',
+              style: const TextStyle(
+                  color: kaspiMuted, fontSize: 12, height: 1.4)),
+          const SizedBox(height: 12),
+          SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                  key: const ValueKey('kaspi-binding-save'),
+                  onPressed: _busy ||
+                          !_bindingDirty ||
+                          (_enabled && _accountId == null)
+                      ? null
+                      : _saveBinding,
+                  icon: const Icon(Icons.save_outlined, size: 20),
+                  label: const Text('Сохранить'),
+                  style: kaspiPrimaryButton())),
+        ]),
+      );
+
   Widget _guide() => Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _binding(),
+            const SizedBox(height: 16),
             KaspiStatusCard(
                 title: _statusTitle, message: _message, tone: _tone),
             const SizedBox(height: 24),
@@ -300,7 +423,7 @@ class _KaspiSettingsDialogState extends State<KaspiSettingsDialog> {
               SizedBox(width: 9),
               Expanded(
                   child: Text(
-                      'Сумма передаётся при выборе банковского счёта Kaspi. При смешанной оплате — только безналичная часть.',
+                      'Терминал работает только для сохранённого счёта при включённой отправке. При смешанной оплате передаётся только безналичная часть.',
                       style: TextStyle(
                           color: kaspiMuted, fontSize: 12, height: 1.5))),
             ]),

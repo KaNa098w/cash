@@ -1,4 +1,5 @@
 import 'package:leemon_app/core/service/fiscal_receipt_service.dart';
+import 'package:leemon_app/core/service/app_update_lifecycle.dart';
 // lib/main.dart
 import 'dart:async';
 import 'dart:convert' show jsonDecode, utf8;
@@ -49,7 +50,8 @@ final _AppShutdownCoordinator _shutdownCoordinator = _AppShutdownCoordinator();
 bool _appUiStarted = false;
 bool _startupFailureUiShown = false;
 
-Future<void> main() async {
+Future<void> main(List<String> arguments) async {
+  AppUpdateLifecycle.configureStartup(arguments);
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     FlutterError.onError = (details) {
@@ -167,6 +169,9 @@ Future<void> _bootstrapApp() async {
     ),
   );
   _appUiStarted = true;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(AppUpdateLifecycle.confirmStartup());
+  });
 
   if (isDesktop && kioskListener != null) {
     unawaited(_showDesktopWindow(kioskListener.mode));

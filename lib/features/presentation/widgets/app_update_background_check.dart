@@ -1,9 +1,12 @@
 import 'dart:io';
+import 'package:leemon_app/core/service/app_update_lifecycle.dart';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'package:leemon_app/core/di/api/app_version.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/app_update_response.dart';
@@ -33,6 +36,10 @@ Future<void> checkForAppUpdateAfterCashierLogin(BuildContext context) async {
     if (!context.mounted) return;
     if (!latest.updateAvailable) return;
     if (_compareVersionStrings(latest.latestVersion, kAppVersion) <= 0) return;
+    if (await AppUpdateLifecycle.shouldSkipAutomatic(latest.latestVersion)) {
+      return;
+    }
+    if (!context.mounted) return;
 
     await showDialog<void>(
       context: context,
@@ -86,7 +93,7 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
         _status = 'Устанавливаем обновление...';
       });
 
-      await _installAndRestartApp(file, widget.latest);
+      await _installAndRestartApp(file, widget.latest, context);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -100,130 +107,133 @@ class _UpdateAvailableDialogState extends State<_UpdateAvailableDialog> {
   Widget build(BuildContext context) {
     final latest = widget.latest;
 
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Доступно обновление',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                  color: Color(0xFF111827),
-                ),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Касса уже открыта. Можно обновить приложение сейчас или позже.',
-                style: TextStyle(
-                  fontSize: 14,
-                  height: 1.45,
-                  color: Color(0xFF4B5563),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  _VersionPill(
-                    label: 'Сейчас',
-                    version: kAppVersion,
-                    color: const Color(0xFF6B7280),
-                  ),
-                  const SizedBox(width: 10),
-                  const Icon(
-                    Icons.arrow_forward_rounded,
-                    color: Color(0xFF94A3B8),
-                  ),
-                  const SizedBox(width: 10),
-                  _VersionPill(
-                    label: 'Новая',
-                    version: latest.latestVersion,
-                    color: const Color(0xFF2563EB),
-                  ),
-                ],
-              ),
-              if (latest.releaseNotes.trim().isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
-                  ),
-                  child: Text(
-                    latest.releaseNotes.trim(),
-                    style: const TextStyle(
-                      fontSize: 13,
-                      height: 1.45,
-                      color: Color(0xFF374151),
-                    ),
-                  ),
-                ),
-              ],
-              if (_installing) ...[
-                const SizedBox(height: 18),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: LinearProgressIndicator(
-                    minHeight: 12,
-                    value: _progress.clamp(0.0, 1.0),
-                    backgroundColor: const Color(0xFFE5E7EB),
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                      Color(0xFF2563EB),
-                    ),
+    return PopScope(
+      canPop: !_installing,
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Доступно обновление',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF111827),
                   ),
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  _status,
-                  style: const TextStyle(
+                const Text(
+                  'Касса уже открыта. Можно обновить приложение сейчас или позже.',
+                  style: TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1F2937),
+                    height: 1.45,
+                    color: Color(0xFF4B5563),
                   ),
                 ),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: 14),
-                Text(
-                  _error!,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFFB91C1C),
-                    height: 1.4,
-                  ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    _VersionPill(
+                      label: 'Сейчас',
+                      version: kAppVersion,
+                      color: const Color(0xFF6B7280),
+                    ),
+                    const SizedBox(width: 10),
+                    const Icon(
+                      Icons.arrow_forward_rounded,
+                      color: Color(0xFF94A3B8),
+                    ),
+                    const SizedBox(width: 10),
+                    _VersionPill(
+                      label: 'Новая',
+                      version: latest.latestVersion,
+                      color: const Color(0xFF2563EB),
+                    ),
+                  ],
                 ),
-              ],
-              const SizedBox(height: 22),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (!latest.isMandatory)
-                    TextButton(
-                      onPressed: _installing
-                          ? null
-                          : () => Navigator.of(context).pop(),
-                      child: const Text('Позже'),
+                if (latest.releaseNotes.trim().isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE5E7EB)),
                     ),
-                  const SizedBox(width: 10),
-                  FilledButton(
-                    onPressed: _installing ? null : _install,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF2563EB),
+                    child: Text(
+                      latest.releaseNotes.trim(),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        height: 1.45,
+                        color: Color(0xFF374151),
+                      ),
                     ),
-                    child: Text(_installing ? 'Обновляем...' : 'Обновить'),
                   ),
                 ],
-              ),
-            ],
+                if (_installing) ...[
+                  const SizedBox(height: 18),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      minHeight: 12,
+                      value: _progress.clamp(0.0, 1.0),
+                      backgroundColor: const Color(0xFFE5E7EB),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        Color(0xFF2563EB),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    _status,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1F2937),
+                    ),
+                  ),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    _error!,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFFB91C1C),
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 22),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (!latest.isMandatory)
+                      TextButton(
+                        onPressed: _installing
+                            ? null
+                            : () => Navigator.of(context).pop(),
+                        child: const Text('Позже'),
+                      ),
+                    const SizedBox(width: 10),
+                    FilledButton(
+                      onPressed: _installing ? null : _install,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB),
+                      ),
+                      child: Text(_installing ? 'Обновляем...' : 'Обновить'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -284,7 +294,8 @@ Future<File> _downloadUpdatePackage(
   required void Function(double value, String text) onProgress,
 }) async {
   final dio = sl<Dio>();
-  final directory = await getTemporaryDirectory();
+  final directory =
+      await (await getTemporaryDirectory()).createTemp('leemon_update_');
   final safeVersion =
       latest.latestVersion.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
   final packageType = latest.packageType.trim().toLowerCase();
@@ -305,6 +316,7 @@ Future<File> _downloadUpdatePackage(
   await dio.download(
     latest.downloadUrl,
     target.path,
+    options: Options(receiveTimeout: const Duration(seconds: 30)),
     onReceiveProgress: (received, total) {
       if (total <= 0) return;
       final ratio = received / total;
@@ -321,8 +333,8 @@ Future<File> _downloadUpdatePackage(
   }
 
   if (latest.checksumSha256.isNotEmpty) {
-    final bytes = await target.readAsBytes();
-    final actual = sha256.convert(bytes).toString().toLowerCase();
+    final actual =
+        (await sha256.bind(target.openRead()).first).toString().toLowerCase();
     if (actual != latest.checksumSha256.toLowerCase()) {
       throw Exception('Контрольная сумма файла обновления не совпала.');
     }
@@ -331,14 +343,15 @@ Future<File> _downloadUpdatePackage(
   return target;
 }
 
-Future<void> _installAndRestartApp(File file, AppUpdateResponse latest) async {
+Future<void> _installAndRestartApp(
+    File file, AppUpdateResponse latest, BuildContext context) async {
   if (!file.existsSync()) {
     throw Exception('Файл обновления не найден на диске.');
   }
 
   final packageType = latest.packageType.trim().toLowerCase();
   if (packageType == 'zip') {
-    await _runZipUpdater(file);
+    await _runZipUpdater(file, latest.latestVersion, context);
     return;
   }
   if (packageType == 'exe') {
@@ -351,29 +364,31 @@ Future<void> _installAndRestartApp(File file, AppUpdateResponse latest) async {
   );
 }
 
-Future<void> _runZipUpdater(File packageFile) async {
+Future<void> _runZipUpdater(
+    File packageFile, String version, BuildContext context) async {
+  final cubit = context.read<PosCubit>();
   final updaterFile = _resolveUpdaterExecutable();
   if (!await updaterFile.exists()) {
     throw Exception('Updater не найден: ${updaterFile.path}');
   }
 
   final targetDir = File(Platform.resolvedExecutable).parent.path;
-  await Process.start(
-    updaterFile.path,
-    [
-      '--zip',
-      packageFile.path,
-      '--target-dir',
-      targetDir,
-      '--app-exe',
-      _appExeName,
-    ],
-    mode: ProcessStartMode.detached,
-    workingDirectory: updaterFile.parent.path,
+  await AppUpdateLifecycle.prepareZipUpdate(
+    packageFile: packageFile,
+    updaterFile: updaterFile,
+    targetDirectory: targetDir,
+    appExeName: _appExeName,
+    version: version,
+    beforeShutdown: () async {
+      if (cubit.hasPaymentOperations) {
+        throw StateError('Завершите текущую оплату перед обновлением.');
+      }
+      await cubit.flushPendingState();
+    },
   );
 
   await Future.delayed(const Duration(milliseconds: 350));
-  await _exitAppFully();
+  await AppUpdateLifecycle.finishHandoff(_exitAppFully);
 }
 
 Future<void> _runSilentInstaller(File installerFile) async {
@@ -395,7 +410,7 @@ Future<void> _runSilentInstaller(File installerFile) async {
 
 File _resolveUpdaterExecutable() {
   final appDir = File(Platform.resolvedExecutable).parent.path;
-  return File(path.join(appDir, 'updater', _updaterExeName));
+  return AppUpdateLifecycle.resolveUpdater(appDir, _updaterExeName);
 }
 
 Future<void> _exitAppFully() async {

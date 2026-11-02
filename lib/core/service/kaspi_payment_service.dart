@@ -14,17 +14,17 @@ class KaspiPaymentException implements Exception {
   String toString() => message;
 }
 
-/// Kaspi accounts are identified by their displayed name, never their logo URL.
-bool isKaspiAccountName(String name) =>
-    RegExp(r'kaspi|каспи', caseSensitive: false).hasMatch(name);
-
-double kaspiPaymentAmount(List<Map<String, dynamic>> payments) => payments
-    .where((p) =>
-        p['account'] is Map &&
-        (p['account']['type'] ?? '').toString().trim().toLowerCase() ==
-            'bank' &&
-        isKaspiAccountName((p['account']['name'] ?? '').toString()))
-    .fold(0.0, (sum, p) => sum + (p['amount'] as num).toDouble());
+double kaspiPaymentAmount(List<Map<String, dynamic>> payments,
+        {String? accountId}) =>
+    (accountId ?? '').trim().isEmpty
+        ? 0
+        : payments
+            .where((p) =>
+                p['account_id'] == accountId &&
+                p['account'] is Map &&
+                (p['account']['type'] ?? '').toString().trim().toLowerCase() ==
+                    'bank')
+            .fold(0.0, (sum, p) => sum + (p['amount'] as num).toDouble());
 
 /// Durable payment journal. A request with a lost response must never be replayed.
 /// Checkout payloads remain frozen until the backend has accepted the sale.
@@ -45,11 +45,20 @@ class KaspiPaymentService {
   final int maxPolls;
   final DateTime Function() now;
   bool _busy = false;
+  int _generation = 0;
   static const activeKey = 'kaspi.activePayment';
+
+  Future<void> abandon(String saleId) async {
+    _generation++;
+    _busy = false;
+    await write('kaspi.payment.$saleId', jsonEncode({'status': 'fail'}));
+    if (await read(activeKey) == saleId) await write(activeKey, '');
+  }
 
   Future<Map<String, dynamic>> pay({
     required String saleId,
     required double amount,
+    bool freshAttempt = false,
     void Function(String message)? onProgress,
   }) async {
     if (_busy) {
@@ -60,12 +69,28 @@ class KaspiPaymentService {
           'Kaspi принимает только целую сумму в тенге. Исправьте сумму безналичной оплаты.');
     }
     _busy = true;
+    final generation = _generation;
+    Future<Map<String, dynamic>> send(
+        String path, Map<String, dynamic> params) async {
+      if (generation != _generation) {
+        throw const KaspiPaymentException('Окно оплаты закрыто',
+            confirmedFailure: true);
+      }
+      final result = await request(path, params);
+      if (generation != _generation) {
+        throw const KaspiPaymentException('Окно оплаты закрыто',
+            confirmedFailure: true);
+      }
+      return result;
+    }
+
     try {
       final key = 'kaspi.payment.$saleId';
       final raw = await read(key);
       var record = raw == null
           ? <String, dynamic>{}
           : Map<String, dynamic>.from(jsonDecode(raw));
+      if (freshAttempt && record['status'] != 'success') record = {};
       if (record.isNotEmpty &&
           record['amount'] != amount &&
           record['status'] != 'fail') {
@@ -79,7 +104,10 @@ class KaspiPaymentService {
         return Map<String, dynamic>.from(record['result']);
       }
       final active = await read(activeKey);
-      if (active != null && active.isNotEmpty && active != saleId) {
+      if (!freshAttempt &&
+          active != null &&
+          active.isNotEmpty &&
+          active != saleId) {
         throw const KaspiPaymentException(
             'Есть незавершённая оплата Kaspi в другой корзине. Сначала проверьте её результат.');
       }
@@ -96,11 +124,15 @@ class KaspiPaymentService {
         onProgress?.call('Отправка суммы на Kaspi…');
         Map<String, dynamic> started;
         try {
-          started = await request(
+          started = await send(
               '/v2/payment', {'amount': amount.toInt(), 'owncheque': false});
         } catch (_) {
           throw const KaspiPaymentException(
               'Нет ответа от Kaspi. Проверьте терминал. Повторная отправка заблокирована до сверки.');
+        }
+        if (started['statusCode'] is! int) {
+          throw const KaspiPaymentException(
+              'Kaspi вернул неполный ответ. Проверьте историю терминала; повторная отправка заблокирована до сверки.');
         }
         if (started['statusCode'] != 0) {
           record['status'] = 'fail';
@@ -123,7 +155,7 @@ class KaspiPaymentService {
       for (var i = 0; i < maxPolls; i++) {
         onProgress?.call('Ожидаем оплату на Kaspi. QR или карта.');
         final response =
-            await request('/v2/status', {'processId': record['processId']});
+            await send('/v2/status', {'processId': record['processId']});
         if (response['statusCode'] != 0) {
           throw KaspiPaymentException(
               'Не удалось проверить Kaspi: ${response['errorText'] ?? 'ошибка'}. Номер операции сохранён; повторите проверку.');
@@ -135,8 +167,8 @@ class KaspiPaymentService {
           if (last == null || now().difference(last).inSeconds >= 10) {
             record['actualizedAt'] = now().toIso8601String();
             await write(key, jsonEncode(record));
-            final actualized = await request(
-                '/v2/actualize', {'processId': record['processId']});
+            final actualized =
+                await send('/v2/actualize', {'processId': record['processId']});
             if (actualized['statusCode'] == 0) {
               result = Map<String, dynamic>.from(actualized['data'] ?? {});
             }
@@ -156,7 +188,7 @@ class KaspiPaymentService {
       throw const KaspiPaymentException(
           'Kaspi ещё не подтвердил результат. Номер операции сохранён. Повторите проверку оплаты.');
     } finally {
-      _busy = false;
+      if (generation == _generation) _busy = false;
     }
   }
 }

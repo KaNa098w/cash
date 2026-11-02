@@ -37,30 +37,71 @@ void main() {
         response(path == '/v2/payment' ? 'wait' : 'success');
   });
 
-  test('only the selected Kaspi bank portion is sent, not cash or another bank',
+  test('only the explicitly bound bank ID is sent, regardless of account name',
       () {
     expect(
         kaspiPaymentAmount([
           {
             'amount': 200,
+            'account_id': 'cash',
             'account': {'name': 'Kaspi наличные', 'type': 'CASH'}
           },
           {
             'amount': 300,
-            'account': {'name': 'Kaspi Bank', 'type': 'BANK'}
+            'account_id': 'bound',
+            'account': {'name': 'Расчётный счёт', 'type': 'BANK'}
           },
           {
             'amount': 400,
-            'account': {'name': 'Halyk', 'type': 'BANK'}
+            'account_id': 'other',
+            'account': {'name': 'Kaspi Bank', 'type': 'BANK'}
           },
-        ]),
+        ], accountId: 'bound'),
         300);
-    expect(isKaspiAccountName('КАСПИ'), isTrue);
     expect(
         kaspiPaymentAmount([
           {'amount': 100}
         ]),
         0);
+  });
+
+  test('fresh payment ignores stale basket lock and uncompleted start',
+      () async {
+    disk[KaspiPaymentService.activeKey] = 'old-basket';
+    disk['kaspi.payment.new'] =
+        jsonEncode({'amount': 100, 'status': 'starting'});
+    final result =
+        await service().pay(saleId: 'new', amount: 200, freshAttempt: true);
+    expect(result['status'], 'success');
+    expect(calls, ['/v2/payment', '/v2/status']);
+    expect(disk[KaspiPaymentService.activeKey], '');
+  });
+
+  test('closing an attempt permits another basket and ignores late results',
+      () async {
+    final pending = Completer<Map<String, dynamic>>();
+    final started = Completer<void>();
+    transport = (path, params) {
+      if (!started.isCompleted) {
+        started.complete();
+        return pending.future;
+      }
+      return Future.value(response(path == '/v2/payment' ? 'wait' : 'success'));
+    };
+    final payments = service();
+    final first =
+        payments.pay(saleId: 'first', amount: 100, freshAttempt: true);
+    final stopped = expectLater(first, throwsA(isA<KaspiPaymentException>()));
+    await started.future;
+    await payments.abandon('first');
+    final second =
+        await payments.pay(saleId: 'second', amount: 200, freshAttempt: true);
+    expect(second['status'], 'success');
+    pending.complete(response('wait'));
+    await stopped;
+    expect(jsonDecode(disk['kaspi.payment.first']!)['status'], 'fail');
+    expect(jsonDecode(disk['kaspi.payment.second']!)['status'], 'success');
+    expect(disk[KaspiPaymentService.activeKey], '');
   });
 
   test('success is durable and retry after restart never starts a new payment',
@@ -174,6 +215,20 @@ void main() {
     await expectLater(service().pay(saleId: 'sale1', amount: 200),
         throwsA(isA<KaspiPaymentException>()));
     expect(calls.where((p) => p == '/v2/payment').length, 1);
+  });
+
+  test('missing statusCode never permits resending an uncertain payment',
+      () async {
+    transport = (_, __) async => {
+          'data': {'processId': '123'}
+        };
+    await expectLater(
+        service().pay(saleId: 'sale1', amount: 100),
+        throwsA(isA<KaspiPaymentException>()
+            .having((e) => e.confirmedFailure, 'confirmed failure', isFalse)));
+    await expectLater(service().pay(saleId: 'sale1', amount: 100),
+        throwsA(isA<KaspiPaymentException>()));
+    expect(calls, ['/v2/payment']);
   });
 
   test('missing processId leaves the start request locked', () async {

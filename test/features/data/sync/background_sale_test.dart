@@ -20,7 +20,7 @@ void main() {
     final started = Completer<void>();
     final response = Completer<void>();
     remote.handler = (payload) async {
-      started.complete();
+      if (!started.isCompleted) started.complete();
       await response.future;
       return accepted(payload, codes: []);
     };
@@ -47,13 +47,29 @@ void main() {
           isNotNull);
       await started.future.timeout(const Duration(seconds: 2));
       expect(response.isCompleted, isFalse);
+      // The first HTTP request is still blocked. A different customer's sale
+      // must nevertheless commit locally without waiting for the outbox.
+      final nextSale = sale().copyWith(localId: 'next-customer-sale');
+      final nextResult = await repo.createSale(
+        key: 'KEY',
+        deviceId: 'DEVICE',
+        sale: nextSale,
+        payments: [
+          {'account_id': 'ACCOUNT', 'amount': 360}
+        ],
+        requireOnline: false,
+      ).timeout(const Duration(seconds: 2));
+      expect(nextResult.result, CreateSaleResult.queued);
+      expect(response.isCompleted, isFalse);
+      expect(database.select('SELECT completed FROM sales'), hasLength(2));
       response.complete();
       await sync.pushPending(key: 'KEY', deviceId: 'DEVICE');
       expect(
           (await store.findOperation(OutboxOperationType.sale, sale().localId))!
               .status,
           OutboxOperationStatus.acked);
-      expect(remote.requests, hasLength(1));
+      expect(remote.requests.where((p) => p['client_sale_id'] == sale().localId),
+          hasLength(1));
     } finally {
       if (!response.isCompleted) response.complete();
       await sync.pushPending(key: 'KEY', deviceId: 'DEVICE');

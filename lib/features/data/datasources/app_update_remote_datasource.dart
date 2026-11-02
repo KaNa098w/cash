@@ -14,6 +14,7 @@ class AppUpdateRemoteDataSource {
     try {
       final response = await _dio.get(
         '/app-updates/latest',
+        options: Options(receiveTimeout: const Duration(seconds: 15)),
         queryParameters: <String, Object?>{
           'channel': channel,
           'current_version': currentVersion,

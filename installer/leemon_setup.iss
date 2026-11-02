@@ -1,7 +1,9 @@
 #define MyAppName "Leemon POS"
 #define MyAppExeName "Leemon.exe"
 #define MyAppPublisher "Leemon"
+#ifndef MyAppVersion
 #define MyAppVersion "1.0.8"
+#endif
 #define WindowsBuildDir "..\build\windows\x64\runner\Release"
 #define UpdaterBuildDir "..\updater\bin\Release\net8.0-windows\win-x64\publish"
 
@@ -30,7 +32,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#WindowsBuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#UpdaterBuildDir}\Leemon.Updater.exe"; DestDir: "{app}\updater"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#UpdaterBuildDir}\Leemon.Updater.exe"; DestDir: "{app}\updater"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"

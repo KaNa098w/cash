@@ -209,7 +209,7 @@ class FooterControlsOnly extends StatelessWidget {
                             style: TextStyle(
                               fontFamily: 'NotoSans',
                               fontSize: s(18),
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w700,
                               color: onPayCard == null
                                   ? const Color(0xFF5F6368)
                                   : Colors.black,
@@ -244,7 +244,7 @@ class FooterControlsOnly extends StatelessWidget {
                           style: TextStyle(
                             fontFamily: 'NotoSans',
                             fontSize: s(18),
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w700,
                             color: quickForegroundColor,
                             height: 1,
                             letterSpacing: 0,
@@ -318,24 +318,111 @@ class _SmallBtn extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      height: height,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          elevation: 0,
-          padding: EdgeInsets.zero,
-          minimumSize: Size.zero,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          backgroundColor: background,
-          disabledBackgroundColor: background,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(radius),
-          ),
-        ),
+  Widget build(BuildContext context) => _DepthButton(
+        width: width,
+        height: height,
+        radius: radius,
+        background: background,
+        disabledBackground: background,
+        onTap: onTap,
         child: child,
+      );
+}
+
+class _DepthButton extends StatefulWidget {
+  const _DepthButton(
+      {required this.width,
+      required this.height,
+      required this.radius,
+      required this.background,
+      required this.disabledBackground,
+      required this.child,
+      this.onTap});
+  final double width, height, radius;
+  final Color background, disabledBackground;
+  final Widget child;
+  final VoidCallback? onTap;
+
+  @override
+  State<_DepthButton> createState() => _DepthButtonState();
+}
+
+class _DepthButtonState extends State<_DepthButton> {
+  bool _pressed = false;
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onTap != null;
+    final pressed = enabled && _pressed;
+    final color = enabled ? widget.background : widget.disabledBackground;
+    final radius = BorderRadius.circular(widget.radius);
+    final depth = enabled ? 4.0 : 1.0;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 110),
+        width: widget.width,
+        height: widget.height,
+        decoration: BoxDecoration(
+          color: Color.lerp(color, Colors.black, enabled ? 0.23 : 0.08),
+          borderRadius: radius,
+          boxShadow: enabled
+              ? [
+                  BoxShadow(
+                    color:
+                        Colors.black.withValues(alpha: pressed ? 0.08 : 0.15),
+                    blurRadius: pressed ? 3 : 8,
+                    offset: Offset(0, pressed ? 1 : 4),
+                  )
+                ]
+              : const [],
+        ),
+        child: Stack(children: [
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 110),
+            curve: Curves.easeOutCubic,
+            top: pressed ? depth : 0,
+            bottom: pressed ? 0 : depth,
+            left: 0,
+            right: 0,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: radius,
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color.lerp(color, Colors.white, enabled ? 0.10 : 0.03)!,
+                    color,
+                    Color.lerp(color, Colors.black, enabled ? 0.035 : 0.015)!,
+                  ],
+                  stops: const [0, 0.45, 1],
+                ),
+                border: Border.all(
+                  color: _focused && enabled
+                      ? const Color(0xFF223D58)
+                      : Colors.white.withValues(alpha: enabled ? 0.23 : 0.08),
+                  width: _focused && enabled ? 2 : 1,
+                ),
+              ),
+              child: Material(
+                type: MaterialType.transparency,
+                borderRadius: radius,
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: widget.onTap,
+                  borderRadius: radius,
+                  onHighlightChanged: (value) =>
+                      setState(() => _pressed = value),
+                  onFocusChange: (value) => setState(() => _focused = value),
+                  child: Center(child: widget.child),
+                ),
+              ),
+            ),
+          ),
+        ]),
       ),
     );
   }
@@ -431,31 +518,24 @@ class _PayBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return _DepthButton(
       width: width,
       height: height,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          elevation: 0,
-          backgroundColor: backgroundColor ?? _btnGreen,
-          disabledBackgroundColor: disabledBackgroundColor ?? _btnDisabled,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(radius),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'NotoSans',
-            fontSize: fontSize,
-            fontWeight: FontWeight.w700,
-            color: onTap == null
-                ? foregroundColor.withValues(alpha: 0.7)
-                : foregroundColor,
-            height: 1,
-            letterSpacing: 0,
-          ),
+      radius: radius,
+      background: backgroundColor ?? _btnGreen,
+      disabledBackground: disabledBackgroundColor ?? _btnDisabled,
+      onTap: onTap,
+      child: Text(
+        label,
+        style: TextStyle(
+          fontFamily: 'NotoSans',
+          fontSize: fontSize,
+          fontWeight: FontWeight.w700,
+          color: onTap == null
+              ? foregroundColor.withValues(alpha: 0.7)
+              : foregroundColor,
+          height: 1,
+          letterSpacing: 0,
         ),
       ),
     );

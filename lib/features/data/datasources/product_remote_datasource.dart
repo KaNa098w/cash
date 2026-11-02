@@ -1,10 +1,42 @@
 import 'package:dio/dio.dart';
 import 'package:leemon_app/core/models/product_response.dart';
+import 'package:leemon_app/core/models/product_creation_form.dart';
 
 class ProductRemoteDataSource {
   final Dio _dio;
 
   ProductRemoteDataSource(this._dio);
+
+  Future<ProductModel> createFullProduct(
+      {required String key,
+      required String deviceId,
+      required String userId,
+      required ProductCreationForm form,
+      String? managerAccessKey}) async {
+    if (key.trim().isEmpty ||
+        deviceId.trim().isEmpty ||
+        userId.trim().isEmpty) {
+      throw StateError('Не найдены данные кассы или активного пользователя');
+    }
+    final payload = form.toRequest();
+    final response = await _dio.post(
+        '/organizations/pos/${Uri.encodeComponent(key)}/products',
+        data: {...payload, 'device_id': deviceId, 'user_id': userId},
+        options: (managerAccessKey ?? '').trim().isEmpty
+            ? null
+            : Options(
+                headers: {'X-Return-Access-Key': managerAccessKey!.trim()}));
+    final body = response.data;
+    if (body is! Map || body['data'] is! Map) {
+      throw StateError('Сервер не вернул созданный товар');
+    }
+    final product = ProductModel.fromJson(
+        {...payload, ...Map<String, dynamic>.from(body['data'])});
+    if ((product.id ?? '').isEmpty) {
+      throw StateError('Сервер не вернул идентификатор товара');
+    }
+    return product;
+  }
 
   Future<PaginatedProducts> getProducts({
     int page = 1,

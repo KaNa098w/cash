@@ -1,5 +1,6 @@
 import 'package:leemon_app/features/data/datasources/invoices_remote_datasource.dart';
 import 'package:dio/dio.dart';
+import 'package:leemon_app/features/data/datasources/supplies_remote_datasource.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:leemon_app/core/service/pos_diagnostics_service.dart';
@@ -47,6 +48,10 @@ import 'package:leemon_app/features/domain/repositories/sale_repository.dart';
 final sl = GetIt.instance;
 
 Future<void> initDependencies() async {
+  if (!sl.isRegistered<SuppliesRemoteDataSource>()) {
+    sl.registerLazySingleton<SuppliesRemoteDataSource>(
+        () => SuppliesRemoteDataSource(sl<Dio>()));
+  }
   // ✅ store для deviceId
   if (!sl.isRegistered<DeviceIdStore>()) {
     sl.registerLazySingleton<DeviceIdStore>(() => DeviceIdStore());

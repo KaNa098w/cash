@@ -307,8 +307,8 @@ class PosSyncService {
     );
   }
 
-  Future<void> deleteQueueOperation(String operationId) {
-    return _localStore.deleteQueueOperation(operationId);
+  Future<void> deleteQueueOperation(String operationId, {bool force = false}) {
+    return _localStore.deleteQueueOperation(operationId, force: force);
   }
 
   Future<void> rebindQueuedOperationsToCurrentContext({
@@ -817,7 +817,9 @@ class PosSyncService {
       _syncedController.add(ackedCount);
       _notifySalesHistoryChanged();
       await _localStore.touchLastPush(key);
-      await _runBackgroundPull(key: key, deviceId: deviceId);
+      // A slow catalogue/history pull must not hold the outbox sender busy.
+      // Reconciliation before replaying an uncertain sale is still awaited.
+      unawaited(_runBackgroundPull(key: key, deviceId: deviceId));
     }
   }
 
@@ -1664,7 +1666,7 @@ class PosSyncService {
     required String deviceId,
     int limit = 5,
   }) {
-    if (!_backgroundLoopsActive) return Future<void>.value();
+    if (_disposed || !_backgroundLoopsActive) return Future<void>.value();
     return _ignoreBackgroundSyncErrors(
       pushPending(key: key, deviceId: deviceId, limit: limit),
     );
@@ -1674,7 +1676,7 @@ class PosSyncService {
     required String key,
     required String deviceId,
   }) {
-    if (!_backgroundLoopsActive) return Future<void>.value();
+    if (_disposed || !_backgroundLoopsActive) return Future<void>.value();
     return _ignoreBackgroundSyncErrors(
       pullOnce(key: key, deviceId: deviceId),
     );
@@ -1692,7 +1694,7 @@ class PosSyncService {
   }
 
   void _throwIfSyncCancelled() {
-    if (_syncCancelRequested) throw const _SyncCancelledException();
+    if (_disposed || _syncCancelRequested) throw const _SyncCancelledException();
   }
 
   Future<String> resolveServerSessionId(String sessionId) {

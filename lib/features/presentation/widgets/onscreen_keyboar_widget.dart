@@ -20,44 +20,81 @@ class OnScreenKeyboardSheet extends StatelessWidget {
 
     return Padding(
       padding: EdgeInsets.only(bottom: viewInsets.bottom),
-      child: SafeArea(
-        top: false,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: const BoxDecoration(
-            color: Color(0xFFE2E6EF),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const _Grabber(), 
-              const SizedBox(height: 10),
-              Row(
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        heightFactor: 1,
+        child: SizedBox(
+          width: double.infinity,
+          child: ExcludeFocus(
+              child: SafeArea(
+            top: false,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F3),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(24)),
+                border: Border.all(color: const Color(0xFFDCE6E0)),
+                boxShadow: const [
+                  BoxShadow(
+                      color: Color(0x240E3023),
+                      blurRadius: 32,
+                      offset: Offset(0, -6))
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.keyboard_alt_outlined),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Клавиатура',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  const _Grabber(),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(9),
+                        decoration: BoxDecoration(
+                            color: const Color(0xFFE0EDE6),
+                            borderRadius: BorderRadius.circular(12)),
+                        child: const Icon(Icons.keyboard_alt_outlined,
+                            color: Color(0xFF15966A), size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                            Text('Экранная клавиатура',
+                                style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF213D31))),
+                            SizedBox(height: 2),
+                            Text('РУС / ҚАЗ / ENG',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    letterSpacing: 0.8,
+                                    color: Color(0xFF6F8378))),
+                          ])),
+                      IconButton(
+                        tooltip: 'Закрыть',
+                        onPressed: onClose,
+                        style: IconButton.styleFrom(
+                            minimumSize: const Size(48, 48),
+                            backgroundColor: Colors.white,
+                            foregroundColor: const Color(0xFF62776B)),
+                        icon: const Icon(Icons.close_rounded, size: 26),
+                      ),
+                    ],
                   ),
-                  const Spacer(),
-                  IconButton(
-                    
-                    tooltip: 'Закрыть',
-                    onPressed: onClose,
-                    icon: const Icon(Icons.close),
+                  const SizedBox(height: 8),
+                  _Keyboard(
+                    controllerGetter: controllerGetter,
+                    onEnter: onEnter,
+                    appendOnFullSelection: appendOnFullSelection,
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              _Keyboard(
-                controllerGetter: controllerGetter,
-                onEnter: onEnter,
-                appendOnFullSelection: appendOnFullSelection,
-              ),
-            ],
-          ),
+            ),
+          )),
         ),
       ),
     );
@@ -73,7 +110,7 @@ class _Grabber extends StatelessWidget {
       width: 46,
       height: 5,
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.12),
+        color: const Color(0xFFCBD8D0),
         borderRadius: BorderRadius.circular(99),
       ),
     );
@@ -228,12 +265,16 @@ class _KeyboardState extends State<_Keyboard> {
     return Expanded(
       flex: flex,
       child: Padding(
-        padding: const EdgeInsets.all(4),
+        padding: const EdgeInsets.all(3),
         child: Material(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          elevation: 1,
+          shadowColor: const Color(0x220E3023),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: const BorderSide(color: Color(0xFFE0E7E2))),
           child: InkWell(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             onTap: onTap ?? () => _insert(display),
             child: SizedBox(
               height: 48,
@@ -241,7 +282,8 @@ class _KeyboardState extends State<_Keyboard> {
                 child: Text(
                   display,
                   style: const TextStyle(
-                    fontSize: 16,
+                    color: Color(0xFF213D31),
+                    fontSize: 18,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -257,24 +299,29 @@ class _KeyboardState extends State<_Keyboard> {
     Widget child, {
     required VoidCallback onTap,
     int flex = 1,
-    Color backgroundColor = const Color(0xFF111827),
+    Color backgroundColor = const Color(0xFF566D60),
+    String? tooltip,
   }) {
     return Expanded(
       flex: flex,
       child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: Material(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(12),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: onTap,
-            child: SizedBox(
-              height: 48,
-              child: Center(child: child),
-            ),
-          ),
-        ),
+        padding: const EdgeInsets.all(3),
+        child: Tooltip(
+            message: tooltip ?? '',
+            child: Material(
+              color: backgroundColor,
+              elevation: 1,
+              shadowColor: const Color(0x220E3023),
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: onTap,
+                child: SizedBox(
+                  height: 48,
+                  child: Center(child: child),
+                ),
+              ),
+            )),
       ),
     );
   }
@@ -300,12 +347,16 @@ class _KeyboardState extends State<_Keyboard> {
                 color: Colors.white,
               ),
               onTap: () => setState(() => _shift = !_shift),
+              tooltip: 'Заглавные буквы',
+              backgroundColor:
+                  _shift ? const Color(0xFF15966A) : const Color(0xFF566D60),
               flex: 2,
             ),
             ..._lettersRow2.map((k) => _textKey(k)),
             _actionKey(
               const Icon(Icons.backspace_outlined, color: Colors.white),
               onTap: _backspace,
+              tooltip: 'Удалить символ',
               flex: 2,
             ),
           ],
@@ -323,15 +374,17 @@ class _KeyboardState extends State<_Keyboard> {
               ),
               onTap: _nextLanguage,
               flex: 2,
-              backgroundColor: const Color(0xFF2563EB),
+              tooltip: 'Переключить язык',
+              backgroundColor: const Color(0xFF566D60),
             ),
             _textKey('-', flex: 1),
             _textKey('Пробел', onTap: () => _insert(' '), flex: 5),
             _actionKey(
               const Icon(Icons.subdirectory_arrow_left, color: Colors.white),
               onTap: widget.onEnter,
+              tooltip: 'Ввод',
               flex: 2,
-              backgroundColor: const Color(0xFF0F766E),
+              backgroundColor: const Color(0xFF15966A),
             ),
           ],
         ),

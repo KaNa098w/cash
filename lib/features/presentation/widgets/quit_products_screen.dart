@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:leemon_app/core/di/api/service_locator.dart';
 import 'package:leemon_app/core/models/product_response.dart';
 import 'package:leemon_app/core/models/pos_category.dart';
@@ -41,6 +42,47 @@ class _QuickProductsDialogState extends State<_QuickProductsDialog> {
   bool loading = true;
   StreamSubscription<void>? subscription;
   int _loadGeneration = 0;
+  bool _savingOrder = false;
+
+  String get _orderKey => 'quickProducts.order.${widget.posKey}';
+
+  Future<void> _swapProducts(String sourceId, String targetId) async {
+    if (_savingOrder || sourceId == targetId) return;
+    final from = products.indexWhere((p) => p.id == sourceId);
+    final to = products.indexWhere((p) => p.id == targetId);
+    if (from < 0 || to < 0) return;
+    final previous = products;
+    final reordered = List<ProductModel>.of(products);
+    reordered[from] = products[to];
+    reordered[to] = products[from];
+    ++_loadGeneration; // Discard reads started before the drag finished.
+    setState(() {
+      products = reordered;
+      _savingOrder = true;
+    });
+    _quickProductsMemory[widget.posKey] = reordered;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!await prefs.setStringList(
+          _orderKey,
+          reordered
+              .map((p) => p.id ?? '')
+              .where((id) => id.isNotEmpty)
+              .toList())) {
+        throw StateError('Order was not saved');
+      }
+    } catch (_) {
+      _quickProductsMemory[widget.posKey] = previous;
+      if (mounted) {
+        setState(() => products = previous);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'Не удалось сохранить порядок товаров. Повторите перемещение.')));
+      }
+    } finally {
+      if (mounted) setState(() => _savingOrder = false);
+    }
+  }
 
   @override
   void initState() {
@@ -65,6 +107,7 @@ class _QuickProductsDialogState extends State<_QuickProductsDialog> {
   }
 
   Future<void> _loadLocal() async {
+    if (_savingOrder) return;
     final generation = ++_loadGeneration;
     try {
       final sync = sl<PosSyncService>();
@@ -76,6 +119,14 @@ class _QuickProductsDialogState extends State<_QuickProductsDialog> {
           .where((product) => !product.isUniversal)
           .toList(growable: false);
       final loadedCategories = results[1] as List<PosCategory>;
+      final prefs = await SharedPreferences.getInstance();
+      final order = prefs.getStringList(_orderKey) ?? const <String>[];
+      if (order.isNotEmpty) {
+        final positions = {for (var i = 0; i < order.length; i++) order[i]: i};
+        final fallback = {for (var i = 0; i < items.length; i++) items[i]: i};
+        items.sort((a, b) => (positions[a.id] ?? order.length + fallback[a]!)
+            .compareTo(positions[b.id] ?? order.length + fallback[b]!));
+      }
       if (!mounted || generation != _loadGeneration) return;
       final oldSignature = jsonEncode(products.map((p) => p.toJson()).toList());
       final newSignature = jsonEncode(items.map((p) => p.toJson()).toList());
@@ -161,6 +212,7 @@ class _QuickProductsDialogState extends State<_QuickProductsDialog> {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final width = constraints.maxWidth;
+                final visibleProducts = _visibleProducts;
                 final columns = width > 880
                     ? 6
                     : width > 720
@@ -187,7 +239,7 @@ class _QuickProductsDialogState extends State<_QuickProductsDialog> {
                               ),
                               SizedBox(height: 3),
                               Text(
-                                'Выберите товар для добавления в корзину',
+                                'Нажмите, чтобы добавить. Удерживайте, чтобы переместить.',
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Color(0xFF6B7280),
@@ -256,22 +308,72 @@ class _QuickProductsDialogState extends State<_QuickProductsDialog> {
                                     crossAxisSpacing: 16,
                                     mainAxisExtent:
                                         ((width - 12 - (columns - 1) * 16) /
-                                                    columns -
-                                                20) *
-                                            3 /
-                                            4 +
-                                        38 +
-                                        MediaQuery.textScalerOf(context)
-                                                .scale(14) *
-                                            4,
+                                                        columns -
+                                                    20) *
+                                                3 /
+                                                4 +
+                                            38 +
+                                            MediaQuery.textScalerOf(context)
+                                                    .scale(14) *
+                                                4,
                                   ),
-                                  itemCount: _visibleProducts.length,
+                                  itemCount: visibleProducts.length,
                                   itemBuilder: (context, index) {
-                                    final product = _visibleProducts[index];
-                                    return _QuickProductTile(
+                                    final product = visibleProducts[index];
+                                    final tile = _QuickProductTile(
                                       product: product,
                                       onTap: () =>
                                           Navigator.of(context).pop(product),
+                                    );
+                                    final id = product.id ?? '';
+                                    if (id.isEmpty) return tile;
+                                    return DragTarget<String>(
+                                      key: ValueKey('quick-product-$id'),
+                                      onWillAcceptWithDetails: (details) =>
+                                          !_savingOrder && details.data != id,
+                                      onAcceptWithDetails: (details) =>
+                                          unawaited(
+                                              _swapProducts(details.data, id)),
+                                      builder:
+                                          (context, candidates, rejected) =>
+                                              LongPressDraggable<String>(
+                                        data: id,
+                                        maxSimultaneousDrags:
+                                            _savingOrder ? 0 : 1,
+                                        delay:
+                                            const Duration(milliseconds: 400),
+                                        feedback: Material(
+                                          elevation: 12,
+                                          color: Colors.transparent,
+                                          borderRadius:
+                                              BorderRadius.circular(18),
+                                          child: SizedBox(
+                                            width: (width -
+                                                    12 -
+                                                    (columns - 1) * 16) /
+                                                columns,
+                                            child: _QuickProductTile(
+                                                product: product, onTap: () {}),
+                                          ),
+                                        ),
+                                        childWhenDragging:
+                                            Opacity(opacity: 0.25, child: tile),
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            borderRadius:
+                                                BorderRadius.circular(18),
+                                            boxShadow: candidates.isEmpty
+                                                ? null
+                                                : const [
+                                                    BoxShadow(
+                                                        color:
+                                                            Color(0xFF15966A),
+                                                        spreadRadius: 3),
+                                                  ],
+                                          ),
+                                          child: tile,
+                                        ),
+                                      ),
                                     );
                                   },
                                 ),
@@ -349,12 +451,19 @@ class _QuickProductTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 6),
-                  Text(
-                    money(product.sellingPrice),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF456B5A),
+                  Flexible(
+                    flex: 2,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        money(product.sellingPrice),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF456B5A),
+                        ),
+                      ),
                     ),
                   ),
                 ],

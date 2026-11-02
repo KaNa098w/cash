@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Скидки KZ — сборщик DNS",
+  "description": "Передача карточек DNS из выбранной вкладки локальному боту. Только Шымкент, только по нажатию.",
+  "version": "0.1.0",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "action": {"default_title": "Скидки KZ", "default_popup": "popup.html"},
+  "background": {"service_worker": "worker.js"}
+}

@@ -15,6 +15,8 @@ class KaspiPaymentDialog extends StatefulWidget {
 
 class _KaspiPaymentDialogState extends State<KaspiPaymentDialog> {
   bool _busy = true;
+  bool _readyForPayment = false;
+  bool _closing = false;
   bool _confirmedFailure = false;
   String _message = 'Подключение к Kaspi…';
   @override
@@ -29,18 +31,42 @@ class _KaspiPaymentDialogState extends State<KaspiPaymentDialog> {
         saleId: widget.saleId,
         amount: widget.amount,
         onProgress: (message) {
-          if (mounted) setState(() => _message = message);
+          if (mounted && !_closing) {
+            setState(() {
+              _message = message;
+              if (message == 'Ожидаем оплату на Kaspi. QR или карта.') {
+                _readyForPayment = true;
+              }
+            });
+          }
         },
       );
-      if (mounted) Navigator.of(context).pop(result);
+      if (mounted && !_closing) Navigator.of(context).pop(result);
     } catch (e) {
-      if (mounted) {
+      if (mounted && !_closing) {
         setState(() {
           _busy = false;
           _confirmedFailure = e is KaspiPaymentException && e.confirmedFailure;
           _message = e is KaspiPaymentException
               ? e.message
-              : 'Связь с Kaspi прервана. Операция сохранена. Нажмите «Оплатить» ещё раз для проверки результата.';
+              : 'Связь с Kaspi прервана. Закройте окно и повторите оплату.';
+        });
+      }
+    }
+  }
+
+  Future<void> _close() async {
+    if (_closing) return;
+    setState(() => _closing = true);
+    try {
+      await (widget.terminal ?? KaspiTerminal.instance)
+          .abandonPayment(widget.saleId);
+      if (mounted) Navigator.of(context).pop({'status': 'fail'});
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _closing = false;
+          _message = 'Не удалось закрыть оплату. Повторите закрытие.';
         });
       }
     }
@@ -48,7 +74,7 @@ class _KaspiPaymentDialogState extends State<KaspiPaymentDialog> {
 
   @override
   Widget build(BuildContext context) => PopScope(
-        canPop: !_busy,
+        canPop: false,
         child: Dialog(
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.transparent,
@@ -63,8 +89,10 @@ class _KaspiPaymentDialogState extends State<KaspiPaymentDialog> {
               KaspiDialogHeader(
                   title: 'Оплата через Kaspi',
                   subtitle: _busy
-                      ? 'Ожидаем ответ терминала'
-                      : 'Проверьте результат оплаты'),
+                      ? (_readyForPayment
+                          ? 'Ожидаем оплату покупателя'
+                          : 'Отправляем сумму на терминал')
+                      : 'Повторите оплату'),
               Padding(
                   padding: const EdgeInsets.all(28),
                   child: Column(
@@ -113,7 +141,7 @@ class _KaspiPaymentDialogState extends State<KaspiPaymentDialog> {
                                   fontSize: 44,
                                   fontWeight: FontWeight.w800))),
                       const SizedBox(height: 22),
-                      if (_busy) ...[
+                      if (_busy && _readyForPayment) ...[
                         const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -132,31 +160,25 @@ class _KaspiPaymentDialogState extends State<KaspiPaymentDialog> {
                       ],
                       KaspiStatusCard(
                           title: _busy
-                              ? 'Оплатите на терминале'
+                              ? (_readyForPayment
+                                  ? 'Оплатите на терминале'
+                                  : 'Подключение к терминалу')
                               : _confirmedFailure
                                   ? 'Оплата не выполнена'
-                                  : 'Нужна проверка оплаты',
+                                  : 'Не удалось выполнить оплату',
                           message: _message,
                           tone: _busy
                               ? KaspiStatusTone.busy
                               : KaspiStatusTone.error),
                       const SizedBox(height: 18),
-                      if (_busy)
-                        const Text(
-                            'Для отмены используйте терминал.\nКасса дождётся подтверждения оплаты.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                color: kaspiMuted, fontSize: 13, height: 1.5))
-                      else
-                        SizedBox(
-                            width: double.infinity,
-                            child: FilledButton(
-                                onPressed: () => Navigator.of(context).pop(
-                                    _confirmedFailure
-                                        ? {'status': 'fail'}
-                                        : null),
-                                style: kaspiPrimaryButton(),
-                                child: const Text('Вернуться к продаже'))),
+                      SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                              onPressed: _closing ? null : _close,
+                              style: kaspiPrimaryButton(),
+                              child: Text(_busy
+                                  ? 'Закрыть оплату'
+                                  : 'Вернуться к продаже'))),
                     ],
                   )),
             ])),

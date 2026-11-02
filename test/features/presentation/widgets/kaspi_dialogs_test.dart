@@ -3,6 +3,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:leemon_app/core/service/kaspi_account_binding.dart';
+import 'package:leemon_app/features/data/sync/pos_sync_models.dart';
 import 'package:leemon_app/core/service/kaspi_payment_service.dart';
 import 'package:leemon_app/core/service/kaspi_terminal.dart';
 import 'package:leemon_app/features/presentation/widgets/kaspi_payment_dialog.dart';
@@ -18,6 +21,7 @@ class FakeTerminal implements KaspiTerminal {
   int registrations = 0;
   int checks = 0;
   String? requestedHost;
+  bool readyForPayment = true;
   @override
   Future<void> initialize() async {}
   @override
@@ -35,11 +39,18 @@ class FakeTerminal implements KaspiTerminal {
   }
 
   @override
+  Future<void> abandonPayment(String saleId) async {}
+
+  @override
   Future<Map<String, dynamic>> pay(
-          {required String saleId,
-          required double amount,
-          void Function(String)? onProgress}) =>
-      payment.future;
+      {required String saleId,
+      required double amount,
+      void Function(String)? onProgress}) {
+    if (readyForPayment)
+      onProgress?.call('Ожидаем оплату на Kaspi. QR или карта.');
+    return payment.future;
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -79,6 +90,7 @@ Future<void> preview(WidgetTester tester, String name) async {
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   setUpAll(() async {
     final font = FontLoader('NotoSans')
       ..addFont(rootBundle.load('assets/fonts/NotoSans-Regular.ttf'))
@@ -91,6 +103,52 @@ void main() {
     await (FontLoader('MaterialIcons')
           ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf')))
         .load();
+  });
+
+  testWidgets(
+      'account binding is opt-in, requires saving, and survives reopening',
+      (tester) async {
+    final terminal = FakeTerminal();
+    Future<List<LocalAccount>> accounts() async => const [
+          LocalAccount(id: 'ordinary', name: 'Расчётный счёт', type: 'BANK'),
+          LocalAccount(id: 'kaspi', name: 'Kaspi Bank', type: 'BANK'),
+        ];
+    await openDialog(
+        tester,
+        KaspiSettingsDialog(terminal: terminal, loadAccounts: accounts),
+        const Size(1024, 768));
+    final toggle = find.byKey(const ValueKey('kaspi-binding-enabled'));
+    final save = find.byKey(const ValueKey('kaspi-binding-save'));
+    expect(tester.widget<Switch>(toggle).value, isFalse);
+    expect((await KaspiAccountBinding.load()).accountId, isNull);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(save).onPressed, isNull);
+    await tester.tap(find.byType(DropdownButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Расчётный счёт').last);
+    await tester.pumpAndSettle();
+    expect((await KaspiAccountBinding.load()).enabled, isFalse);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect((await KaspiAccountBinding.load()).accountId, 'ordinary');
+    expect((await KaspiAccountBinding.load()).enabled, isTrue);
+    await preview(tester, 'binding-selected');
+    expect(terminal.registrations, 0);
+    expect(terminal.checks, 0);
+    await tester.tap(find.byTooltip('Закрыть'));
+    await tester.pumpAndSettle();
+    await openDialog(
+        tester,
+        KaspiSettingsDialog(terminal: terminal, loadAccounts: accounts),
+        const Size(1024, 768));
+    expect(tester.widget<Switch>(toggle).value, isTrue);
+    expect(find.text('Расчётный счёт'), findsOneWidget);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect((await KaspiAccountBinding.load()).enabled, isFalse);
   });
 
   for (final size in [
@@ -209,4 +267,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Оплата не выполнена'), findsNothing);
   });
+
+  testWidgets('closing pending Kaspi exits without waiting for a result',
+      (tester) async {
+    final terminal = FakeTerminal();
+    await openDialog(
+        tester,
+        KaspiPaymentDialog(
+            terminal: terminal, saleId: 'close-sale', amount: 100),
+        const Size(1024, 768));
+    await tester.tap(find.text('Закрыть оплату'));
+    await tester.pumpAndSettle();
+    expect(find.byType(KaspiPaymentDialog), findsNothing);
+    terminal.payment.complete(responseForClosedPayment());
+    await tester.pumpAndSettle();
+    expect(find.text('Open'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
+
+Map<String, dynamic> responseForClosedPayment() => {'status': 'success'};

@@ -49,6 +49,21 @@ class TopBar extends StatelessWidget {
 
                 return Row(
                   children: [
+                    Padding(
+                      padding: EdgeInsets.only(top: topPad),
+                      child: PosMenuTab(
+                        text: 'История',
+                        icon: 'assets/svg/history.svg',
+                        active: state.isHistoryMode,
+                        compact: compact,
+                        onTap: cubit.showHistory,
+                        backgroundColor: const Color(0xFF3C4656),
+                        activeBackgroundColor: const Color(0xFF465367),
+                        foregroundColor: const Color(0xFFE7EDF5),
+                        widthFactor: 1.12,
+                      ),
+                    ),
+                    SizedBox(width: tabGap),
                     Expanded(
                       child: Padding(
                         padding: EdgeInsets.only(top: topPad),
@@ -59,14 +74,6 @@ class TopBar extends StatelessWidget {
                             physics: const ClampingScrollPhysics(),
                             child: Row(
                               children: [
-                                PosMenuTab(
-                                  text: 'История',
-                                  icon: 'assets/svg/history.svg',
-                                  active: state.isHistoryMode,
-                                  compact: compact,
-                                  onTap: cubit.showHistory,
-                                ),
-                                SizedBox(width: tabGap),
                                 for (final t in state.tickets) ...[
                                   PosTicketTab(
                                     text: '${t.items.length} товар',
@@ -119,7 +126,7 @@ class TopBar extends StatelessWidget {
                                     style: TextStyle(
                                       color: const Color(0xFFFFFFFF),
                                       fontSize: holdFont,
-                                      fontWeight: FontWeight.w500,
+                                      fontWeight: FontWeight.w600,
                                       letterSpacing: 0.2,
                                     ),
                                   ),
@@ -205,10 +212,13 @@ class PosTicketTab extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        constraints: BoxConstraints.tightFor(width: _topBarTabWidth(compact)),
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 18 : 16,
-          vertical: compact ? 12 : 16,
+        constraints:
+            BoxConstraints.tightFor(width: _topBarTabWidth(compact) * 1.15),
+        padding: EdgeInsets.fromLTRB(
+          12,
+          compact ? 12 : 16,
+          8,
+          compact ? 12 : 16,
         ),
         decoration: BoxDecoration(
           color: bg,
@@ -220,15 +230,19 @@ class PosTicketTab extends StatelessWidget {
         child: showClose && onClose != null
             ? Row(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Text(
-                    text,
-                    style: TextStyle(
-                      color: textColor,
-                      fontSize: compact ? 16 : 16,
-                      fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
+                  Expanded(
+                    child: Text(
+                      text,
+                      textAlign: TextAlign.left,
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 16,
+                        fontWeight: compact ? FontWeight.w800 : FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(width: 8),
                   GestureDetector(
@@ -236,17 +250,20 @@ class PosTicketTab extends StatelessWidget {
                     onTap: () {
                       onClose?.call();
                     },
-                    child: Icon(
-                      Icons.close,
-                      size: compact ? 18 : 18,
-                      color: active ? Colors.black54 : Colors.white70,
+                    child: Transform.translate(
+                      offset: const Offset(0, 2),
+                      child: Icon(
+                        Icons.close,
+                        size: 18,
+                        color: active ? Colors.black54 : Colors.white70,
+                      ),
                     ),
                   ),
                 ],
               )
             : statusDotColor != null
                 ? Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.start,
                     children: [
                       Flexible(
                           child: Text(text,
@@ -255,20 +272,21 @@ class PosTicketTab extends StatelessWidget {
                                   color: textColor,
                                   fontSize: 16,
                                   fontWeight: compact
-                                      ? FontWeight.w700
-                                      : FontWeight.w500))),
+                                      ? FontWeight.w800
+                                      : FontWeight.w600))),
                       const SizedBox(width: 7),
                       Icon(Icons.circle, size: 7, color: statusDotColor),
                     ],
                   )
-                : Center(
+                : Align(
+                    alignment: Alignment.centerLeft,
                     child: Text(
                       text,
-                      textAlign: TextAlign.center,
+                      textAlign: TextAlign.left,
                       style: TextStyle(
                         color: textColor,
                         fontSize: compact ? 16 : 16,
-                        fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
+                        fontWeight: compact ? FontWeight.w800 : FontWeight.w600,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -279,6 +297,10 @@ class PosTicketTab extends StatelessWidget {
 }
 
 class PosMenuTab extends StatelessWidget {
+  final Color? backgroundColor;
+  final Color? activeBackgroundColor;
+  final Color? foregroundColor;
+  final double widthFactor;
   final String text;
   final String icon; // <-- svg asset path
   final bool active;
@@ -287,6 +309,10 @@ class PosMenuTab extends StatelessWidget {
 
   const PosMenuTab({
     super.key,
+    this.backgroundColor,
+    this.activeBackgroundColor,
+    this.foregroundColor,
+    this.widthFactor = 1,
     required this.text,
     required this.icon,
     required this.active,
@@ -297,15 +323,16 @@ class PosMenuTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = active
-        ? const Color.fromARGB(255, 255, 255, 255)
-        : const Color(0xFF536074);
-    final iconColor = active ? Colors.black : Colors.white;
+        ? activeBackgroundColor ?? const Color.fromARGB(255, 255, 255, 255)
+        : backgroundColor ?? const Color(0xFF536074);
+    final iconColor = foregroundColor ?? (active ? Colors.black : Colors.white);
     final textColor = iconColor;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        constraints: BoxConstraints.tightFor(width: _topBarTabWidth(compact)),
+        constraints: BoxConstraints.tightFor(
+            width: _topBarTabWidth(compact) * widthFactor),
         padding: EdgeInsets.symmetric(
           horizontal: compact ? 10 : 8,
           vertical: compact ? 12 : 16,
@@ -327,7 +354,7 @@ class PosMenuTab extends StatelessWidget {
                 style: TextStyle(
                   color: textColor,
                   fontSize: compact ? 15 : 16,
-                  fontWeight: compact ? FontWeight.w700 : FontWeight.w500,
+                  fontWeight: compact ? FontWeight.w800 : FontWeight.w600,
                 ),
               ),
             ),

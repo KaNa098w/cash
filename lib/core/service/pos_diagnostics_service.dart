@@ -159,7 +159,17 @@ class PosDiagnosticsService {
       'uri': options.uri.toString(),
       'path': options.path,
       'query': Map<String, dynamic>.from(options.queryParameters),
-      'headers': Map<String, dynamic>.from(options.headers),
+      'headers': {
+        for (final header in options.headers.entries)
+          header.key: const {
+            'x-return-access-key',
+            'authorization',
+            'accesstoken',
+            'cookie'
+          }.contains(header.key.toLowerCase())
+              ? '<redacted>'
+              : header.value,
+      },
       'data': _cloneJsonValue(options.data),
       'extra': Map<String, dynamic>.from(options.extra),
     };

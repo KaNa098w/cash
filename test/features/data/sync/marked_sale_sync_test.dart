@@ -344,6 +344,17 @@ void main() {
         throwsStateError);
   });
 
+  test('explicit force deletion removes an uncertain queue operation',
+      () async {
+    remote.handler = (_) async => throw timeout();
+    final first = await send(sale());
+    await sync.deleteQueueOperation(first.operationId, force: true);
+    expect(
+        (await sync.loadQueueItems())
+            .any((item) => item.id == first.operationId),
+        isFalse);
+  });
+
   test('refund retry uses UUID, reverse_sale and frozen contents', () async {
     remote.handler = (p) async {
       if (remote.requests.length == 1) throw timeout();

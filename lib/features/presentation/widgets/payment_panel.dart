@@ -1,10 +1,13 @@
 import 'fiscalization_toggle.dart';
+import 'package:leemon_app/core/print/cash_drawer_service.dart';
 import 'kaspi_payment_dialog.dart';
-import 'package:leemon_app/core/service/kaspi_payment_service.dart';
+import 'package:leemon_app/core/service/kaspi_account_binding.dart';
 import 'package:leemon_app/core/models/fiscalization_mode.dart';
 import 'package:leemon_app/features/presentation/pages/invoices/invoice_issue_dialog.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as developer;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -38,7 +41,8 @@ import '../../data/utils/money.dart';
 import '../../domain/entities/payment.dart';
 
 class PaymentPanel extends StatefulWidget {
-  const PaymentPanel({super.key});
+  const PaymentPanel({super.key, this.cashDrawerService});
+  final CashDrawerService? cashDrawerService;
 
   static const designWidth = 573.0;
   static const designHeight = 590.0;
@@ -473,8 +477,27 @@ class _PaymentPanelState extends State<PaymentPanel> {
     capitalizeFirstLetterInController(_commentCtrl);
   }
 
+  String get _lastBankAccountKey {
+    final auth = context.read<AuthTokenProvider>();
+    return 'payment.lastBankAccount.${jsonEncode([auth.storeId, auth.posId])}';
+  }
+
+  Future<void> _selectBankAccount(String id) async {
+    final key = _lastBankAccountKey;
+    setState(() => _selectedBankAccountId = id);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!await prefs.setString(key, id)) {
+        _showError('Не удалось запомнить выбранный счёт');
+      }
+    } catch (_) {
+      _showError('Не удалось запомнить выбранный счёт');
+    }
+  }
+
   Future<void> _loadBankAccounts() async {
     if (_loadingBankAccounts) return;
+    final preferenceKey = _lastBankAccountKey;
     setState(() => _loadingBankAccounts = true);
     try {
       final accounts = await sl<PosSyncService>().loadAccounts();
@@ -482,6 +505,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
           .where((account) =>
               account.visibleToPos && account.normalizedType == 'bank')
           .toList(growable: false);
+      final prefs = await SharedPreferences.getInstance();
+      final rememberedId = prefs.getString(preferenceKey);
       if (!mounted) return;
       setState(() {
         _accounts = accounts;
@@ -490,9 +515,17 @@ class _PaymentPanelState extends State<PaymentPanel> {
             .any((account) => account.id.trim() == _selectedBankAccountId);
         if (!selectedExists) {
           _selectedBankAccountId =
-              bankAccounts.length == 1 ? bankAccounts.single.id : null;
+              bankAccounts.any((account) => account.id.trim() == rememberedId)
+                  ? rememberedId
+                  : null;
         }
       });
+    } catch (error, stackTrace) {
+      developer.log('Failed to load payment accounts',
+          name: 'PaymentPanel', error: error, stackTrace: stackTrace);
+      if (mounted) {
+        _showError('Не удалось загрузить счета оплаты. Выберите способ оплаты повторно.');
+      }
     } finally {
       if (mounted) setState(() => _loadingBankAccounts = false);
     }
@@ -725,6 +758,19 @@ class _PaymentPanelState extends State<PaymentPanel> {
     );
   }
 
+  Future<void> _openDrawerAfterSale(SaleModel sale, String? printerName) async {
+    try {
+      await (widget.cashDrawerService ?? CashDrawerService.instance).openAfterSale(
+        saleId: sale.localId,
+        paymentMethod: sale.paymentMethod,
+        printerName: printerName,
+      );
+    } catch (error) {
+      PrintService.record('Продажа сохранена, ящик не открыт: $error');
+      _showError('Продажа сохранена. Не удалось открыть денежный ящик.');
+    }
+  }
+
   Future<bool> _ensureMarkCodes(PosCubit cubit) async {
     if (cubit.state.activeTicket.checkout != null) return true;
     if (cubit.markingCheckPassed) return true;
@@ -740,6 +786,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
     required SaleModel sale,
     required List<Map<String, dynamic>> payments,
   }) async {
+    final ticketId = cubit.state.activeTicketId;
     final frozen = cubit.state.activeTicket.checkout;
     final requireOnline = cubit.requiresOnlinePayment;
     if (frozen != null) {
@@ -761,11 +808,12 @@ class _PaymentPanelState extends State<PaymentPanel> {
     }
     // Legacy frozen checkouts may already have been paid manually. Only new
     // checkouts and explicitly recorded terminal checkouts trigger Kaspi.
-    final kaspiAmount =
-        (sale.paymentMethod == 'card' || sale.paymentMethod == 'mixed') &&
-                (frozen == null || frozen['kaspi_required'] == true)
-            ? kaspiPaymentAmount(payments)
-            : 0.0;
+    final kaspiAmount = await resolveKaspiCheckoutAmount(
+      payments: payments,
+      saleId: sale.localId,
+      checkout: frozen,
+      cashless: sale.paymentMethod == 'card' || sale.paymentMethod == 'mixed',
+    );
     if (kaspiAmount > 0 && kaspiAmount != kaspiAmount.roundToDouble()) {
       return CreateSaleOutcome(
           result: CreateSaleResult.rejected,
@@ -776,8 +824,11 @@ class _PaymentPanelState extends State<PaymentPanel> {
     Map<String, dynamic>? kaspiPayment = frozen?['kaspi_payment'] is Map
         ? Map<String, dynamic>.from(frozen!['kaspi_payment'])
         : null;
+    var saleRequestStarted =
+        frozen != null && frozen['sale_request_started'] != false;
     var needsMarkingCheck = frozen?['needs_marking_check'] == true;
     Future<void> persist() => cubit.saveCheckout({
+          'sale_request_started': saleRequestStarted,
           'sale': sale.toJson(),
           'payments': payments,
           'needs_marking_check': needsMarkingCheck,
@@ -785,14 +836,22 @@ class _PaymentPanelState extends State<PaymentPanel> {
           'pos_key': key,
           'device_id': deviceId,
           'kaspi_required': kaspiAmount > 0,
+          'kaspi_amount': kaspiAmount,
           if (kaspiPayment != null) 'kaspi_payment': kaspiPayment,
-        });
-    await persist();
+        }, ticketId: ticketId);
+    // Ordinary local checkout has no external step before queueing. Save its
+    // request once below, instead of flushing the entire basket twice.
+    // Terminal, marking and restored operations retain the earlier journal.
+    if (frozen != null || requireOnline || kaspiAmount > 0 || needsMarkingCheck) {
+      await persist();
+    }
     Future<bool> recheckMarking() async {
+      if (!mounted || cubit.state.activeTicketId != ticketId) return false;
       cubit.invalidateMarkingCheck();
       var ready = false;
       try {
         ready = await ensureCartMarkingReady(context, correctingCheckout: true);
+        if (!mounted || cubit.state.activeTicketId != ticketId) return false;
         sale = sale.copyWith(items: [
           for (final item in sale.items)
             item.copyWith(
@@ -823,7 +882,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
             KaspiPaymentDialog(saleId: sale.localId, amount: kaspiAmount),
       );
       if (kaspiPayment?['status'] == 'fail') {
-        cubit.releaseCheckout();
+        cubit.releaseCheckout(ticketId: ticketId);
         return CreateSaleOutcome(
             result: CreateSaleResult.rejected,
             sale: sale,
@@ -838,6 +897,8 @@ class _PaymentPanelState extends State<PaymentPanel> {
       }
       await persist();
     }
+    saleRequestStarted = true;
+    await persist();
     while (true) {
       final outcome = await repo.createSale(
           key: key,
@@ -880,7 +941,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
             'POS_NOT_CONFIGURED',
             'MARKING_CONFLICT'
           }.contains(outcome.errorCode)) {
-        cubit.releaseCheckout();
+        cubit.releaseCheckout(ticketId: ticketId);
       }
       return outcome;
     }
@@ -1063,6 +1124,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     state.paymentKind == PaymentKind.credit ||
                     state.received > 0;
             final canSubmitPayment = !_paying &&
+                !_preparingPayment &&
+                !_paymentSuccess &&
+                !cubit.paymentOperationInProgress &&
                 state.activeTicket.invoiceCheckout == null &&
                 (state.activeTicket.checkout != null ||
                     cubit.markingCheckPassed) &&
@@ -1071,8 +1135,14 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 hasSelectedBankAccount;
 
             Future<void> submitPayment() async {
-              if (!canSubmitPayment || _preparingPayment) return;
-              _preparingPayment = true;
+              // Check live flags as well as the rendered button state: queued
+              // taps/Enter events can still invoke an older callback.
+              if (!mounted || !canSubmitPayment || _preparingPayment ||
+                  _paying || _paymentSuccess) return;
+              final operationTicketId = cubit.state.activeTicketId;
+              final operation = cubit.beginPaymentOperation();
+              if (operation == null) return;
+              setState(() => _preparingPayment = true);
               try {
                 final posCubit = context.read<PosCubit>();
                 final ticketId = posCubit.state.activeTicketId;
@@ -1140,6 +1210,9 @@ class _PaymentPanelState extends State<PaymentPanel> {
                       posKey: key,
                       customer: selectedCustomer,
                     );
+                    if (!mounted || posCubit.state.activeTicketId != ticketId) {
+                      return;
+                    }
                     if (verified == null) {
                       _showError(
                         'Этот покупатель недоступен для текущей кассы. Выполните синхронизацию или выберите другого покупателя.',
@@ -1181,6 +1254,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 }
 
                 if (!await _ensureMarkCodes(posCubit)) return;
+                if (!mounted || posCubit.state.activeTicketId != ticketId) return;
 
                 // Capture amounts before async gap
                 final isMixed = _isMixedPayment;
@@ -1324,6 +1398,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                 final accounts = _accounts.isNotEmpty
                     ? _accounts
                     : await sl<PosSyncService>().loadAccounts();
+                if (!mounted || posCubit.state.activeTicketId != ticketId) return;
                 final visibleAccounts =
                     accounts.where((account) => account.visibleToPos).toList();
                 final cashAccount = visibleAccounts
@@ -1438,6 +1513,13 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   _paymentSuccess = false;
                 });
                 var saleCompleted = false;
+                // Receipt work must use the completed basket, even if the next
+                // customer starts a new sale while a printer is responding.
+                final receiptItems = List<CartItem>.of(posCubit.state.items);
+                final receiptTotal = posCubit.total;
+                final receiptDiscount = posCubit.discountSum;
+                final receiptReceived = posCubit.state.received;
+                final receiptChange = posCubit.change;
                 try {
                   final pageFormat = auth.receiptPaperMm == 57
                       ? PdfPageFormat.roll57
@@ -1460,12 +1542,46 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   // Durable local queuing also completes an ordinary checkout;
                   // network registration and fiscal polling continue in sync.
                   saleCompleted = true;
-                  final fiscalService = sl<FiscalReceiptService>();
+                  // Release the basket and its payment lock at the durable
+                  // boundary, before drawer, printer or fiscal receipt work.
+                  posCubit.completeCheckout(ticketId);
+                  posCubit.endPaymentOperation(operationTicketId, operation);
+                  await posCubit.flushPendingState();
+                  final fiscalService = outcome.responseData?['fiscal_receipt'] is Map
+                      ? sl<FiscalReceiptService>() : null;
                   final fiscalReceipt =
-                      fiscalService.fromSaleResponse(outcome.responseData);
-
+                      fiscalService?.fromSaleResponse(outcome.responseData);
+                  // Persist fiscal follow-up even if the cashier has already
+                  // closed this panel and moved to the next customer.
+                  if (fiscalReceipt != null && fiscalService != null) {
+                    await fiscalService.save(
+                      fiscalReceipt,
+                      localReceiptPrinted: false,
+                      saleIds: {
+                        sale.localId,
+                        printedSale.localId,
+                        (outcome.responseData?['id'] ?? '').toString(),
+                      },
+                    );
+                    fiscalService.startBackgroundPolling(
+                      key: key,
+                      deviceId: deviceId,
+                      receipt: fiscalReceipt,
+                    );
+                  }
+                  final drawer = _openDrawerAfterSale(printedSale, auth.receiptPrinterName);
+                  if (fiscalizationExpected || fiscalReceipt != null) {
+                    await drawer;
+                  } else {
+                    // Local sale is already durable. A disconnected network
+                    // printer/drawer must not hold the non-fiscal checkout open.
+                    unawaited(drawer);
+                  }
                   var localReceiptPrinted = false;
-                  if (!mounted) return;
+                  if (!mounted ||
+                      ModalRoute.of(this.context)?.isCurrent == false) {
+                    return;
+                  }
                   final shouldPrintLocalReceipt = !isDebtSale &&
                           (fiscalReceipt == null ||
                               auth.printLocalReceiptImmediately) &&
@@ -1483,7 +1599,10 @@ class _PaymentPanelState extends State<PaymentPanel> {
                               'Продажа успешно оформлена. Нужен бумажный чек?',
                         )
                       : false;
-                  if (!mounted) return;
+                  if (!mounted ||
+                      ModalRoute.of(this.context)?.isCurrent == false) {
+                    return;
+                  }
                   if (shouldPrintLocalReceipt) {
                     final printedPaymentMethod =
                         printedSale.paymentMethod.trim().toLowerCase();
@@ -1509,7 +1628,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                             if (posName.isNotEmpty) return posName;
                             return 'Магазин';
                           })(),
-                          items: posCubit.state.items
+                          items: receiptItems
                               .map(
                                 (it) => ReceiptPdfItem(
                                   name: it.product.name,
@@ -1520,15 +1639,15 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                 ),
                               )
                               .toList(),
-                          total: posCubit.total,
-                          discountSum: posCubit.discountSum,
+                          total: receiptTotal,
+                          discountSum: receiptDiscount,
                           paymentMethodLabel: _normalizePaymentMethodLabel(
                               printedSale.paymentMethod),
                           isCashPayment: printedPaymentMethod == 'cash',
                           received: isDebtSale
                               ? printedSale.paidAmount
-                              : posCubit.state.received,
-                          change: isDebtSale ? 0 : posCubit.change,
+                              : receiptReceived,
+                          change: isDebtSale ? 0 : receiptChange,
                           customerName: selectedCustomer?.name,
                           previousDebt:
                               isDebtSale ? selectedCustomer?.balance : null,
@@ -1548,7 +1667,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                     localReceiptPrinted = true;
                   }
 
-                  if (fiscalReceipt != null) {
+                  if (fiscalReceipt != null && fiscalService != null) {
                     await fiscalService.save(
                       fiscalReceipt,
                       localReceiptPrinted: localReceiptPrinted,
@@ -1558,12 +1677,10 @@ class _PaymentPanelState extends State<PaymentPanel> {
                         (outcome.responseData?['id'] ?? '').toString(),
                       },
                     );
-                    fiscalService.startBackgroundPolling(
-                      key: key,
-                      deviceId: deviceId,
-                      receipt: fiscalReceipt,
-                    );
-                    if (!mounted) return;
+                    if (!mounted ||
+                        ModalRoute.of(this.context)?.isCurrent == false) {
+                      return;
+                    }
                     await showDialog<void>(
                       context: this.context,
                       barrierDismissible: false,
@@ -1600,27 +1717,23 @@ class _PaymentPanelState extends State<PaymentPanel> {
                   }
                   if (!mounted) return;
                   _commentCtrl.clear();
-                  posCubit.completeCheckout(ticketId);
-                  await posCubit.flushPendingState();
-                  if (mounted) Navigator.of(this.context).pop();
+                  if (mounted &&
+                      ModalRoute.of(this.context)?.isCurrent != false) {
+                    Navigator.of(this.context).pop();
+                  }
                 } catch (_) {
                   _showError(saleCompleted
                       ? 'Продажа зарегистрирована. Чек доступен в истории продаж.'
                       : 'Не удалось получить результат оплаты. Исходный запрос сохранён.');
                 } finally {
-                  if (saleCompleted &&
-                      posCubit.state.tickets
-                          .any((t) => t.id == ticketId && t.checkout != null)) {
-                    posCubit.completeCheckout(ticketId);
-                    await posCubit.flushPendingState();
-                    if (mounted) Navigator.of(this.context).pop();
-                  }
-                  if (mounted && !saleCompleted) {
+                  if (mounted) {
                     setState(() => _paying = false);
                   }
                 }
               } finally {
+                cubit.endPaymentOperation(operationTicketId, operation);
                 _preparingPayment = false;
+                if (mounted) setState(() {});
               }
             }
 
@@ -1853,37 +1966,32 @@ class _PaymentPanelState extends State<PaymentPanel> {
                             paymentKind: state.paymentKind,
                             mixed: _isMixedPayment,
                             onCash: () {
+                              if (_paying || _preparingPayment) return;
                               setState(() {
                                 _isMixedPayment = false;
                                 _mixedActiveIsCard = false;
                               });
-                              cubit.setPaymentKind(PaymentKind.cash);
+                              cubit.changePaymentKind(PaymentKind.cash);
                               _cashFocusNode.requestFocus();
                             },
                             onCard: () {
+                              if (_paying || _preparingPayment) return;
                               setState(() {
                                 _isMixedPayment = false;
                                 _mixedActiveIsCard = false;
-                                _selectedBankAccountId =
-                                    _bankAccounts.length == 1
-                                        ? _bankAccounts.single.id
-                                        : null;
                               });
-                              cubit.setPaymentKind(PaymentKind.card);
+                              cubit.changePaymentKind(PaymentKind.card);
                               _setCardText(context, _fmt(total));
                               if (_bankAccounts.isEmpty) _loadBankAccounts();
                               _cardFocusNode.requestFocus();
                             },
                             onMixed: () {
+                              if (_paying || _preparingPayment) return;
                               setState(() {
                                 _isMixedPayment = true;
                                 _mixedActiveIsCard = false;
-                                _selectedBankAccountId =
-                                    _bankAccounts.length == 1
-                                        ? _bankAccounts.single.id
-                                        : null;
                               });
-                              cubit.setPaymentKind(PaymentKind.cash);
+                              cubit.changePaymentKind(PaymentKind.cash);
                               if (_bankAccounts.isEmpty) _loadBankAccounts();
                               _setText(context, '0', applyToState: false);
                               _setCardText(context, '0', applyToState: false);
@@ -2113,7 +2221,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                                 selectedId: _selectedBankAccountId,
                                 loading: _loadingBankAccounts,
                                 onSelected: (id) {
-                                  setState(() => _selectedBankAccountId = id);
+                                  unawaited(_selectBankAccount(id));
                                 },
                               ),
                             ),
@@ -2225,7 +2333,7 @@ class _PaymentPanelState extends State<PaymentPanel> {
                             disabledBg: const Color(0xFFA8DABD),
                             successBg: const Color(0xFF179D72),
                             fg: Colors.white,
-                            loading: _paying,
+                            loading: _paying || _preparingPayment,
                             success: _paymentSuccess,
                             onTap: canSubmitPayment && !_paymentSuccess
                                 ? submitPayment

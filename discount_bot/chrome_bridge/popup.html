@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>Скидки KZ</title>
+<style>
+body{width:370px;padding:18px;margin:0;background:#101827;color:#e7eef9;font:14px/1.5 Arial,sans-serif}
+h1{font-size:20px;margin:0 0 8px}p{margin:8px 0;color:#b7c5d9}label{display:block;margin-top:14px}
+input{box-sizing:border-box;width:100%;padding:10px;background:#1b2940;color:white;border:1px solid #415675;border-radius:8px}
+button{width:100%;padding:12px;margin-top:10px;border:0;border-radius:9px;background:#19bb8e;color:#072b24;font-weight:bold;cursor:pointer}
+button:disabled{opacity:.4;cursor:default}#scan{background:#344d76;color:white}#status{white-space:pre-wrap;margin-top:14px}
+li{padding:6px 0;color:#c9d7ea}ul{padding-left:18px}small{color:#94a5bf}
+</style></head><body>
+<h1>🏷 Скидки KZ · DNS</h1><p>Проверка открытой страницы. Только Шымкент.</p>
+<label for="key">Ключ локального подключения</label><input id="key" type="password" autocomplete="off" placeholder="Из data/bridge_pairing.txt">
+<small>Это отдельный ключ. Токен Telegram сюда не нужен.</small>
+<button id="scan">1. Проверить страницу</button>
+<div id="status" role="status">Откройте категорию DNS с карточками и ценами.</div><ul id="preview"></ul>
+<button id="save" disabled>2. Сохранить в бота</button>
+<p><small>Только данные товаров с этой страницы. Без публикации в Telegram, без автоматического обхода.</small></p>
+<script src="extract.js"></script><script src="popup.js"></script></body></html>

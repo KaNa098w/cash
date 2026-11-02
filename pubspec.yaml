@@ -59,6 +59,16 @@ flutter:
     - assets/svg/
     - assets/fonts/
   fonts:
+    - family: NotoSansQuantity
+      fonts:
+        - asset: assets/fonts/NotoSans-SemiBold.ttf
+          weight: 600
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Variable.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-Variable.ttf
+          weight: 600
     - family: NotoSans
       fonts:
         - asset: assets/fonts/NotoSans-Regular.ttf

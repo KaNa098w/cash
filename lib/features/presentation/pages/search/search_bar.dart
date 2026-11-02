@@ -284,6 +284,7 @@ class _SearchBarState extends State<SearchBar> {
   }
 
   void _openKeyboard() {
+    if (!mounted || _isHistoryMode || !_isRouteCurrent) return;
     _allowAutoRefocus = true;
     if (!_focusNode.hasFocus) {
       _focusNode.requestFocus();
@@ -398,11 +399,9 @@ class _SearchBarState extends State<SearchBar> {
   }
 
   void _dismissSearchKeyboard() {
-    _allowAutoRefocus = false;
     _closeKeyboard();
-    FocusManager.instance.primaryFocus?.unfocus();
-    _focusNode.unfocus();
     _removeChooser();
+    _restoreSearchFocus();
   }
 
   void _insertSearchText(String text) {
@@ -1105,7 +1104,8 @@ class _SearchBarState extends State<SearchBar> {
                         showCursor: searchCanRequestFocus,
                         enableInteractiveSelection:
                             !_disableSearchFieldForIpad && !isHistoryMode,
-                        onTap: _restoreSearchFocus,
+                        onTapAlwaysCalled: true,
+                        onTap: _openKeyboard,
                         onTapOutside: (_) => _restoreSearchFocus(),
                         onSubmitted: (_) => _doSearch(submitted: true),
                         textInputAction: TextInputAction.search,
@@ -1206,7 +1206,7 @@ class _SearchBarState extends State<SearchBar> {
               borderRadius: BorderRadius.circular(7),
             ),
             child: IconButton(
-              tooltip: 'Клавитура',
+              tooltip: 'Клавиатура',
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(
                 height: topControlHeight,

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:bloc/bloc.dart';
+import 'package:collection/collection.dart';
 import 'package:uuid/uuid.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +19,29 @@ import 'package:leemon_app/features/domain/repositories/pos_repository.dart';
 part 'pos_state.dart';
 
 class PosCubit extends Cubit<PosState> {
+  final Map<int, Object> _paymentOperations = {};
+  bool get hasPaymentOperations => _paymentOperations.isNotEmpty;
+
+  bool get paymentOperationInProgress =>
+      _paymentOperations.containsKey(state.activeTicketId);
+
+  /// The lock belongs to one attempt on one ticket, never to the whole POS.
+  /// Background sync does not acquire this lock.
+  Object? beginPaymentOperation() {
+    final ticketId = state.activeTicketId;
+    if (_paymentOperations.containsKey(ticketId)) return null;
+    final token = Object();
+    _paymentOperations[ticketId] = token;
+    return token;
+  }
+
+  void endPaymentOperation(int ticketId, Object token) {
+    // A late finally from an old panel must not unlock a newer payment.
+    if (identical(_paymentOperations[ticketId], token)) {
+      _paymentOperations.remove(ticketId);
+    }
+  }
+
   String _markingScope = '';
   String get markingScope => _markingScope;
   set markingScope(String value) {
@@ -127,8 +151,7 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void _emitAndPersist(PosState nextState) {
-    if (jsonEncode(nextState.items.map((item) => item.toJson()).toList()) !=
-            jsonEncode(state.items.map((item) => item.toJson()).toList()) ||
+    if (!_sameCartContents(nextState.items, state.items) ||
         nextState.activeTicketId != state.activeTicketId) {
       invalidateMarkingCheck();
       nextState = nextState.copyWith(
@@ -141,6 +164,27 @@ class PosCubit extends Cubit<PosState> {
     }
     emit(nextState);
     _schedulePersistState(nextState);
+  }
+
+  // Payment input frequently emits states with the very same basket. Compare
+  // its data directly instead of serializing it twice on every key press.
+  // Marking results are deliberately excluded, as in CartItem.toJson().
+  static bool _sameCartContents(List<CartItem> a, List<CartItem> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final left = a[i];
+      final right = b[i];
+      if (left.product != right.product ||
+          left.qty != right.qty ||
+          left.discount != right.discount ||
+          left.customUnitPrice != right.customUnitPrice ||
+          left.discountApplied != right.discountApplied ||
+          !const ListEquality<String>().equals(left.markCodes, right.markCodes)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   void _schedulePersistState(PosState state) {
@@ -280,13 +324,15 @@ class PosCubit extends Cubit<PosState> {
     return id;
   }
 
-  Future<void> saveCheckout(Map<String, dynamic> checkout) async {
-    if (state.activeTicket.invoiceCheckout != null) {
+  Future<void> saveCheckout(Map<String, dynamic> checkout, {int? ticketId}) async {
+    final targetId = ticketId ?? state.activeTicketId;
+    final ticket = state.tickets.firstWhere((t) => t.id == targetId);
+    if (ticket.invoiceCheckout != null) {
       throw StateError('Сначала завершите выставление счёта');
     }
     _emitAndPersist(state.copyWith(
         tickets: state.tickets
-            .map((t) => t.id == state.activeTicketId
+            .map((t) => t.id == targetId
                 ? t.copyWith(checkout: checkout)
                 : t)
             .toList()));
@@ -330,13 +376,89 @@ class PosCubit extends Cubit<PosState> {
             .toList()));
   }
 
-  void releaseCheckout() {
+  /// Only discard a request known never to have reached either payment system.
+  Future<void> recoverPaymentDraft() async {
+    if (paymentOperationInProgress) {
+      throw StateError('Дождитесь результата текущей оплаты');
+    }
+    final ticket = state.activeTicket;
+    if (ticket.invoiceCheckout != null) {
+      throw StateError(
+          'Сначала проверьте результат выставления счёта в разделе «Счета»');
+    }
+    final checkout = ticket.checkout;
+    if (checkout != null) {
+      if (checkout['sale_request_started'] != false ||
+          checkout['kaspi_payment'] != null) {
+        throw StateError(
+            'Результат оплаты ещё не подтверждён. Откройте оплату этого чека и нажмите «ОПЛАТА» для завершения сохранённого запроса.');
+      }
+      final sale = checkout['sale'];
+      final saleId = sale is Map ? sale['localId'] : null;
+      if (saleId == null) {
+        throw StateError('Не удалось определить сохранённую оплату');
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final journal = prefs.getString('kaspi.payment.$saleId');
+      if (journal != null) {
+        final record = jsonDecode(journal);
+        if (record is! Map || record['status'] != 'fail') {
+          throw StateError(
+              'Сначала проверьте результат сохранённой операции Kaspi через оплату этого чека');
+        }
+      }
+    }
+    // Recheck after storage access: the user may have started an operation.
+    if (paymentOperationInProgress || state.activeTicket != ticket) {
+      throw StateError('Состояние чека изменилось. Повторите восстановление');
+    }
+    _emitAndPersist(state.copyWith(
+      paymentKind: PaymentKind.cash,
+      received: 0,
+      tickets: state.tickets
+          .map((t) => t.id == ticket.id ? t.copyWith(clearCheckout: true) : t)
+          .toList(),
+    ));
+    await flushPendingState();
+  }
+
+  void releaseCheckout({int? ticketId}) {
+    final targetId = ticketId ?? state.activeTicketId;
     _emitAndPersist(state.copyWith(
         tickets: state.tickets
-            .map((t) => t.id == state.activeTicketId
+            .map((t) => t.id == targetId
                 ? t.copyWith(clearCheckout: true)
                 : t)
             .toList()));
+  }
+
+  Future<void> releaseDeletedSale(String clientSaleId) async {
+    if (clientSaleId.isEmpty) return;
+    var changed = false;
+    var activeChanged = false;
+    final tickets = state.tickets.map((ticket) {
+      final sale = ticket.checkout?['sale'];
+      final frozenId = sale is Map ? sale['localId']?.toString() : null;
+      if (ticket.clientSaleId != clientSaleId && frozenId != clientSaleId) {
+        return ticket;
+      }
+      changed = true;
+      activeChanged |= ticket.id == state.activeTicketId;
+      return PosTicket(
+        id: ticket.id,
+        items: ticket.items,
+        customer: ticket.customer,
+        fiscalizationMode: ticket.fiscalizationMode,
+        invoiceCheckout: ticket.invoiceCheckout,
+      );
+    }).toList();
+    if (!changed) return;
+    _emitAndPersist(state.copyWith(
+      tickets: tickets,
+      paymentKind: activeChanged ? PaymentKind.cash : state.paymentKind,
+      received: activeChanged ? 0 : state.received,
+    ));
+    await flushPendingState();
   }
 
   void completeCheckout(int ticketId) {
@@ -638,9 +760,35 @@ class PosCubit extends Cubit<PosState> {
   }
 
   void removeAt(int index) {
-    if (state.activeTicket.hasPendingCheckout) return;
     final itemsBefore = state.items;
     if (index < 0 || index >= itemsBefore.length) return;
+
+    if (state.activeTicket.hasPendingCheckout) {
+      // Keep the immutable payment request under its original ticket ID.
+      // Editing a basket must never change an already submitted sale.
+      final ticket = state.activeTicket;
+      final newId = state.tickets.map((t) => t.id).reduce(
+                (a, b) => a > b ? a : b,
+              ) +
+          1;
+      final remaining = List<CartItem>.from(itemsBefore)..removeAt(index);
+      _emitAndPersist(state.copyWith(
+        tickets: [
+          ...state.tickets,
+          PosTicket(
+            id: newId,
+            items: remaining,
+            customer: ticket.customer,
+            fiscalizationMode: ticket.fiscalizationMode,
+          ),
+        ],
+        activeTicketId: newId,
+        paymentKind: PaymentKind.cash,
+        received: 0,
+        clearSelection: true,
+      ));
+      return;
+    }
 
     final prevSelected = state.selectedItemIndex;
     int? newSelected = prevSelected;
@@ -858,6 +1006,36 @@ class PosCubit extends Cubit<PosState> {
   void setPaymentKind(PaymentKind kind) {
     if (state.activeTicket.hasPendingCheckout) return;
     _emitAndPersist(state.copyWith(paymentKind: kind));
+  }
+
+  /// An explicit payment selection starts an editable draft. Keep any earlier
+  /// submitted request under its original ID so its outcome is not lost.
+  void changePaymentKind(PaymentKind kind) {
+    if (paymentOperationInProgress) return;
+    final ticket = state.activeTicket;
+    if (!ticket.hasPendingCheckout) {
+      setPaymentKind(kind);
+      return;
+    }
+    final newId = state.tickets.map((t) => t.id).reduce(
+              (a, b) => a > b ? a : b,
+            ) +
+        1;
+    _emitAndPersist(state.copyWith(
+      tickets: [
+        ...state.tickets,
+        PosTicket(
+          id: newId,
+          items: List<CartItem>.from(ticket.items),
+          customer: ticket.customer,
+          fiscalizationMode: ticket.fiscalizationMode,
+        ),
+      ],
+      activeTicketId: newId,
+      paymentKind: kind,
+      received: 0,
+      clearSelection: true,
+    ));
   }
 
   void setReceived(double value) {

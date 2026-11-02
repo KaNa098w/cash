@@ -17,6 +17,7 @@ Future<ProductModel?> showProductCreateDialog(
   BuildContext context, {
   String initialBarcode = '',
   bool scannedProductNotFound = false,
+  String? managerAccessKey,
 }) async {
   final auth = context.read<AuthTokenProvider>();
   final activeUserId = auth.activeUserId?.trim() ?? '';
@@ -43,6 +44,7 @@ Future<ProductModel?> showProductCreateDialog(
       userId: activeUserId,
       deviceId: auth.deviceId?.trim() ?? '',
       isDirector: isDirector,
+      managerAccessKey: managerAccessKey,
       initialBarcode: initialBarcode.trim(),
       scannedProductNotFound: false,
     ),
@@ -154,6 +156,7 @@ class _ProductCreateDialog extends StatefulWidget {
     required this.isDirector,
     required this.initialBarcode,
     required this.scannedProductNotFound,
+    this.managerAccessKey,
   });
 
   final String posKey;
@@ -162,6 +165,7 @@ class _ProductCreateDialog extends StatefulWidget {
   final bool isDirector;
   final String initialBarcode;
   final bool scannedProductNotFound;
+  final String? managerAccessKey;
 
   @override
   State<_ProductCreateDialog> createState() => _ProductCreateDialogState();
@@ -387,9 +391,11 @@ class _ProductCreateDialogState extends State<_ProductCreateDialog> {
     });
     _hideNameKeyboard();
     try {
-      final product = widget.isDirector
-          ? await _createProduct()
-          : await _createWithManagerKey();
+      final product = (widget.managerAccessKey ?? '').trim().isNotEmpty
+          ? await _createProduct(managerAccessKey: widget.managerAccessKey)
+          : widget.isDirector
+              ? await _createProduct()
+              : await _createWithManagerKey();
       if (product == null) return;
       if (!mounted) return;
       await sl<PosSyncService>().cacheServerProduct(product);
@@ -748,7 +754,10 @@ class _ProductCreateDialogState extends State<_ProductCreateDialog> {
                           label: Text(
                             _loading
                                 ? 'Создание…'
-                                : widget.isDirector
+                                : widget.isDirector ||
+                                        (widget.managerAccessKey ?? '')
+                                            .trim()
+                                            .isNotEmpty
                                     ? 'Создать товар'
                                     : 'Ввести ключ менеджера',
                             style: const TextStyle(fontWeight: FontWeight.w800),

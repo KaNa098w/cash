@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -12,7 +14,17 @@ import 'kaspi_payment_service.dart';
 /// Dedicated client: POS authentication headers and HTTP loggers must never be
 /// attached to the terminal connection.
 class KaspiTerminal {
-  KaspiTerminal._();
+  KaspiTerminal._() : _launchTimeout = paymentLaunchTimeout;
+  @visibleForTesting
+  KaspiTerminal.forTesting(
+      {required Dio client, Duration launchTimeout = paymentLaunchTimeout})
+      : _dio = client,
+        _launchTimeout = launchTimeout,
+        _settings = {'host': 'test-terminal'},
+        _credentials = {
+          'accessToken': 'test',
+          'expirationDate': '2099-01-01T00:00:00Z'
+        };
   static final instance = KaspiTerminal._();
   static const _secure = FlutterSecureStorage();
   static const _credentialsKey = 'kaspi.credentials';
@@ -23,6 +35,25 @@ class KaspiTerminal {
   Map<String, dynamic>? _credentials;
   Dio? _dio;
   KaspiPaymentService? _payments;
+  int _paymentGeneration = 0;
+  CancelToken? _launchToken;
+  Timer? _launchTimer;
+  static const paymentLaunchTimeout = Duration(seconds: 15);
+  final Duration _launchTimeout;
+
+  Future<void> abandonPayment(String saleId) async {
+    _paymentGeneration++;
+    _launchToken?.cancel('Окно оплаты закрыто');
+    _launchTimer?.cancel();
+    if (_payments != null) {
+      await _payments!.abandon(saleId);
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getString(KaspiPaymentService.activeKey) == saleId) {
+        await prefs.remove(KaspiPaymentService.activeKey);
+      }
+    }
+  }
 
   String get host => (_settings?['host'] ?? '').toString();
   bool get registered =>
@@ -105,8 +136,10 @@ class KaspiTerminal {
 
   Future<Map<String, dynamic>> _raw(
       String path, Map<String, dynamic> parameters,
-      {bool authorized = true}) async {
+      {bool authorized = true, CancelToken? cancelToken}) async {
+    if (cancelToken?.isCancelled == true) throw cancelToken!.cancelError!;
     final response = await _client().get<Map<String, dynamic>>(path,
+        cancelToken: cancelToken,
         queryParameters: parameters,
         options: Options(
           receiveTimeout:
@@ -134,29 +167,37 @@ class KaspiTerminal {
     _credentials = data;
   }
 
-  Future<void> _refresh() async => _saveCredentials(await _raw(
-      '/v2/revoke',
-      {
-        'name': clientName,
-        'refreshToken': _credentials?['refreshToken'],
-      },
-      authorized: false));
+  Future<void> _refresh({CancelToken? cancelToken}) async =>
+      _saveCredentials(await _raw(
+          '/v2/revoke',
+          {
+            'name': clientName,
+            'refreshToken': _credentials?['refreshToken'],
+          },
+          authorized: false,
+          cancelToken: cancelToken));
 
   Future<Map<String, dynamic>> _request(
       String path, Map<String, dynamic> parameters) async {
+    final token = path == '/v2/payment' ? _launchToken : null;
+    final timer = path == '/v2/payment' ? _launchTimer : null;
     try {
-      return await _raw(path, parameters);
+      return await _raw(path, parameters, cancelToken: token);
     } on DioException catch (e) {
       // A 403 means the terminal rejected authentication before starting the
       // operation. Never retry timeouts or lost payment responses.
       if (e.response?.statusCode != 403) rethrow;
-      await _refresh();
-      return _raw(path, parameters);
+      await _refresh(cancelToken: token);
+      return await _raw(path, parameters, cancelToken: token);
+    } finally {
+      timer?.cancel();
     }
   }
 
-  Future<void> prepare() async {
+  Future<void> prepare(
+      {CancelToken? cancelToken, void Function(String)? onProgress}) async {
     await initialize();
+    if (cancelToken?.isCancelled == true) throw cancelToken!.cancelError!;
     _client();
     if (!registered) {
       throw const KaspiPaymentException(
@@ -166,7 +207,8 @@ class KaspiTerminal {
         DateTime.tryParse((_credentials?['expirationDate'] ?? '').toString());
     if (expiry == null ||
         expiry.isBefore(DateTime.now().add(const Duration(minutes: 5)))) {
-      await _refresh();
+      onProgress?.call('Обновление доступа к Kaspi…');
+      await _refresh(cancelToken: cancelToken);
     }
   }
 
@@ -185,20 +227,71 @@ class KaspiTerminal {
       {required String saleId,
       required double amount,
       void Function(String)? onProgress}) async {
-    await prepare();
-    final prefs = await SharedPreferences.getInstance();
-    _payments ??= KaspiPaymentService(
-      request: _request,
-      read: (key) async => prefs.getString(key),
-      write: (key, value) async {
-        if (!await prefs.setString(key, value)) {
+    final generation = _paymentGeneration;
+    final launchToken = CancelToken();
+    final launchTimer = Timer(_launchTimeout, () {
+      launchToken.cancel('Терминал не ответил на запуск оплаты за 15 секунд');
+    });
+    _launchToken = launchToken;
+    _launchTimer = launchTimer;
+    try {
+      onProgress?.call('Подключение к терминалу Kaspi…');
+      await prepare(cancelToken: launchToken, onProgress: onProgress)
+          .timeout(_launchTimeout);
+      if (launchToken.isCancelled) throw launchToken.cancelError!;
+      if (generation != _paymentGeneration) {
+        throw const KaspiPaymentException('Окно оплаты закрыто',
+            confirmedFailure: true);
+      }
+      final prefs = await SharedPreferences.getInstance();
+      _payments ??= KaspiPaymentService(
+        request: _request,
+        read: (key) async => prefs.getString(key),
+        write: (key, value) async {
+          if (!await prefs.setString(key, value)) {
+            throw const KaspiPaymentException(
+                'Не удалось сохранить операцию Kaspi на компьютере');
+          }
+        },
+      );
+      if (generation != _paymentGeneration) {
+        throw const KaspiPaymentException('Окно оплаты закрыто',
+            confirmedFailure: true);
+      }
+      if (launchToken.isCancelled) throw launchToken.cancelError!;
+      try {
+        return await _payments!.pay(
+          saleId: saleId,
+          amount: amount,
+          onProgress: onProgress,
+          freshAttempt: true,
+        );
+      } on KaspiPaymentException catch (error) {
+        if (error.confirmedFailure) rethrow;
+        if (launchToken.isCancelled && generation == _paymentGeneration) {
           throw const KaspiPaymentException(
-              'Не удалось сохранить операцию Kaspi на компьютере');
+              'Kaspi не ответил на запуск оплаты за 15 секунд. Проверьте связь с терминалом.');
         }
-      },
-    );
-    return _payments!
-        .pay(saleId: saleId, amount: amount, onProgress: onProgress);
+        throw const KaspiPaymentException(
+            'Не удалось завершить оплату Kaspi. Закройте окно и повторите оплату.');
+      }
+    } on TimeoutException {
+      throw const KaspiPaymentException(
+          'Kaspi не ответил на запуск оплаты за 15 секунд. Проверьте связь с терминалом.');
+    } on DioException catch (error) {
+      if (launchToken.isCancelled && generation == _paymentGeneration) {
+        throw const KaspiPaymentException(
+            'Kaspi не ответил на запуск оплаты за 15 секунд. Проверьте связь с терминалом.');
+      }
+      throw KaspiPaymentException(
+          'Не удалось связаться с Kaspi: ${error.type.name}');
+    } finally {
+      launchTimer.cancel();
+      if (identical(_launchToken, launchToken)) {
+        _launchToken = null;
+        _launchTimer = null;
+      }
+    }
   }
 
   /// Explicit registration pins the certificate of the local terminal selected

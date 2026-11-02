@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:leemon_app/features/presentation/pages/supplies/supplies_page.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -67,6 +68,7 @@ GoRouter createRouter(BuildContext context) {
       ),
       GoRoute(path: '/history', builder: (_, __) => const SalesHistoryPage()),
       GoRoute(path: '/debts', builder: (_, __) => const DebtsPage()),
+      GoRoute(path: '/supplies', builder: (_, __) => const SuppliesPage()),
       GoRoute(
         path: '/close-shift',
         builder: (_, __) => const CloseShiftPage(),

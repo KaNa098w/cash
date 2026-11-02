@@ -20,6 +20,7 @@ class AmountKeypad extends StatelessWidget {
     this.keyHeight = 58,
     this.keyRadius = 10,
     this.keySpacing = 8,
+    this.useBackspaceIcon = false,
   });
 
   final String text;
@@ -39,6 +40,7 @@ class AmountKeypad extends StatelessWidget {
   final double keyHeight;
   final double keyRadius;
   final double keySpacing;
+  final bool useBackspaceIcon;
 
   String _applyToken(String current, String token) {
     var t = current;
@@ -123,13 +125,16 @@ class AmountKeypad extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(keyRadius),
                               ),
                             ),
-                            child: Text(
-                              r[i].isEmpty ? '' : r[i],
-                              style: const TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w600,
-                              ).copyWith(color: keyTextColor),
-                            ),
+                            child: r[i] == '⌫' && useBackspaceIcon
+                                ? Icon(Icons.backspace_outlined,
+                                    color: keyTextColor, size: 24)
+                                : Text(
+                                    r[i].isEmpty ? '' : r[i],
+                                    style: const TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w600,
+                                    ).copyWith(color: keyTextColor),
+                                  ),
                           ),
                         ),
                       ),

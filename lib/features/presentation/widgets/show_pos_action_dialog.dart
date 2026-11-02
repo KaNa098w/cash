@@ -1,4 +1,9 @@
+import 'queue_delete_password_dialog.dart';
+import 'pos_maintenance_dialog.dart';
+import 'package:leemon_app/core/service/app_update_lifecycle.dart';
+import 'package:leemon_app/features/presentation/pages/products/state/pos_cubit.dart';
 import 'printer_settings_dialog.dart';
+import 'cash_drawer_settings_dialog.dart';
 import 'kaspi_settings_dialog.dart';
 import 'package:leemon_app/features/presentation/widgets/customer_display_settings_dialog.dart';
 import 'package:leemon_app/features/presentation/pages/invoices/invoice_history_dialog.dart';
@@ -46,6 +51,10 @@ const String _preferredUpdatePackageType =
 const String _appExeName = 'Leemon.exe';
 const String _updaterExeName = 'Leemon.Updater.exe';
 
+// Temporarily hidden from the cashier menu; keep the handlers available.
+const bool _showPaymentRecoveryAction = false;
+const bool _showSuppliesAction = false;
+
 Future<void> showPosActionsDialog(BuildContext context) {
   final actions = <_PosAction>[
     _PosAction('ВЫХОД ИЗ ПРОГРАММЫ', () async {
@@ -77,6 +86,30 @@ Future<void> showPosActionsDialog(BuildContext context) {
         await _runSyncWithProgress(context);
       },
     ),
+    if (_showPaymentRecoveryAction)
+      _PosAction('ВОССТАНОВИТЬ\nОПЛАТУ', () async {
+      Navigator.of(context, rootNavigator: true).pop();
+      try {
+        await context.read<PosCubit>().recoverPaymentDraft();
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Оплата сброшена. Товары сохранены. Откройте оплату и выберите способ заново.'),
+        ));
+      } catch (error) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(error is StateError
+              ? error.message.toString()
+              : 'Не удалось восстановить оплату. Сохранённый запрос оставлен в чеке.'),
+          duration: const Duration(seconds: 8),
+        ));
+      }
+    }),
+    _PosAction('ОПТИМИЗИРОВАТЬ\nКАССУ', () async {
+      Navigator.of(context, rootNavigator: true).pop();
+      await showPosMaintenanceDialog(context);
+    }),
     _PosAction('ОЧЕРЕДЬ СЕРВИСОВ', () async {
       Navigator.of(context, rootNavigator: true).pop();
       await _showServicesQueueDialog(context);
@@ -88,6 +121,11 @@ Future<void> showPosActionsDialog(BuildContext context) {
     _PosAction('ДОЛГИ', () {
       Navigator.of(context, rootNavigator: true).pop();
       context.go('/debts');
+    }),
+    if (_showSuppliesAction)
+      _PosAction('ПРИЁМКА', () {
+      Navigator.of(context, rootNavigator: true).pop();
+      context.go('/supplies');
     }),
     if (context.read<AuthTokenProvider>().allowRefundsWithoutSale)
       _PosAction('ВОЗВРАТ\nТОВАРА', () async {
@@ -269,6 +307,12 @@ Future<void> _showDevicesDialog(BuildContext context) => showDialog<void>(
                           'Принтер',
                           'Печать чеков и накладных, размер бумаги',
                           () => _pickPrinterSettings(context)),
+                      const Divider(height: 1, indent: 20, endIndent: 20),
+                      deviceTile(
+                          Icons.point_of_sale_outlined,
+                          'Денежный ящик',
+                          'Автооткрытие, подключение и диагностика',
+                          () => showCashDrawerSettingsDialog(context)),
                       const Divider(height: 1, indent: 20, endIndent: 20),
                       deviceTile(
                           Icons.scale_rounded,
@@ -939,15 +983,7 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
     builder: (ctx) {
       return StatefulBuilder(
         builder: (context, setState) {
-          List<QueueListItem> eligibleItems() {
-            return queueItems
-                .where(
-                  (item) =>
-                      item.status == OutboxOperationStatus.pending ||
-                      item.status == OutboxOperationStatus.manual,
-                )
-                .toList(growable: false);
-          }
+          List<QueueListItem> eligibleItems() => queueItems;
 
           Future<void> reloadQueue() async {
             final next = await sync.loadQueueItems();
@@ -1042,31 +1078,19 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
 
           Future<void> deleteSelected() async {
             final targets = selectedOperationIds.toList(growable: false);
-            if (targets.isEmpty || syncing) return;
-            final confirmed = await showDialog<bool>(
-              context: context,
-              builder: (dialogContext) {
-                return AlertDialog(
-                  title: const Text('Удалить сервисы'),
-                  content: Text(
-                    'Удалить выбранные сервисы из очереди: ${targets.length}?',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(dialogContext).pop(false),
-                      child: const Text('Отмена'),
-                    ),
-                    FilledButton(
-                      onPressed: () => Navigator.of(dialogContext).pop(true),
-                      child: const Text('Удалить'),
-                    ),
-                  ],
-                );
-              },
-            );
+            if (targets.isEmpty) return;
+            final posCubit = context.read<PosCubit>();
+            final deletedSales = {
+              for (final item in queueItems)
+                if (item.type == OutboxOperationType.sale)
+                  item.id: item.clientId,
+            };
+            final confirmed = await confirmQueueDeletion(context);
             if (confirmed != true) return;
             for (final id in targets) {
-              await sync.deleteQueueOperation(id);
+              await sync.deleteQueueOperation(id, force: true);
+              final saleId = deletedSales[id];
+              if (saleId != null) await posCubit.releaseDeletedSale(saleId);
             }
             await reloadQueue();
           }
@@ -1410,7 +1434,7 @@ Future<void> _showServicesQueueDialog(BuildContext context) async {
                         const Spacer(),
                         if (selectedOperationIds.isNotEmpty) ...[
                           OutlinedButton.icon(
-                            onPressed: syncing ? null : deleteSelected,
+                            onPressed: deleteSelected,
                             icon: const Icon(Icons.delete_outline_rounded),
                             label: const Text('Удалить выбранные'),
                           ),
@@ -2440,29 +2464,13 @@ Future<bool?> _showEditableQueueItemDetailsDialog(
           }
 
           Future<void> deleteCurrentService() async {
-            final confirmed = await showDialog<bool>(
-              context: context,
-              builder: (dialogContext) {
-                return AlertDialog(
-                  title: const Text('Удалить сервис'),
-                  content: const Text(
-                    'Удалить этот сервис из очереди?',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(dialogContext).pop(false),
-                      child: const Text('Отмена'),
-                    ),
-                    FilledButton(
-                      onPressed: () => Navigator.of(dialogContext).pop(true),
-                      child: const Text('Удалить'),
-                    ),
-                  ],
-                );
-              },
-            );
+            final posCubit = context.read<PosCubit>();
+            final confirmed = await confirmQueueDeletion(context);
             if (confirmed != true) return;
-            await sync.deleteQueueOperation(currentDetails.id);
+            await sync.deleteQueueOperation(currentDetails.id, force: true);
+            if (currentDetails.type == OutboxOperationType.sale) {
+              await posCubit.releaseDeletedSale(currentDetails.clientId);
+            }
             if (!context.mounted) return;
             changed = true;
             Navigator.of(ctx).pop(true);
@@ -2836,7 +2844,7 @@ Future<File> _downloadUpdatePackage(
   ValueNotifier<double> progress,
 ) async {
   final dio = sl<Dio>();
-  final directory = await getTemporaryDirectory();
+  final directory = await (await getTemporaryDirectory()).createTemp('leemon_update_');
   final safeVersion =
       latest.latestVersion.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
   final packageType = latest.packageType.trim().toLowerCase();
@@ -2858,6 +2866,7 @@ Future<File> _downloadUpdatePackage(
   await dio.download(
     latest.downloadUrl,
     target.path,
+    options: Options(receiveTimeout: const Duration(seconds: 30)),
     onReceiveProgress: (received, total) {
       if (total > 0) {
         final ratio = received / total;
@@ -2873,8 +2882,7 @@ Future<File> _downloadUpdatePackage(
   }
 
   if (latest.checksumSha256.isNotEmpty) {
-    final bytes = await target.readAsBytes();
-    final actual = sha256.convert(bytes).toString().toLowerCase();
+    final actual = (await sha256.bind(target.openRead()).first).toString().toLowerCase();
     if (actual != latest.checksumSha256.toLowerCase()) {
       throw Exception('Контрольная сумма файла обновления не совпала.');
     }
@@ -2899,7 +2907,7 @@ Future<void> _installAndRestartApp(
   final packageType = latest.packageType.trim().toLowerCase();
 
   if (packageType == 'zip') {
-    await _runZipUpdater(file, context);
+    await _runZipUpdater(file, context, latest.latestVersion);
     return;
   }
 
@@ -2913,7 +2921,8 @@ Future<void> _installAndRestartApp(
   );
 }
 
-Future<void> _runZipUpdater(File packageFile, BuildContext context) async {
+Future<void> _runZipUpdater(File packageFile, BuildContext context, String version) async {
+  final cubit = context.read<PosCubit>();
   if (kDebugMode) {
     throw Exception(
       'Updater нельзя корректно проверить через flutter run в debug. '
@@ -2929,18 +2938,18 @@ Future<void> _runZipUpdater(File packageFile, BuildContext context) async {
   }
 
   final targetDir = File(Platform.resolvedExecutable).parent.path;
-  await Process.start(
-    updaterFile.path,
-    [
-      '--zip',
-      packageFile.path,
-      '--target-dir',
-      targetDir,
-      '--app-exe',
-      _appExeName,
-    ],
-    mode: ProcessStartMode.detached,
-    workingDirectory: updaterFile.parent.path,
+  await AppUpdateLifecycle.prepareZipUpdate(
+    packageFile: packageFile,
+    updaterFile: updaterFile,
+    targetDirectory: targetDir,
+    appExeName: _appExeName,
+    version: version,
+    beforeShutdown: () async {
+      if (cubit.hasPaymentOperations) {
+        throw StateError('Завершите текущую оплату перед обновлением.');
+      }
+      await cubit.flushPendingState();
+    },
   );
 
   await Future.delayed(const Duration(milliseconds: 400));
@@ -2952,7 +2961,7 @@ Future<void> _runZipUpdater(File packageFile, BuildContext context) async {
     );
   }
   if (!context.mounted) return;
-  await exitAppFully(context);
+  await AppUpdateLifecycle.finishHandoff(() => exitAppFully(context));
 }
 
 Future<void> _runSilentInstaller(
@@ -2983,7 +2992,7 @@ Future<void> _runSilentInstaller(
 
 File _resolveUpdaterExecutable() {
   final appDir = File(Platform.resolvedExecutable).parent.path;
-  return File(path.join(appDir, 'updater', _updaterExeName));
+  return AppUpdateLifecycle.resolveUpdater(appDir, _updaterExeName);
 }
 
 // ignore: unused_element
@@ -3107,7 +3116,9 @@ class _UpdateCheckDialogState extends State<_UpdateCheckDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
+    return PopScope(
+      canPop: _stage != _UpdStage.downloading,
+      child: Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 440),
@@ -3115,6 +3126,7 @@ class _UpdateCheckDialogState extends State<_UpdateCheckDialog> {
           padding: const EdgeInsets.fromLTRB(28, 28, 28, 22),
           child: _buildBody(),
         ),
+      ),
       ),
     );
   }
